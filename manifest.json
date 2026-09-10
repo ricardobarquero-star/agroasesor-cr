@@ -1,19 +1,35 @@
 {
-  "name": "AgroAsesor Pro CR — Ing. Ricardo Barquero",
+  "name": "AgroAsesor Pro CR \u2014 Ing. Ricardo Manuel Barquero",
   "short_name": "AgroAsesor",
-  "description": "Asesoría Agronómica Profesional en Campo para Costa Rica",
+  "description": "Asesor\u00eda Agron\u00f3mica Profesional en Campo para Costa Rica \u2014 Ing. Agr. Ricardo Manuel Barquero Chac\u00f3n",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#064e3b",
-  "theme_color": "#166534",
+  "theme_color": "#065f46",
   "icons": [
     {
-      "src": "./favicon.svg",
-      "sizes": "192x192 512x512",
-      "type": "image/svg+xml",
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
     }
   ]
 }
