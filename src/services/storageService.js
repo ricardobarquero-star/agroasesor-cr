@@ -1,15 +1,21 @@
-/**
- * Servicio de Almacenamiento Local Offline-First y Respaldo
- * Gestiona Directorio de Clientes, Fincas, Lotes y Visitas Técnicas del Ing. Ricardo Barquero.
- */
+import { crAgroDatabase } from '../data/crAgroDatabase';
 
 const STORAGE_KEYS = {
-  CLIENTES: 'agroasesor_clientes_db',
-  VISITAS: 'agroasesor_visitas_db',
-  VISITA_ACTUAL_ID: 'agroasesor_visita_activa_id'
+  CLIENTES: 'agroasesor_clientes_db_v2',
+  VISITAS: 'agroasesor_visitas_db_v2',
+  VISITA_ACTUAL_ID: 'agroasesor_visita_activa_id_v2',
+  CATALOGO_PERSONALIZADO: 'agroasesor_custom_catalog_v2'
 };
 
-// Clientes iniciales precargados representativos de las zonas productivas de Costa Rica
+// Catálogo personalizado inicial (se va nutriendo automáticamente)
+const CATALOGO_PERSONALIZADO_INICIAL = {
+  cultivos: [],
+  variedades: {}, // { 'fresa': ['NuevaVariedad1', ...], ... }
+  fertilizantes: [],
+  plaguicidas: []
+};
+
+// Clientes iniciales con soporte Multi-Finca y Multi-Lote
 const CLIENTES_INICIALES = [
   {
     id: 'cli-001',
@@ -22,11 +28,27 @@ const CLIENTES_INICIALES = [
       {
         id: 'finca-001',
         nombre: 'Finca Las Fresas de Coronado',
-        ubicacion: 'Cascajal, Vázquez de Coronado, San José',
-        gps: { lat: 10.0215, lon: -83.9482, altitud: 1680, precision: '4m' },
+        ubicacion: 'Cascajal, Vázquez de Coronado',
+        gps: { lat: 10.0215, lon: -83.9482, altitud: 1680 },
         lotes: [
-          { id: 'lote-001', nombre: 'Lote 1 - Macrotúnel A', cultivoId: 'fresa', cultivoNombre: 'Fresa (Fragaria x ananassa)', variedad: 'Albion', area: '3,000 m2', sustrato: 'Suelo con camas plásticas' },
-          { id: 'lote-002', nombre: 'Lote 2 - Macrotúnel B', cultivoId: 'fresa', cultivoNombre: 'Fresa (Fragaria x ananassa)', variedad: 'San Andreas', area: '4,500 m2', sustrato: 'Fibra de coco en mesas elevadas' }
+          { 
+            id: 'lote-001', 
+            nombre: 'Lote 1 - Macrotúnel A', 
+            cultivoId: 'fresa', 
+            cultivoNombre: 'Fresa (Fragaria x ananassa)', 
+            variedad: 'Albion', 
+            area: '3,000 m2', 
+            sustrato: 'Suelo con camas plásticas' 
+          },
+          { 
+            id: 'lote-002', 
+            nombre: 'Lote 2 - Macrotúnel B', 
+            cultivoId: 'fresa', 
+            cultivoNombre: 'Fresa (Fragaria x ananassa)', 
+            variedad: 'San Andreas', 
+            area: '4,500 m2', 
+            sustrato: 'Fibra de coco en mesas elevadas' 
+          }
         ]
       }
     ]
@@ -43,10 +65,26 @@ const CLIENTES_INICIALES = [
         id: 'finca-002',
         nombre: 'Finca Las Flores de Llano Grande',
         ubicacion: 'Llano Grande, Cartago',
-        gps: { lat: 9.9230, lon: -83.9050, altitud: 2270, precision: '3m' },
+        gps: { lat: 9.9230, lon: -83.9050, altitud: 2270 },
         lotes: [
-          { id: 'lote-101', nombre: 'Invernadero 1 (Crisantemos)', cultivoId: 'crisantemo', cultivoNombre: 'Crisantemo de corte', variedad: 'Spider', area: '2,500 m2', sustrato: 'Suelo volcánico andisol' },
-          { id: 'lote-102', nombre: 'Invernadero 2 (Claveles)', cultivoId: 'clavel', cultivoNombre: 'Clavel (Dianthus caryophyllus)', variedad: 'Standard', area: '2,000 m2', sustrato: 'Cascarilla de arroz + suelo' }
+          { 
+            id: 'lote-101', 
+            nombre: 'Invernadero 1 (Crisantemos)', 
+            cultivoId: 'crisantemo', 
+            cultivoNombre: 'Crisantemo de corte', 
+            variedad: 'Spider', 
+            area: '2,500 m2', 
+            sustrato: 'Suelo volcánico andisol' 
+          },
+          { 
+            id: 'lote-102', 
+            nombre: 'Invernadero 2 (Claveles)', 
+            cultivoId: 'clavel', 
+            cultivoNombre: 'Clavel (Dianthus caryophyllus)', 
+            variedad: 'Standard', 
+            area: '2,000 m2', 
+            sustrato: 'Cascarilla de arroz + suelo' 
+          }
         ]
       }
     ]
@@ -63,153 +101,148 @@ const CLIENTES_INICIALES = [
         id: 'finca-003',
         nombre: 'Finca La Cima de Poás',
         ubicacion: 'Poás, Alajuela',
-        gps: { lat: 10.1200, lon: -84.2400, altitud: 1600, precision: '5m' },
+        gps: { lat: 10.1200, lon: -84.2400, altitud: 1600 },
         lotes: [
-          { id: 'lote-201', nombre: 'Bloque A - Chile Dulce', cultivoId: 'chile_dulce', cultivoNombre: 'Chile Dulce (Pimiento)', variedad: 'Nathalie', area: '5,000 m2', sustrato: 'Campo abierto con acolchado' },
-          { id: 'lote-202', nombre: 'Bloque B - Tomate Indeterminado', cultivoId: 'tomate', cultivoNombre: 'Tomate de mesa', variedad: 'Tropic', area: '6,000 m2', sustrato: 'Invernadero multitúnel' }
+          { 
+            id: 'lote-201', 
+            nombre: 'Bloque A - Chile Dulce', 
+            cultivoId: 'chile_dulce', 
+            cultivoNombre: 'Chile Dulce (Pimiento)', 
+            variedad: 'Nathalie', 
+            area: '5,000 m2', 
+            sustrato: 'Campo abierto con acolchado' 
+          },
+          { 
+            id: 'lote-202', 
+            nombre: 'Bloque B - Tomate Indeterminado', 
+            cultivoId: 'tomate', 
+            cultivoNombre: 'Tomate de mesa', 
+            variedad: 'Tropic', 
+            area: '6,000 m2', 
+            sustrato: 'Invernadero multitúnel' 
+          }
         ]
       }
     ]
   }
 ];
 
-// Visita inicial de demostración
-const VISITA_DEMO = {
-  id: 'visita-demo-001',
-  fecha: new Date().toISOString().split('T')[0],
-  hora: '09:30 AM',
-  clienteId: 'cli-001',
-  productor: {
-    nombre: 'Don Álvaro Montero Segura',
-    telefono: '+506 8345-2198',
-    email: 'alvaro.montero@agricola.cr',
-    cedula: '1-0845-0321'
-  },
-  finca: {
-    id: 'finca-001',
-    nombre: 'Finca Las Fresas de Coronado',
-    ubicacion: 'Cascajal, Vázquez de Coronado, San José',
-    gps: { lat: 10.0215, lon: -83.9482, altitud: 1680, precision: '4m' }
-  },
-  lote: {
-    id: 'lote-002',
-    nombre: 'Lote 2 - Macrotúnel B',
-    area: '4,500 m2',
-    cultivoId: 'fresa',
-    cultivoNombre: 'Fresa (Fragaria x ananassa)',
-    variedad: 'San Andreas',
-    edadSemanas: '14 semanas (Plena producción)',
-    sustrato: 'Fibra de coco en mesas elevadas'
-  },
-  clima: {
-    temperaturaActual: 18,
-    humedadActual: 88,
-    vientoKmH: 12,
-    lluviaAcumulada7Dias: 64.5,
-    horasAltaHumedad: 52,
-    tempMax7Dias: 21,
-    tempMin7Dias: 12,
-    riesgoEnfermedades: 'Crítico / Muy Alto',
-    razonRiesgo: '64.5 mm de lluvia y 52h de humedad >85% en Coronado. Máximo riesgo de Botrytis cinerea y Colletotrichum.'
-  },
-  hallazgos: [
-    {
-      id: 'h-01',
-      categoria: 'Enfermedades Fitosanitarias',
-      titulo: 'Foco inicial de Moho Gris (Botrytis cinerea) en cáliz floral',
-      descripcion: 'Se observa esporulación grisácea incipiente en cálices y pedúnculos florales con fruta verde en desarrollo. Favorecido por condensación nocturna bajo el plástico.',
-      severidad: 'Alta',
-      fotoAnotada: null,
-      fecha: new Date().toLocaleDateString('es-CR')
-    },
-    {
-      id: 'h-02',
-      categoria: 'Problemas Fisiológicos / Nutricionales',
-      titulo: 'Ligera necrosis en margen de hoja nueva (Deficiencia de Calcio / Tip-burn)',
-      descripcion: 'Brote tierno con borde quemado. Alta transpiración matutina y baja presión radicular. Se requiere aporte foliar urgente con Metalosato de Calcio.',
-      severidad: 'Media',
-      fotoAnotada: null,
-      fecha: new Date().toLocaleDateString('es-CR')
-    }
-  ],
-  recomendacionesFertirriego: [
-    {
-      semana: 1,
-      titulo: 'Semana 1 - Nutrición Balanceada Fresa en Pico de Cosecha',
-      alcance: 'Toda la Finca',
-      eventos: [
-        {
-          id: 'ev-fert-1',
-          tipo: 'Fertirriego Tanque A y B (Inyección Dosatron 1:100)',
-          nombreEvento: 'Fertirriego 1: Llenado de Fruta y Calcio Estructural',
-          sistema: 'Dosatron Tanques Concentrados (1000 L c/u)',
-          conductividadObjetivo: '1.5 mS/cm',
-          phObjetivo: '5.8',
-          lineasTanqueA: [
-            { producto: 'YaraTera Calcinit (Nitrato de Calcio)', dosis: '60 kg / tanque 1000 L', unidad: 'kg/tanque' },
-            { producto: 'Haifa Multi-K 13-0-46', dosis: '35 kg / tanque 1000 L', unidad: 'kg/tanque' },
-            { producto: 'Librel Fe-DP (Hierro Quelatado DTPA)', dosis: '2.5 kg / tanque 1000 L', unidad: 'kg/tanque' }
-          ],
-          lineasTanqueB: [
-            { producto: 'Haifa MKP 0-52-34', dosis: '30 kg / tanque 1000 L', unidad: 'kg/tanque' },
-            { producto: 'Sulfato de Magnesio Soluble', dosis: '25 kg / tanque 1000 L', unidad: 'kg/tanque' },
-            { producto: 'Ácido Fosfórico 85%', dosis: '8 L / tanque 1000 L (según pH)', unidad: 'L/tanque' }
-          ],
-          observacionesPie: 'Inyectar al 1% con el Dosatron. Mantener pulsos de riego cortos (4 minutos, 6 veces al día) para no saturar la fibra de coco.'
-        },
-        {
-          id: 'ev-drench-1',
-          tipo: 'Drench por Estañón (200 L)',
-          nombreEvento: 'Drench 1: Sanidad Radicular y Promotor de Pelos Absorbentes',
-          sistema: 'Estañón de 200 L con bomba de espalda / lanza',
-          volumenPlanta: '50 cc por planta al cuello',
-          productos: [
-            { producto: 'Rootex WP (Cosmocel)', dosis: '350 g / estañón (200 L)', unidad: 'g/estañón' },
-            { producto: 'Kelpak Alga Marina', dosis: '400 cc / estañón (200 L)', unidad: 'cc/estañón' },
-            { producto: 'TrikoEco (Trichoderma asperellum)', dosis: '250 g / estañón (200 L)', unidad: 'g/estañón' }
-          ],
-          observacionesPie: 'Aplicar directamente en el cuello de la planta con el sustrato previamente húmedo para garantizar colonización micorrícica.'
-        }
-      ]
-    }
-  ],
-  recomendacionesPlaguicidas: [
-    {
-      semana: 1,
-      titulo: 'Semana 1 - Control Fitosanitario Antirresistencia FRAC / IRAC',
-      alcance: 'Lote 2 - Macrotúnel B (Foco identificado)',
-      aplicaciones: [
-        {
-          id: 'ap-foliar-1',
-          nombre: 'Aplicación Foliar 1 (Choque contra Botrytis y Prevención de Ácaro)',
-          volumenTanque: 'Estañón de 200 L',
-          ordenMezcla: [
-            { orden: 1, tipo: 'Acondicionador Agua', producto: 'Carrier / Acid-Fix', dosis: '60 cc / estañón', funcion: 'Bajar pH a 5.8 y secuestrar dureza' },
-            { orden: 2, tipo: 'Fungicida FRAC 7 + 11', producto: 'Bellis 38 WG', dosis: '140 g / estañón (200 L)', funcion: 'Control curativo de Botrytis (Boscalid + Piraclostrobina)' },
-            { orden: 3, tipo: 'Acaricida IRAC 23', producto: 'Oberon 240 SC', dosis: '100 cc / estañón (200 L)', funcion: 'Ovicida y ninficida de arañita roja' },
-            { orden: 4, tipo: 'Foliar Nutricional', producto: 'Metalosato Calcio (Cosmocel)', dosis: '400 cc / estañón (200 L)', funcion: 'Firmeza de epidermis del fruto' },
-            { orden: 5, tipo: 'Coadyuvante', producto: 'Break-Thru S-240', dosis: '35 cc / estañón (200 L)', funcion: 'Super-humectación y penetración' }
-          ],
-          observacionesPie: 'Calibrar boquillas cono hueco a 45 PSI. Aplicar temprano (6:30 AM a 8:30 AM) o después de las 4:00 PM con follaje seco.'
-        },
-        {
-          id: 'ap-foliar-2',
-          nombre: 'Aplicación Foliar 2 (Rotación Biológica Cero Días a Cosecha)',
-          volumenTanque: 'Estañón de 200 L',
-          ordenMezcla: [
-            { orden: 1, tipo: 'Biológico FRAC BM02', producto: 'Serenade ASO (Bacillus subtilis)', dosis: '500 cc / estañón (200 L)', funcion: 'Barrera antagónica contra Botrytis y bacterias' },
-            { orden: 2, tipo: 'Foliar Nutricional', producto: 'Metalosato Zinc', dosis: '250 cc / estañón (200 L)', funcion: 'Estimulación de brotes nuevos' }
-          ],
-          observacionesPie: 'Aplicar 4 días después de la primera aplicación. Cero días de carencia; se puede cosechar el mismo día.'
-        }
-      ]
-    }
-  ]
-};
-
 export const storageService = {
   // ==========================================
-  // CLIENTES Y FINCAS
+  // MOTOR DE AUTO-APRENDIZAJE DE LA BASE DE DATOS
+  // ==========================================
+  getCatalogoPersonalizado() {
+    const raw = localStorage.getItem(STORAGE_KEYS.CATALOGO_PERSONALIZADO);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.CATALOGO_PERSONALIZADO, JSON.stringify(CATALOGO_PERSONALIZADO_INICIAL));
+      return CATALOGO_PERSONALIZADO_INICIAL;
+    }
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return CATALOGO_PERSONALIZADO_INICIAL;
+    }
+  },
+
+  guardarCatalogoPersonalizado(cat) {
+    localStorage.setItem(STORAGE_KEYS.CATALOGO_PERSONALIZADO, JSON.stringify(cat));
+  },
+
+  // Registrar automáticamente un producto nuevo (plaguicida o fertilizante)
+  registrarInsumoSiNoExiste(insumo) {
+    if (!insumo || !insumo.nombreComercial) return;
+    const cat = this.getCatalogoPersonalizado();
+    const nombreNormalizado = insumo.nombreComercial.trim().toLowerCase();
+
+    if (insumo.esFertilizante) {
+      const existeBase = crAgroDatabase.fertilizantesFertirriego.some(f => f.nombreComercial.toLowerCase() === nombreNormalizado) ||
+                         crAgroDatabase.formulasGranuladasSuelo.some(f => f.nombreComercial.toLowerCase() === nombreNormalizado);
+      const existeCustom = (cat.fertilizantes || []).some(f => f.nombreComercial.toLowerCase() === nombreNormalizado);
+
+      if (!existeBase && !existeCustom) {
+        cat.fertilizantes = cat.fertilizantes || [];
+        cat.fertilizantes.push({
+          id: 'custom_fert_' + Date.now(),
+          nombreComercial: insumo.nombreComercial.trim(),
+          categoria: insumo.categoria || 'Fertilizante Personalizado',
+          composicion: insumo.composicion || '',
+          dosisTipica: insumo.dosis || '',
+          distribuidores: insumo.casaComercial || 'Insumo Local',
+          esPersonalizado: true
+        });
+        this.guardarCatalogoPersonalizado(cat);
+      }
+    } else {
+      // Plaguicida
+      const existeBase = crAgroDatabase.productosFitosanitarios.some(p => p.nombreComercial.toLowerCase() === nombreNormalizado);
+      const existeCustom = (cat.plaguicidas || []).some(p => p.nombreComercial.toLowerCase() === nombreNormalizado);
+
+      if (!existeBase && !existeCustom) {
+        cat.plaguicidas = cat.plaguicidas || [];
+        cat.plaguicidas.push({
+          id: 'custom_plag_' + Date.now(),
+          nombreComercial: insumo.nombreComercial.trim(),
+          categoria: insumo.categoria || 'Fitosanitario',
+          ingredienteActivo: insumo.ingredienteActivo || '',
+          codigoFracIrac: insumo.codigoFracIrac || '',
+          dosisEstandar: insumo.dosis || '',
+          casaComercial: insumo.casaComercial || 'Insumo Local CR',
+          esPersonalizado: true
+        });
+        this.guardarCatalogoPersonalizado(cat);
+      }
+    }
+  },
+
+  // Registrar automáticamente nueva variedad para un cultivo
+  registrarVariedadSiNoExiste(cultivoId, nuevaVariedad) {
+    if (!cultivoId || !nuevaVariedad || !nuevaVariedad.trim()) return;
+    const variedadLimpia = nuevaVariedad.trim();
+    const cat = this.getCatalogoPersonalizado();
+    cat.variedades = cat.variedades || {};
+    cat.variedades[cultivoId] = cat.variedades[cultivoId] || [];
+
+    const cultivoBase = crAgroDatabase.cultivos.find(c => c.id === cultivoId);
+    const existeEnBase = cultivoBase && cultivoBase.variedades.some(v => v.toLowerCase() === variedadLimpia.toLowerCase());
+    const existeEnCustom = cat.variedades[cultivoId].some(v => v.toLowerCase() === variedadLimpia.toLowerCase());
+
+    if (!existeEnBase && !existeEnCustom) {
+      cat.variedades[cultivoId].push(variedadLimpia);
+      this.guardarCatalogoPersonalizado(cat);
+    }
+  },
+
+  // Obtener lista completa de variedades combinadas (Base + Auto-aprendidas)
+  getVariedadesPorCultivo(cultivoId) {
+    const cultivoBase = crAgroDatabase.cultivos.find(c => c.id === cultivoId);
+    const base = cultivoBase ? [...cultivoBase.variedades] : [];
+    const cat = this.getCatalogoPersonalizado();
+    const custom = (cat.variedades && cat.variedades[cultivoId]) ? cat.variedades[cultivoId] : [];
+    return Array.from(new Set([...base, ...custom]));
+  },
+
+  // Obtener lista completa de plaguicidas combinados (Excel + Auto-aprendidos)
+  getTodosLosPlaguicidas() {
+    const cat = this.getCatalogoPersonalizado();
+    const base = crAgroDatabase.productosFitosanitarios || [];
+    const custom = cat.plaguicidas || [];
+    return [...custom, ...base];
+  },
+
+  // Obtener lista completa de fertilizantes combinados
+  getTodosLosFertilizantes(filtroModalidad = '') {
+    const cat = this.getCatalogoPersonalizado();
+    const custom = cat.fertilizantes || [];
+
+    if (filtroModalidad === 'granular') {
+      return [...custom, ...crAgroDatabase.formulasGranuladasSuelo];
+    }
+    // Fertirriego o Drench
+    return [...custom, ...crAgroDatabase.fertilizantesFertirriego, ...crAgroDatabase.formulasGranuladasSuelo];
+  },
+
+  // ==========================================
+  // CLIENTES, FINCAS Y LOTES (MULTI-TIER)
   // ==========================================
   getClientes() {
     const raw = localStorage.getItem(STORAGE_KEYS.CLIENTES);
@@ -236,6 +269,28 @@ export const storageService = {
     return cliente;
   },
 
+  agregarFincaACliente(clienteId, nuevaFinca) {
+    const clientes = this.getClientes();
+    const cli = clientes.find(c => c.id === clienteId);
+    if (!cli) return null;
+    cli.fincas = cli.fincas || [];
+    cli.fincas.push(nuevaFinca);
+    this.guardarCliente(cli);
+    return cli;
+  },
+
+  agregarLoteAFinca(clienteId, fincaId, nuevoLote) {
+    const clientes = this.getClientes();
+    const cli = clientes.find(c => c.id === clienteId);
+    if (!cli) return null;
+    const finca = (cli.fincas || []).find(f => f.id === fincaId);
+    if (!finca) return null;
+    finca.lotes = finca.lotes || [];
+    finca.lotes.push(nuevoLote);
+    this.guardarCliente(cli);
+    return cli;
+  },
+
   eliminarCliente(clienteId) {
     const clientes = this.getClientes().filter(c => c.id !== clienteId);
     localStorage.setItem(STORAGE_KEYS.CLIENTES, JSON.stringify(clientes));
@@ -247,13 +302,54 @@ export const storageService = {
   getHistorialVisitas() {
     const raw = localStorage.getItem(STORAGE_KEYS.VISITAS);
     if (!raw) {
-      localStorage.setItem(STORAGE_KEYS.VISITAS, JSON.stringify([VISITA_DEMO]));
-      return [VISITA_DEMO];
+      const inicial = [
+        {
+          id: 'visita-demo-001',
+          fecha: new Date().toISOString().split('T')[0],
+          hora: '09:30 AM',
+          clienteId: 'cli-001',
+          productor: {
+            nombre: 'Don Álvaro Montero Segura',
+            telefono: '+506 8345-2198',
+            email: 'alvaro.montero@agricola.cr',
+            cedula: '1-0845-0321'
+          },
+          finca: {
+            id: 'finca-001',
+            nombre: 'Finca Las Fresas de Coronado',
+            ubicacion: 'Cascajal, Vázquez de Coronado',
+            gps: { lat: 10.0215, lon: -83.9482, altitud: 1680 }
+          },
+          lote: {
+            id: 'lote-002',
+            nombre: 'Lote 2 - Macrotúnel B',
+            area: '4,500 m2',
+            cultivoId: 'fresa',
+            cultivoNombre: 'Fresa (Fragaria x ananassa)',
+            variedad: 'San Andreas',
+            sustrato: 'Fibra de coco en mesas elevadas'
+          },
+          clima: {
+            temperaturaActual: 18,
+            humedadActual: 88,
+            vientoKmH: 12,
+            lluviaAcumulada7Dias: 64.5,
+            horasAltaHumedad: 52,
+            riesgoEnfermedades: 'Crítico / Muy Alto',
+            razonRiesgo: '64.5 mm de lluvia y 52h de humedad >85% en Coronado.'
+          },
+          hallazgos: [],
+          recomendacionesFertirriego: [],
+          recomendacionesPlaguicidas: []
+        }
+      ];
+      localStorage.setItem(STORAGE_KEYS.VISITAS, JSON.stringify(inicial));
+      return inicial;
     }
     try {
       return JSON.parse(raw);
     } catch {
-      return [VISITA_DEMO];
+      return [];
     }
   },
 
@@ -265,10 +361,11 @@ export const storageService = {
       if (encontrada) return encontrada;
     }
     if (historial.length > 0) return historial[0];
-    return VISITA_DEMO;
+    return null;
   },
 
   guardarVisitaActiva(visita) {
+    if (!visita) return;
     const historial = this.getHistorialVisitas();
     const index = historial.findIndex(v => v.id === visita.id);
     if (index >= 0) {
@@ -285,6 +382,11 @@ export const storageService = {
   },
 
   crearNuevaVisita({ cliente, finca, lote, cultivo, clima, gps }) {
+    // Si la variedad es nueva, guardarla en el catálogo auto-aprendiz
+    if (cultivo && lote?.variedad) {
+      this.registrarVariedadSiNoExiste(cultivo.id, lote.variedad);
+    }
+
     const nueva = {
       id: 'visita-' + Date.now(),
       fecha: new Date().toISOString().split('T')[0],
@@ -324,7 +426,7 @@ export const storageService = {
       recomendacionesFertirriego: [
         {
           semana: 1,
-          titulo: 'Semana 1 - Fertirriego',
+          titulo: 'Semana 1 - Fertirriego y Nutrición',
           alcance: 'Toda la Finca',
           eventos: []
         }
@@ -348,9 +450,6 @@ export const storageService = {
     localStorage.setItem(STORAGE_KEYS.VISITAS, JSON.stringify(historial));
   },
 
-  // ==========================================
-  // RESPALDO Y RESTAURACIÓN
-  // ==========================================
   exportarRespaldoJSON() {
     const data = {
       fechaExportacion: new Date().toISOString(),
@@ -361,6 +460,7 @@ export const storageService = {
         email: 'h7coordinador@gmail.com',
         ubicacion: 'Vázquez de Coronado, San José, Costa Rica'
       },
+      catalogoPersonalizado: this.getCatalogoPersonalizado(),
       clientes: this.getClientes(),
       historialVisitas: this.getHistorialVisitas(),
       visitaActivaId: localStorage.getItem(STORAGE_KEYS.VISITA_ACTUAL_ID)
@@ -378,6 +478,9 @@ export const storageService = {
   importarRespaldoJSON(contenidoJson) {
     try {
       const data = JSON.parse(contenidoJson);
+      if (data.catalogoPersonalizado) {
+        localStorage.setItem(STORAGE_KEYS.CATALOGO_PERSONALIZADO, JSON.stringify(data.catalogoPersonalizado));
+      }
       if (data.clientes && Array.isArray(data.clientes)) {
         localStorage.setItem(STORAGE_KEYS.CLIENTES, JSON.stringify(data.clientes));
       }

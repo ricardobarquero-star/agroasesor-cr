@@ -21,6 +21,19 @@ export default function App() {
   const [showAiModal, setShowAiModal] = useState(false);
   const [aiModuleContext, setAiModuleContext] = useState('general');
   const [showSettings, setShowSettings] = useState(false);
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+  // Escuchar estado de conexión de red para modo 100% offline
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Cargar geolocalización y clima al iniciar
   useEffect(() => {
@@ -106,6 +119,14 @@ export default function App() {
                 <h1 className="font-extrabold text-sm sm:text-base tracking-tight leading-none">AgroAsesor Pro CR</h1>
                 <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-500/30 text-emerald-200 border border-emerald-400/30">
                   Ord. 5896
+                </span>
+                <span className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold flex items-center gap-1 ${
+                  isOnline 
+                    ? 'bg-emerald-400/20 text-emerald-100 border border-emerald-400/30' 
+                    : 'bg-amber-400 text-slate-900 border border-amber-300 shadow-xs'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-300 animate-pulse' : 'bg-amber-800'}`}></span>
+                  <span>{isOnline ? 'Online' : '100% Offline'}</span>
                 </span>
               </div>
               <p className="text-[11px] text-emerald-200/90 font-medium">
