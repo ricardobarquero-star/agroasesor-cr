@@ -7,14 +7,26 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="AgroAsesor CR" />
     <meta name="theme-color" content="#166534" />
+    <link rel="manifest" href="./manifest.json" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="apple-touch-icon" href="./favicon.svg" />
     <title>AgroAsesor Pro CR — Ing. Agr. Ricardo Barquero Chacón (Ord. 5896)</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <script type="module" crossorigin src="./assets/index-Cp5lT-iT.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-CxkuQuNq.css">
+    <script type="module" crossorigin src="./assets/index-PQgF0iF4.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BHvpq_2m.css">
   </head>
   <body class="bg-slate-50 text-slate-900 antialiased selection:bg-emerald-200">
     <div id="root"></div>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js')
+            .then(reg => console.log('PWA ServiceWorker registrado con éxito:', reg.scope))
+            .catch(err => console.log('PWA ServiceWorker no se pudo registrar:', err));
+        });
+      }
+    </script>
   </body>
 </html>

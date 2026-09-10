@@ -1,0 +1,19 @@
+{
+  "name": "AgroAsesor Pro CR — Ing. Ricardo Barquero",
+  "short_name": "AgroAsesor",
+  "description": "Asesoría Agronómica Profesional en Campo para Costa Rica",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#064e3b",
+  "theme_color": "#166534",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
