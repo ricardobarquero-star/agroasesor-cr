@@ -48,6 +48,32 @@ const CLIENTES_INICIALES = [
             variedad: 'San Andreas', 
             area: '4,500 m2', 
             sustrato: 'Fibra de coco en mesas elevadas' 
+          },
+          { 
+            id: 'lote-003', 
+            nombre: 'Lote 3 - Monterrey Nuevo', 
+            cultivoId: 'fresa', 
+            cultivoNombre: 'Fresa (Fragaria x ananassa)', 
+            variedad: 'Monterrey', 
+            area: '2,000 m2', 
+            sustrato: 'Suelo con fertirriego por goteo' 
+          }
+        ]
+      },
+      {
+        id: 'finca-001-b',
+        nombre: 'Finca Alto Las Nubes',
+        ubicacion: 'San Jerónimo de Moravia',
+        gps: { lat: 10.0410, lon: -83.9850, altitud: 1850 },
+        lotes: [
+          {
+            id: 'lote-004',
+            nombre: 'Invernadero 1 (Fresa Cabrillo)',
+            cultivoId: 'fresa',
+            cultivoNombre: 'Fresa (Fragaria x ananassa)',
+            variedad: 'Cabrillo',
+            area: '2,500 m2',
+            sustrato: 'Macetas con turba'
           }
         ]
       }
@@ -84,6 +110,15 @@ const CLIENTES_INICIALES = [
             variedad: 'Standard', 
             area: '2,000 m2', 
             sustrato: 'Cascarilla de arroz + suelo' 
+          },
+          { 
+            id: 'lote-103', 
+            nombre: 'Invernadero 3 (Rosas de Exportación)', 
+            cultivoId: 'rosa', 
+            cultivoNombre: 'Rosa de corte', 
+            variedad: 'Freedom', 
+            area: '3,000 m2', 
+            sustrato: 'Bancos elevados con sustrato' 
           }
         ]
       }
@@ -120,6 +155,15 @@ const CLIENTES_INICIALES = [
             variedad: 'Tropic', 
             area: '6,000 m2', 
             sustrato: 'Invernadero multitúnel' 
+          },
+          { 
+            id: 'lote-203', 
+            nombre: 'Bloque C - Papa', 
+            cultivoId: 'papa', 
+            cultivoNombre: 'Papa (Solanum tuberosum)', 
+            variedad: 'Floresta', 
+            area: '8,000 m2', 
+            sustrato: 'Suelo aporcado tradicional' 
           }
         ]
       }
@@ -167,7 +211,7 @@ export const storageService = {
           categoria: insumo.categoria || 'Fertilizante Personalizado',
           composicion: insumo.composicion || '',
           dosisTipica: insumo.dosis || '',
-          distribuidores: insumo.casaComercial || 'Insumo Local',
+          distribuidores: insumo.casaComercial || 'Insumo Local CR',
           esPersonalizado: true
         });
         this.guardarCatalogoPersonalizado(cat);
@@ -242,7 +286,7 @@ export const storageService = {
   },
 
   // ==========================================
-  // CLIENTES, FINCAS Y LOTES (MULTI-TIER)
+  // CLIENTES, FINCAS Y LOTES (MULTI-TIER EXPEDIENTE)
   // ==========================================
   getClientes() {
     const raw = localStorage.getItem(STORAGE_KEYS.CLIENTES);
@@ -269,16 +313,51 @@ export const storageService = {
     return cliente;
   },
 
+  eliminarCliente(clienteId) {
+    const clientes = this.getClientes().filter(c => c.id !== clienteId);
+    localStorage.setItem(STORAGE_KEYS.CLIENTES, JSON.stringify(clientes));
+  },
+
+  // Gestión de Fincas
   agregarFincaACliente(clienteId, nuevaFinca) {
     const clientes = this.getClientes();
     const cli = clientes.find(c => c.id === clienteId);
     if (!cli) return null;
     cli.fincas = cli.fincas || [];
-    cli.fincas.push(nuevaFinca);
+    const fincaConId = {
+      id: nuevaFinca.id || 'finca-' + Date.now(),
+      nombre: nuevaFinca.nombre || 'Nueva Finca',
+      ubicacion: nuevaFinca.ubicacion || cli.ubicacion,
+      gps: nuevaFinca.gps || { lat: 9.9760, lon: -83.9920, altitud: 1400 },
+      lotes: nuevaFinca.lotes || []
+    };
+    cli.fincas.push(fincaConId);
     this.guardarCliente(cli);
     return cli;
   },
 
+  editarFinca(clienteId, fincaId, datosFinca) {
+    const clientes = this.getClientes();
+    const cli = clientes.find(c => c.id === clienteId);
+    if (!cli) return null;
+    const fIndex = (cli.fincas || []).findIndex(f => f.id === fincaId);
+    if (fIndex >= 0) {
+      cli.fincas[fIndex] = { ...cli.fincas[fIndex], ...datosFinca };
+      this.guardarCliente(cli);
+    }
+    return cli;
+  },
+
+  eliminarFinca(clienteId, fincaId) {
+    const clientes = this.getClientes();
+    const cli = clientes.find(c => c.id === clienteId);
+    if (!cli) return null;
+    cli.fincas = (cli.fincas || []).filter(f => f.id !== fincaId);
+    this.guardarCliente(cli);
+    return cli;
+  },
+
+  // Gestión de Lotes
   agregarLoteAFinca(clienteId, fincaId, nuevoLote) {
     const clientes = this.getClientes();
     const cli = clientes.find(c => c.id === clienteId);
@@ -286,18 +365,52 @@ export const storageService = {
     const finca = (cli.fincas || []).find(f => f.id === fincaId);
     if (!finca) return null;
     finca.lotes = finca.lotes || [];
-    finca.lotes.push(nuevoLote);
+    const loteConId = {
+      id: nuevoLote.id || 'lote-' + Date.now(),
+      nombre: nuevoLote.nombre || `Lote ${finca.lotes.length + 1}`,
+      cultivoId: nuevoLote.cultivoId || 'fresa',
+      cultivoNombre: nuevoLote.cultivoNombre || 'Fresa',
+      variedad: nuevoLote.variedad || 'Estándar',
+      area: nuevoLote.area || '1,000 m2',
+      sustrato: nuevoLote.sustrato || 'Suelo'
+    };
+    finca.lotes.push(loteConId);
+    this.guardarCliente(cli);
+
+    // Auto-aprender variedad si aplica
+    if (loteConId.cultivoId && loteConId.variedad) {
+      this.registrarVariedadSiNoExiste(loteConId.cultivoId, loteConId.variedad);
+    }
+    return cli;
+  },
+
+  editarLote(clienteId, fincaId, loteId, datosLote) {
+    const clientes = this.getClientes();
+    const cli = clientes.find(c => c.id === clienteId);
+    if (!cli) return null;
+    const finca = (cli.fincas || []).find(f => f.id === fincaId);
+    if (!finca) return null;
+    const lIndex = (finca.lotes || []).findIndex(l => l.id === loteId);
+    if (lIndex >= 0) {
+      finca.lotes[lIndex] = { ...finca.lotes[lIndex], ...datosLote };
+      this.guardarCliente(cli);
+    }
+    return cli;
+  },
+
+  eliminarLote(clienteId, fincaId, loteId) {
+    const clientes = this.getClientes();
+    const cli = clientes.find(c => c.id === clienteId);
+    if (!cli) return null;
+    const finca = (cli.fincas || []).find(f => f.id === fincaId);
+    if (!finca) return null;
+    finca.lotes = (finca.lotes || []).filter(l => l.id !== loteId);
     this.guardarCliente(cli);
     return cli;
   },
 
-  eliminarCliente(clienteId) {
-    const clientes = this.getClientes().filter(c => c.id !== clienteId);
-    localStorage.setItem(STORAGE_KEYS.CLIENTES, JSON.stringify(clientes));
-  },
-
   // ==========================================
-  // VISITAS TÉCNICAS
+  // VISITAS TÉCNICAS (SIN RECOMENDACIONES PRE-LLENADAS)
   // ==========================================
   getHistorialVisitas() {
     const raw = localStorage.getItem(STORAGE_KEYS.VISITAS);
@@ -339,6 +452,7 @@ export const storageService = {
             razonRiesgo: '64.5 mm de lluvia y 52h de humedad >85% en Coronado.'
           },
           hallazgos: [],
+          // LIMPIO: Sin recomendaciones predeterminadas
           recomendacionesFertirriego: [],
           recomendacionesPlaguicidas: []
         }
@@ -382,11 +496,11 @@ export const storageService = {
   },
 
   crearNuevaVisita({ cliente, finca, lote, cultivo, clima, gps }) {
-    // Si la variedad es nueva, guardarla en el catálogo auto-aprendiz
     if (cultivo && lote?.variedad) {
       this.registrarVariedadSiNoExiste(cultivo.id, lote.variedad);
     }
 
+    // Nueva visita creada completamente limpia sin recomendaciones automáticas
     const nueva = {
       id: 'visita-' + Date.now(),
       fecha: new Date().toISOString().split('T')[0],
@@ -420,25 +534,12 @@ export const storageService = {
         lluviaAcumulada7Dias: 45.0,
         horasAltaHumedad: 38,
         riesgoEnfermedades: 'Moderado',
-        razonRiesgo: 'Condiciones típicas de la zona.'
+        razonRiesgo: 'Condiciones registradas de la zona.'
       },
       hallazgos: [],
-      recomendacionesFertirriego: [
-        {
-          semana: 1,
-          titulo: 'Semana 1 - Fertirriego y Nutrición',
-          alcance: 'Toda la Finca',
-          eventos: []
-        }
-      ],
-      recomendacionesPlaguicidas: [
-        {
-          semana: 1,
-          titulo: 'Semana 1 - Manejo Fitosanitario',
-          alcance: 'Toda la Finca',
-          aplicaciones: []
-        }
-      ]
+      // Totalmente vacías: El agrónomo las genera y propone a su criterio profesional
+      recomendacionesFertirriego: [],
+      recomendacionesPlaguicidas: []
     };
 
     this.guardarVisitaActiva(nueva);
@@ -448,51 +549,5 @@ export const storageService = {
   eliminarVisita(visitaId) {
     const historial = this.getHistorialVisitas().filter(v => v.id !== visitaId);
     localStorage.setItem(STORAGE_KEYS.VISITAS, JSON.stringify(historial));
-  },
-
-  exportarRespaldoJSON() {
-    const data = {
-      fechaExportacion: new Date().toISOString(),
-      asesor: {
-        nombre: 'Ing. Agr. Ricardo Barquero Chacón',
-        colegiado: 'Ord. 5896',
-        telefono: '+506 8894-5662',
-        email: 'h7coordinador@gmail.com',
-        ubicacion: 'Vázquez de Coronado, San José, Costa Rica'
-      },
-      catalogoPersonalizado: this.getCatalogoPersonalizado(),
-      clientes: this.getClientes(),
-      historialVisitas: this.getHistorialVisitas(),
-      visitaActivaId: localStorage.getItem(STORAGE_KEYS.VISITA_ACTUAL_ID)
-    };
-
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `AgroAsesor_Respaldo_${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  },
-
-  importarRespaldoJSON(contenidoJson) {
-    try {
-      const data = JSON.parse(contenidoJson);
-      if (data.catalogoPersonalizado) {
-        localStorage.setItem(STORAGE_KEYS.CATALOGO_PERSONALIZADO, JSON.stringify(data.catalogoPersonalizado));
-      }
-      if (data.clientes && Array.isArray(data.clientes)) {
-        localStorage.setItem(STORAGE_KEYS.CLIENTES, JSON.stringify(data.clientes));
-      }
-      if (data.historialVisitas && Array.isArray(data.historialVisitas)) {
-        localStorage.setItem(STORAGE_KEYS.VISITAS, JSON.stringify(data.historialVisitas));
-      }
-      if (data.visitaActivaId) {
-        localStorage.setItem(STORAGE_KEYS.VISITA_ACTUAL_ID, data.visitaActivaId);
-      }
-      return { exito: true };
-    } catch (e) {
-      return { exito: false, error: e.message };
-    }
   }
 };
