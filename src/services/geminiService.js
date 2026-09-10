@@ -27,7 +27,7 @@ export const geminiService = {
       return { exito: false, error: 'Por favor ingrese una clave de API antes de probar.' };
     }
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`;
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -103,7 +103,7 @@ ${promptUsuario || 'Revisar la información de este módulo, verificar compatibi
 `;
 
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
       const parts = [{ text: `${systemPrompt}\n\n${contenidoPrompt}` }];
 
@@ -136,7 +136,7 @@ ${promptUsuario || 'Revisar la información de este módulo, verificar compatibi
       return {
         exito: true,
         texto,
-        origen: 'Google Gemini 1.5 Flash (En vivo)'
+        origen: 'Google Gemini 2.0 Flash (En vivo)'
       };
     } catch (error) {
       console.warn('Error al llamar a Gemini API:', error);
