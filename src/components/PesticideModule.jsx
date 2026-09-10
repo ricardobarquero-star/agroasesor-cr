@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { 
   ShieldCheck, Plus, Trash2, AlertTriangle, Sparkles, Check, 
   Layers, FlaskConical, Calendar, AlertOctagon, HelpCircle,
-  X, CheckCircle2, Sliders, Shield, Sprout, ArrowRight, MapPin
+  X, CheckCircle2, Sliders, Shield, Sprout, ArrowRight, MapPin,
+  List
 } from 'lucide-react';
 import { crAgroDatabase } from '../data/crAgroDatabase';
 import { storageService } from '../services/storageService';
@@ -19,7 +20,7 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
   const [boquilla, setBoquilla] = useState('Cono hueco TX-4 (45 PSI)');
   const [observaciones, setObservaciones] = useState('');
 
-  // Filas dinámicas limpias (Sin productos pre-llenados)
+  // Filas dinámicas limpias
   const [lineasMezcla, setLineasMezcla] = useState([]);
 
   const recomendaciones = visita.recomendacionesPlaguicidas || [];
@@ -32,7 +33,26 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
     aplicaciones: []
   };
 
-  const productosDisponibles = storageService.getTodosLosPlaguicidas();
+  const todosPlaguicidas = storageService.getTodosLosPlaguicidas();
+
+  // Filtrar productos según el tipo de mezcla para mantener la regla de segregación agronómica
+  const productosFiltradosMezcla = todosPlaguicidas.filter(p => {
+    const cat = (p.categoria || '').toLowerCase();
+    const nombre = (p.nombreComercial || '').toLowerCase();
+    
+    // Insumos universales de tanque
+    if (cat.includes('acondicionador') || cat.includes('coadyuvante') || nombre.includes('carrier') || nombre.includes('break-thru')) {
+      return true;
+    }
+
+    if (tipoMezcla === 'fungicida_foliar') {
+      return cat.includes('fungicida') || cat.includes('foliar') || cat.includes('nutricional') || 
+             cat.includes('biológico') || nombre.includes('metalosato') || nombre.includes('cosmoquel') || p.esPersonalizado;
+    } else {
+      // insecticida_acaricida
+      return cat.includes('insecticida') || cat.includes('acaricida') || cat.includes('biológico') || p.esPersonalizado;
+    }
+  });
 
   // Obtener lista de lotes de la finca actual para el selector de alcance
   const clientes = storageService.getClientes();
@@ -48,20 +68,40 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
 
     if (tipo === 'fungicida_foliar') {
       setNombreApp(`Aplicación Foliar 1: Fungicida + Nutrición`);
-      // Iniciar con 1 fila limpia de tipo Fungicida lista para que el agrónomo redacte
       setLineasMezcla([
-        { orden: 1, tipo: 'Acondicionador', producto: '', dosis: '', fracIrac: 'Acondicionador', funcion: 'Regulación de pH y dureza' },
-        { orden: 2, tipo: 'Fungicida', producto: '', dosis: '', fracIrac: '', funcion: '' }
+        { orden: 1, tipo: 'Acondicionador', producto: '', dosis: '', fracIrac: 'Acondicionador', funcion: 'Regulación de pH y dureza', esManual: false },
+        { orden: 2, tipo: 'Fungicida', producto: '', dosis: '', fracIrac: '', funcion: '', esManual: false }
       ]);
     } else {
       setNombreApp(`Aplicación Foliar 2: Insecticida / Acaricida`);
-      // Iniciar con 1 fila limpia de tipo Insecticida/Acaricida
       setLineasMezcla([
-        { orden: 1, tipo: 'Acondicionador', producto: '', dosis: '', fracIrac: 'Acondicionador', funcion: 'Regulación de pH y dureza' },
-        { orden: 2, tipo: 'Insecticida', producto: '', dosis: '', fracIrac: '', funcion: '' }
+        { orden: 1, tipo: 'Acondicionador', producto: '', dosis: '', fracIrac: 'Acondicionador', funcion: 'Regulación de pH y dureza', esManual: false },
+        { orden: 2, tipo: 'Insecticida', producto: '', dosis: '', fracIrac: '', funcion: '', esManual: false }
       ]);
     }
     setMostrarModalApp(true);
+  };
+
+  // Manejar selección de producto en el dropdown de plaguicidas
+  const handleSeleccionarPlaguicida = (valor, idx) => {
+    const nuevas = [...lineasMezcla];
+    if (valor === '__manual__') {
+      nuevas[idx].esManual = true;
+      nuevas[idx].producto = '';
+    } else {
+      nuevas[idx].esManual = false;
+      nuevas[idx].producto = valor;
+
+      // Autocompletar categoría, FRAC/IRAC, dosis y función desde la base de datos
+      const encontrado = todosPlaguicidas.find(p => p.nombreComercial === valor);
+      if (encontrado) {
+        nuevas[idx].tipo = encontrado.categoria || nuevas[idx].tipo;
+        nuevas[idx].fracIrac = encontrado.codigoFracIrac || nuevas[idx].fracIrac;
+        nuevas[idx].dosis = encontrado.dosisEstandar || nuevas[idx].dosis;
+        nuevas[idx].funcion = encontrado.blancoBiologico || encontrado.ingredienteActivo || nuevas[idx].funcion;
+      }
+    }
+    setLineasMezcla(nuevas);
   };
 
   // Alerta de segregación agronómica
@@ -115,7 +155,6 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
   const handleGuardarAplicacion = (e) => {
     e.preventDefault();
 
-    // Auto-aprender cualquier producto escrito que no esté en la base
     lineasMezcla.forEach(l => {
       if (l.producto && l.producto.trim()) {
         storageService.registrarInsumoSiNoExiste({
@@ -191,7 +230,7 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
             <h2 className="font-bold text-base sm:text-lg text-slate-900">Aplicaciones Fitosanitarias y Nutrición Foliar</h2>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Manejo formulado por el agrónomo: <strong>Mezcla 1</strong> (Fungicidas + Foliares) y <strong>Mezcla 2</strong> (Insecticidas + Acaricidas). Con alcance por finca o lote.
+            Selección directa de plaguicidas del catálogo de Costa Rica en listas desplegables al tocar la celda.
           </p>
         </div>
 
@@ -365,7 +404,7 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                 </button>
               </div>
 
-              {/* Tabla con Orden de Mezcla Recomendado */}
+              {/* Tabla con Orden de Mezcla */}
               <div className="overflow-x-auto">
                 <table className="w-full text-xs text-left">
                   <thead>
@@ -428,7 +467,7 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
             </div>
             <h3 className="font-bold text-slate-800 text-sm">No hay aplicaciones programadas para la Semana {semanaActiva}</h3>
             <p className="text-xs text-slate-500 max-w-md mx-auto">
-              Utilice los botones superiores para redactar <strong>Mezcla 1</strong> o <strong>Mezcla 2</strong>, o marque la semana como sin aplicación fitosanitaria requerida.
+              Utilice los botones superiores para redactar <strong>Mezcla 1</strong> o <strong>Mezcla 2</strong> con listas desplegables directas.
             </p>
           </div>
         )}
@@ -451,7 +490,7 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                   <h3 className="font-extrabold text-sm sm:text-base leading-tight">
                     {tipoMezcla === 'fungicida_foliar' ? 'Mezcla 1: Fungicida + Nutrición Foliar' : 'Mezcla 2: Insecticida + Acaricida'}
                   </h3>
-                  <p className="text-[11px] text-white/80">Semana {semanaActiva} • Insumos de Costa Rica</p>
+                  <p className="text-[11px] text-white/80">Semana {semanaActiva} • Selección desplegable del Catálogo CR</p>
                 </div>
               </div>
               <button 
@@ -533,12 +572,12 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                 </div>
               )}
 
-              {/* TABLA DE PRODUCTOS EN EL ORDEN DE MEZCLA */}
+              {/* TABLA DE PRODUCTOS CON LISTAS DESPLEGABLES NATIVAS */}
               <div className="border border-slate-200 rounded-2xl p-3.5 bg-slate-50/50 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <div>
                     <span className="font-extrabold text-xs text-slate-900 block">
-                      Orden de Mezcla en Estañón (Paso a Paso)
+                      Orden de Mezcla en Estañón (Toque para seleccionar producto)
                     </span>
                     <span className="text-[10px] text-slate-500">
                       1. Acondicionador ➔ 2. Polvos/Gránulos ➔ 3. Líquidos ➔ 4. Foliares ➔ 5. Coadyuvante
@@ -548,7 +587,7 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                     type="button"
                     onClick={() => setLineasMezcla([
                       ...lineasMezcla,
-                      { orden: lineasMezcla.length + 1, tipo: tipoMezcla === 'fungicida_foliar' ? 'Fungicida' : 'Insecticida', producto: '', dosis: '', fracIrac: '', funcion: '' }
+                      { orden: lineasMezcla.length + 1, tipo: tipoMezcla === 'fungicida_foliar' ? 'Fungicida' : 'Insecticida', producto: '', dosis: '', fracIrac: '', funcion: '', esManual: false }
                     ])}
                     className="px-2 py-1 bg-purple-700 text-white rounded-lg text-[11px] font-bold hover:bg-purple-800 flex items-center gap-1"
                   >
@@ -563,25 +602,50 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                         {idx + 1}
                       </span>
                       
-                      <input
-                        type="text"
-                        list="plaguicidas-list"
-                        value={l.producto}
-                        onChange={(e) => {
-                          const nuevo = [...lineasMezcla];
-                          nuevo[idx].producto = e.target.value;
-                          
-                          const encontrado = productosDisponibles.find(p => p.nombreComercial.toLowerCase() === e.target.value.toLowerCase());
-                          if (encontrado) {
-                            nuevo[idx].fracIrac = encontrado.codigoFracIrac || nuevo[idx].fracIrac;
-                            nuevo[idx].dosis = encontrado.dosisEstandar || nuevo[idx].dosis;
-                            nuevo[idx].tipo = encontrado.categoria || nuevo[idx].tipo;
-                          }
-                          setLineasMezcla(nuevo);
-                        }}
-                        placeholder="Insumo comercial (ej. Bellis, Oberon, Switch)"
-                        className="flex-1 min-w-[150px] text-xs font-semibold border border-slate-200 rounded-lg p-1.5 outline-none"
-                      />
+                      {/* CELDA DE PRODUCTO: LISTA DESPLEGABLE NATIVA */}
+                      {!l.esManual ? (
+                        <div className="flex-1 min-w-[200px] flex items-center gap-1">
+                          <select
+                            value={l.producto}
+                            onChange={(e) => handleSeleccionarPlaguicida(e.target.value, idx)}
+                            className="w-full text-xs font-bold text-slate-900 border border-slate-300 rounded-lg p-2 bg-purple-50/40 outline-none focus:ring-2 focus:ring-purple-500"
+                          >
+                            <option value="">-- Toque para desplegar catálogo ({productosFiltradosMezcla.length} insumos) --</option>
+                            {productosFiltradosMezcla.map((p, i) => (
+                              <option key={i} value={p.nombreComercial}>
+                                {p.nombreComercial} ({p.categoria || ''} {p.codigoFracIrac ? `• ${p.codigoFracIrac}` : ''})
+                              </option>
+                            ))}
+                            <option value="__manual__">✏️ [+ Digitar otro producto manual...]</option>
+                          </select>
+                        </div>
+                      ) : (
+                        <div className="flex-1 min-w-[200px] flex items-center gap-1">
+                          <input
+                            type="text"
+                            value={l.producto}
+                            onChange={(e) => {
+                              const nuevo = [...lineasMezcla];
+                              nuevo[idx].producto = e.target.value;
+                              setLineasMezcla(nuevo);
+                            }}
+                            placeholder="Escriba nombre comercial del producto"
+                            className="w-full text-xs font-semibold border border-purple-300 rounded-lg p-2 outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nuevo = [...lineasMezcla];
+                              nuevo[idx].esManual = false;
+                              setLineasMezcla(nuevo);
+                            }}
+                            className="p-1 text-purple-700 hover:bg-purple-50 rounded"
+                            title="Volver a lista desplegable"
+                          >
+                            <List className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
 
                       <select
                         value={l.tipo}
@@ -590,7 +654,7 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                           nuevo[idx].tipo = e.target.value;
                           setLineasMezcla(nuevo);
                         }}
-                        className="text-xs border border-slate-200 rounded-lg p-1.5 bg-slate-50 outline-none w-24"
+                        className="text-xs border border-slate-200 rounded-lg p-2 bg-slate-50 outline-none w-24"
                       >
                         <option value="Acondicionador">Acondic.</option>
                         <option value="Fungicida">Fungicida</option>
@@ -610,7 +674,7 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                           setLineasMezcla(nuevo);
                         }}
                         placeholder="Dosis"
-                        className="w-24 text-xs font-bold text-center border border-slate-200 rounded-lg p-1.5 outline-none"
+                        className="w-24 text-xs font-bold text-center border border-slate-200 rounded-lg p-2 outline-none"
                       />
 
                       <input
@@ -622,7 +686,7 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                           setLineasMezcla(nuevo);
                         }}
                         placeholder="FRAC/IRAC"
-                        className="w-24 text-xs font-bold text-indigo-700 text-center border border-slate-200 rounded-lg p-1.5 outline-none"
+                        className="w-24 text-xs font-bold text-indigo-700 text-center border border-slate-200 rounded-lg p-2 outline-none"
                       />
 
                       <button
@@ -636,14 +700,6 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                   ))}
                 </div>
               </div>
-
-              <datalist id="plaguicidas-list">
-                {productosDisponibles.map((p, i) => (
-                  <option key={i} value={p.nombreComercial}>
-                    {p.categoria} — {p.ingredienteActivo || ''} ({p.codigoFracIrac || ''})
-                  </option>
-                ))}
-              </datalist>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">

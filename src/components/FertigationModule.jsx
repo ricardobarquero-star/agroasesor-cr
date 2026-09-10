@@ -3,7 +3,7 @@ import {
   Droplet, Plus, Trash2, AlertTriangle, Sparkles, Check, 
   Layers, FlaskConical, HelpCircle, ChevronDown, Calendar,
   Sliders, Gauge, Sprout, ArrowRight, BookOpen, Search, X,
-  MapPin, CheckCircle2
+  MapPin, CheckCircle2, Edit3, List
 } from 'lucide-react';
 import { crAgroDatabase } from '../data/crAgroDatabase';
 import { storageService } from '../services/storageService';
@@ -66,7 +66,7 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
   const [ph, setPh] = useState('5.8');
   const [observaciones, setObservaciones] = useState('');
 
-  // Filas limpias (Sin recomendaciones impuestas por la aplicación)
+  // Filas del formulario (Inician limpias, cada fila contiene modo 'dropdown' o 'manual')
   const [lineasProductos, setLineasProductos] = useState([]);
   const [lineasTanqueA, setLineasTanqueA] = useState([]);
   const [lineasTanqueB, setLineasTanqueB] = useState([]);
@@ -80,13 +80,27 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
   };
 
   const modalidadActualConfig = MODALIDADES.find(m => m.id === modalidadSeleccionada) || MODALIDADES[0];
-  const fertilizantesDisponibles = storageService.getTodosLosFertilizantes(modalidadSeleccionada);
+  const todosFertilizantes = storageService.getTodosLosFertilizantes(modalidadSeleccionada);
 
-  // Obtener lista de lotes de la finca actual para el selector de alcance
+  // Obtener lotes de la finca para el alcance
   const clientes = storageService.getClientes();
   const clienteActual = clientes.find(c => c.id === visita.clienteId);
   const fincaActual = clienteActual?.fincas?.find(f => f.id === visita.finca?.id);
   const lotesDeFinca = fincaActual?.lotes || [visita.lote].filter(Boolean);
+
+  // Listas especializadas para desplegar en cada celda según el tanque
+  const productosTanqueA = todosFertilizantes.filter(f => {
+    const n = f.nombreComercial.toLowerCase();
+    return n.includes('calcinit') || n.includes('calcio') || n.includes('nitrato') || 
+           n.includes('hierro') || n.includes('librel') || n.includes('multi-k') || f.esPersonalizado;
+  });
+
+  const productosTanqueB = todosFertilizantes.filter(f => {
+    const n = f.nombreComercial.toLowerCase();
+    return n.includes('mkp') || n.includes('map') || n.includes('fosfato') || 
+           n.includes('sulfato') || n.includes('magnesio') || n.includes('cosmoquel') || 
+           n.includes('ácido') || n.includes('boro') || n.includes('zinc') || n.includes('micro') || f.esPersonalizado;
+  });
 
   // Verificar incompatibilidad de Calcio con Sulfatos/Fosfatos en Tanque A (Dosatron)
   const verificarIncompatibilidadCalcio = (lineasA) => {
@@ -103,32 +117,52 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
 
   const alertaCalcioA = modalidadSeleccionada === 'dosatron' ? verificarIncompatibilidadCalcio(lineasTanqueA) : null;
 
-  // Abrir modal configurando un lienzo limpio para que el agrónomo redacte su recomendación
+  // Abrir modal configurando un lienzo limpio
   const handleAbrirModalConModalidad = (modId) => {
     setModalidadSeleccionada(modId);
     setNombreEvento('');
     setAlcanceEvento('Toda la Finca');
     setObservaciones('');
     
-    // Iniciar con 1 fila limpia y vacía lista para llenarse
+    // Iniciar con 1 fila limpia con selector desplegable listo
     if (modId === 'dosatron') {
-      setLineasTanqueA([{ producto: '', dosis: '', unidad: 'kg / tanque 1000 L', aporte: '' }]);
-      setLineasTanqueB([{ producto: '', dosis: '', unidad: 'kg / tanque 1000 L', aporte: '' }]);
+      setLineasTanqueA([{ producto: '', dosis: '', unidad: 'kg / tanque 1000 L', aporte: '', esManual: false }]);
+      setLineasTanqueB([{ producto: '', dosis: '', unidad: 'kg / tanque 1000 L', aporte: '', esManual: false }]);
       setLineasProductos([]);
     } else {
       const config = MODALIDADES.find(m => m.id === modId) || MODALIDADES[0];
-      setLineasProductos([{ producto: '', dosis: '', unidad: config.unidades[0], aporte: '' }]);
+      setLineasProductos([{ producto: '', dosis: '', unidad: config.unidades[0], aporte: '', esManual: false }]);
       setLineasTanqueA([]);
       setLineasTanqueB([]);
     }
     setMostrarModalEvento(true);
   };
 
+  // Manejar selección de producto en el dropdown
+  const handleSeleccionarProductoEnLinea = (valor, lineas, setLineas, idx, listaFuente) => {
+    const nuevas = [...lineas];
+    if (valor === '__manual__') {
+      nuevas[idx].esManual = true;
+      nuevas[idx].producto = '';
+    } else {
+      nuevas[idx].esManual = false;
+      nuevas[idx].producto = valor;
+      // Auto-completar dosis sugerida si existe
+      const encontrado = listaFuente.find(p => p.nombreComercial === valor);
+      if (encontrado && encontrado.dosisTipica && !nuevas[idx].dosis) {
+        const partes = encontrado.dosisTipica.split(' ');
+        if (partes.length >= 1 && !isNaN(parseFloat(partes[0]))) {
+          nuevas[idx].dosis = partes[0];
+        }
+      }
+    }
+    setLineas(nuevas);
+  };
+
   // Guardar nuevo evento / cuadro en la semana activa
   const handleGuardarEvento = (e) => {
     e.preventDefault();
 
-    // Auto-aprender insumos nuevos que el usuario haya escrito manualmente
     const todosProds = modalidadSeleccionada === 'dosatron' 
       ? [...lineasTanqueA, ...lineasTanqueB] 
       : lineasProductos;
@@ -206,7 +240,7 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
             <h2 className="font-bold text-base sm:text-lg text-slate-900">Recomendaciones de Fertirriego y Nutrición</h2>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            El agrónomo formula cada cuadro según la modalidad requerida y determina el alcance (por finca completa o por lote específico).
+            Selección directa de insumos en listas desplegables al tocar la celda. Alcance configurable por finca o lote.
           </p>
         </div>
 
@@ -263,14 +297,14 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
         )}
       </div>
 
-      {/* Barra de Modalidades Disponibles para Agregar */}
+      {/* Botones de Modalidades */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
             <Sliders className="w-4 h-4 text-blue-600" />
             <span>Generar Cuadro Nutricional (Semana {semanaActiva}):</span>
           </h3>
-          <span className="text-[11px] text-slate-400">Seleccione la modalidad</span>
+          <span className="text-[11px] text-slate-400">Toque una modalidad</span>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
@@ -292,7 +326,7 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
         </div>
       </div>
 
-      {/* Lista de Cuadros/Eventos Programados para la Semana Activa */}
+      {/* Lista de Cuadros Programados */}
       <div className="space-y-4">
         {(recomendacionSemana.eventos && recomendacionSemana.eventos.length > 0) ? (
           recomendacionSemana.eventos.map((ev, index) => (
@@ -338,7 +372,7 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                 </div>
               </div>
 
-              {/* Si es Dosatron (Tanque A y Tanque B) */}
+              {/* Si es Dosatron */}
               {ev.lineasTanqueA && ev.lineasTanqueB ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="border border-blue-200 rounded-xl p-3 bg-blue-50/40">
@@ -406,7 +440,7 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
             </div>
             <h3 className="font-bold text-slate-800 text-sm">No hay cuadros programados para la Semana {semanaActiva}</h3>
             <p className="text-xs text-slate-500 max-w-md mx-auto">
-              Seleccione una modalidad arriba para generar una recomendación nutricional a su criterio técnico profesional.
+              Seleccione una modalidad arriba para generar una recomendación nutricional con lista desplegable en cada celda.
             </p>
           </div>
         )}
@@ -508,7 +542,7 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                 </div>
               )}
 
-              {/* DOSATRON: TANQUE A Y TANQUE B */}
+              {/* DOSATRON: TANQUE A Y TANQUE B CON LISTAS DESPLEGABLES NATIVAS */}
               {modalidadSeleccionada === 'dosatron' ? (
                 <div className="space-y-4">
                   {/* TANQUE A */}
@@ -519,7 +553,7 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                       </span>
                       <button
                         type="button"
-                        onClick={() => setLineasTanqueA([...lineasTanqueA, { producto: '', dosis: '', unidad: 'kg / tanque 1000 L', aporte: '' }])}
+                        onClick={() => setLineasTanqueA([...lineasTanqueA, { producto: '', dosis: '', unidad: 'kg / tanque 1000 L', aporte: '', esManual: false }])}
                         className="px-2 py-1 bg-blue-600 text-white rounded-lg text-[11px] font-bold hover:bg-blue-700 flex items-center gap-1"
                       >
                         <Plus className="w-3 h-3" /> Agregar Insumo
@@ -529,18 +563,51 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                     <div className="space-y-2">
                       {lineasTanqueA.map((l, idx) => (
                         <div key={idx} className="bg-white p-2.5 rounded-xl border border-blue-100 flex flex-wrap sm:flex-nowrap items-center gap-2">
-                          <input
-                            type="text"
-                            list="fertilizantes-list"
-                            value={l.producto}
-                            onChange={(e) => {
-                              const nuevo = [...lineasTanqueA];
-                              nuevo[idx].producto = e.target.value;
-                              setLineasTanqueA(nuevo);
-                            }}
-                            placeholder="Producto (ej: YaraTera Calcinit, Librel Fe)"
-                            className="flex-1 min-w-[140px] text-xs font-semibold border border-slate-200 rounded-lg p-1.5 outline-none"
-                          />
+                          {/* CELDA DE PRODUCTO: LISTA DESPLEGABLE NATIVA */}
+                          {!l.esManual ? (
+                            <div className="flex-1 min-w-[180px] flex items-center gap-1">
+                              <select
+                                value={l.producto}
+                                onChange={(e) => handleSeleccionarProductoEnLinea(e.target.value, lineasTanqueA, setLineasTanqueA, idx, productosTanqueA)}
+                                className="w-full text-xs font-bold text-slate-900 border border-blue-200 rounded-lg p-2 bg-blue-50/50 outline-none focus:ring-2 focus:ring-blue-500"
+                              >
+                                <option value="">-- Toque para desplegar productos Tanque A ({productosTanqueA.length}) --</option>
+                                {productosTanqueA.map((p, i) => (
+                                  <option key={i} value={p.nombreComercial}>
+                                    {p.nombreComercial} ({p.categoria || 'Soluble'})
+                                  </option>
+                                ))}
+                                <option value="__manual__">✏️ [+ Escribir otro producto manual...]</option>
+                              </select>
+                            </div>
+                          ) : (
+                            <div className="flex-1 min-w-[180px] flex items-center gap-1">
+                              <input
+                                type="text"
+                                value={l.producto}
+                                onChange={(e) => {
+                                  const nuevo = [...lineasTanqueA];
+                                  nuevo[idx].producto = e.target.value;
+                                  setLineasTanqueA(nuevo);
+                                }}
+                                placeholder="Escriba nombre del producto"
+                                className="w-full text-xs font-semibold border border-blue-300 rounded-lg p-2 outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nuevo = [...lineasTanqueA];
+                                  nuevo[idx].esManual = false;
+                                  setLineasTanqueA(nuevo);
+                                }}
+                                className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                                title="Volver a lista desplegable"
+                              >
+                                <List className="w-4 h-4" />
+                              </button>
+                            </div>
+                          )}
+
                           <input
                             type="text"
                             value={l.dosis}
@@ -550,8 +617,9 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                               setLineasTanqueA(nuevo);
                             }}
                             placeholder="Dosis"
-                            className="w-20 text-xs font-bold text-center border border-slate-200 rounded-lg p-1.5 outline-none"
+                            className="w-20 text-xs font-bold text-center border border-slate-200 rounded-lg p-2 outline-none"
                           />
+
                           <select
                             value={l.unidad}
                             onChange={(e) => {
@@ -559,12 +627,13 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                               nuevo[idx].unidad = e.target.value;
                               setLineasTanqueA(nuevo);
                             }}
-                            className="text-xs border border-slate-200 rounded-lg p-1.5 bg-slate-50 outline-none"
+                            className="text-xs border border-slate-200 rounded-lg p-2 bg-slate-50 outline-none"
                           >
                             {modalidadActualConfig.unidades.map(u => (
                               <option key={u} value={u}>{u}</option>
                             ))}
                           </select>
+
                           <button
                             type="button"
                             onClick={() => setLineasTanqueA(lineasTanqueA.filter((_, i) => i !== idx))}
@@ -585,7 +654,7 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                       </span>
                       <button
                         type="button"
-                        onClick={() => setLineasTanqueB([...lineasTanqueB, { producto: '', dosis: '', unidad: 'kg / tanque 1000 L', aporte: '' }])}
+                        onClick={() => setLineasTanqueB([...lineasTanqueB, { producto: '', dosis: '', unidad: 'kg / tanque 1000 L', aporte: '', esManual: false }])}
                         className="px-2 py-1 bg-amber-600 text-white rounded-lg text-[11px] font-bold hover:bg-amber-700 flex items-center gap-1"
                       >
                         <Plus className="w-3 h-3" /> Agregar Insumo
@@ -595,18 +664,51 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                     <div className="space-y-2">
                       {lineasTanqueB.map((l, idx) => (
                         <div key={idx} className="bg-white p-2.5 rounded-xl border border-amber-100 flex flex-wrap sm:flex-nowrap items-center gap-2">
-                          <input
-                            type="text"
-                            list="fertilizantes-list"
-                            value={l.producto}
-                            onChange={(e) => {
-                              const nuevo = [...lineasTanqueB];
-                              nuevo[idx].producto = e.target.value;
-                              setLineasTanqueB(nuevo);
-                            }}
-                            placeholder="Producto (ej: Haifa MKP, Sulfato Magnesio)"
-                            className="flex-1 min-w-[140px] text-xs font-semibold border border-slate-200 rounded-lg p-1.5 outline-none"
-                          />
+                          {/* CELDA DE PRODUCTO: LISTA DESPLEGABLE NATIVA */}
+                          {!l.esManual ? (
+                            <div className="flex-1 min-w-[180px] flex items-center gap-1">
+                              <select
+                                value={l.producto}
+                                onChange={(e) => handleSeleccionarProductoEnLinea(e.target.value, lineasTanqueB, setLineasTanqueB, idx, productosTanqueB)}
+                                className="w-full text-xs font-bold text-slate-900 border border-amber-200 rounded-lg p-2 bg-amber-50/50 outline-none focus:ring-2 focus:ring-amber-500"
+                              >
+                                <option value="">-- Toque para desplegar productos Tanque B ({productosTanqueB.length}) --</option>
+                                {productosTanqueB.map((p, i) => (
+                                  <option key={i} value={p.nombreComercial}>
+                                    {p.nombreComercial} ({p.categoria || 'Soluble'})
+                                  </option>
+                                ))}
+                                <option value="__manual__">✏️ [+ Escribir otro producto manual...]</option>
+                              </select>
+                            </div>
+                          ) : (
+                            <div className="flex-1 min-w-[180px] flex items-center gap-1">
+                              <input
+                                type="text"
+                                value={l.producto}
+                                onChange={(e) => {
+                                  const nuevo = [...lineasTanqueB];
+                                  nuevo[idx].producto = e.target.value;
+                                  setLineasTanqueB(nuevo);
+                                }}
+                                placeholder="Escriba nombre del producto"
+                                className="w-full text-xs font-semibold border border-amber-300 rounded-lg p-2 outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nuevo = [...lineasTanqueB];
+                                  nuevo[idx].esManual = false;
+                                  setLineasTanqueB(nuevo);
+                                }}
+                                className="p-1 text-amber-600 hover:bg-amber-50 rounded"
+                                title="Volver a lista desplegable"
+                              >
+                                <List className="w-4 h-4" />
+                              </button>
+                            </div>
+                          )}
+
                           <input
                             type="text"
                             value={l.dosis}
@@ -616,8 +718,9 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                               setLineasTanqueB(nuevo);
                             }}
                             placeholder="Dosis"
-                            className="w-20 text-xs font-bold text-center border border-slate-200 rounded-lg p-1.5 outline-none"
+                            className="w-20 text-xs font-bold text-center border border-slate-200 rounded-lg p-2 outline-none"
                           />
+
                           <select
                             value={l.unidad}
                             onChange={(e) => {
@@ -625,12 +728,13 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                               nuevo[idx].unidad = e.target.value;
                               setLineasTanqueB(nuevo);
                             }}
-                            className="text-xs border border-slate-200 rounded-lg p-1.5 bg-slate-50 outline-none"
+                            className="text-xs border border-slate-200 rounded-lg p-2 bg-slate-50 outline-none"
                           >
                             {modalidadActualConfig.unidades.map(u => (
                               <option key={u} value={u}>{u}</option>
                             ))}
                           </select>
+
                           <button
                             type="button"
                             onClick={() => setLineasTanqueB(lineasTanqueB.filter((_, i) => i !== idx))}
@@ -644,7 +748,7 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                   </div>
                 </div>
               ) : (
-                /* LISTA ÚNICA PARA LAS DEMÁS MODALIDADES */
+                /* LISTA ÚNICA PARA LAS DEMÁS MODALIDADES CON DROPDOWN NATIVO */
                 <div className="border border-slate-200 rounded-2xl p-3.5 bg-slate-50/40 space-y-2.5">
                   <div className="flex items-center justify-between">
                     <span className="font-extrabold text-xs text-slate-800">
@@ -652,7 +756,7 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                     </span>
                     <button
                       type="button"
-                      onClick={() => setLineasProductos([...lineasProductos, { producto: '', dosis: '', unidad: modalidadActualConfig.unidades[0], aporte: '' }])}
+                      onClick={() => setLineasProductos([...lineasProductos, { producto: '', dosis: '', unidad: modalidadActualConfig.unidades[0], aporte: '', esManual: false }])}
                       className="px-2 py-1 bg-emerald-700 text-white rounded-lg text-[11px] font-bold hover:bg-emerald-800 flex items-center gap-1"
                     >
                       <Plus className="w-3 h-3" /> Agregar Insumo
@@ -662,18 +766,51 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                   <div className="space-y-2">
                     {lineasProductos.map((l, idx) => (
                       <div key={idx} className="bg-white p-2.5 rounded-xl border border-slate-200 flex flex-wrap sm:flex-nowrap items-center gap-2">
-                        <input
-                          type="text"
-                          list="fertilizantes-list"
-                          value={l.producto}
-                          onChange={(e) => {
-                            const nuevo = [...lineasProductos];
-                            nuevo[idx].producto = e.target.value;
-                            setLineasProductos(nuevo);
-                          }}
-                          placeholder={modalidadSeleccionada === 'granular' ? "Fórmula edáfica (ej: 10-30-10, Hidrocomplex)" : "Fertilizante o enraizador"}
-                          className="flex-1 min-w-[160px] text-xs font-semibold border border-slate-200 rounded-lg p-1.5 outline-none"
-                        />
+                        {/* CELDA DE PRODUCTO: LISTA DESPLEGABLE NATIVA */}
+                        {!l.esManual ? (
+                          <div className="flex-1 min-w-[200px] flex items-center gap-1">
+                            <select
+                              value={l.producto}
+                              onChange={(e) => handleSeleccionarProductoEnLinea(e.target.value, lineasProductos, setLineasProductos, idx, todosFertilizantes)}
+                              className="w-full text-xs font-bold text-slate-900 border border-slate-300 rounded-lg p-2 bg-slate-50 outline-none focus:ring-2 focus:ring-emerald-500"
+                            >
+                              <option value="">-- Toque para desplegar catálogo ({todosFertilizantes.length} insumos) --</option>
+                              {todosFertilizantes.map((p, i) => (
+                                <option key={i} value={p.nombreComercial}>
+                                  {p.nombreComercial} ({p.categoria || ''})
+                                </option>
+                              ))}
+                              <option value="__manual__">✏️ [+ Escribir otro producto manual...]</option>
+                            </select>
+                          </div>
+                        ) : (
+                          <div className="flex-1 min-w-[200px] flex items-center gap-1">
+                            <input
+                              type="text"
+                              value={l.producto}
+                              onChange={(e) => {
+                                const nuevo = [...lineasProductos];
+                                nuevo[idx].producto = e.target.value;
+                                setLineasProductos(nuevo);
+                              }}
+                              placeholder="Escriba nombre del producto o fórmula"
+                              className="w-full text-xs font-semibold border border-emerald-400 rounded-lg p-2 outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nuevo = [...lineasProductos];
+                                nuevo[idx].esManual = false;
+                                setLineasProductos(nuevo);
+                              }}
+                              className="p-1 text-emerald-700 hover:bg-emerald-50 rounded"
+                              title="Volver a lista desplegable"
+                            >
+                              <List className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+
                         <input
                           type="text"
                           value={l.dosis}
@@ -683,8 +820,9 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                             setLineasProductos(nuevo);
                           }}
                           placeholder="Dosis"
-                          className="w-24 text-xs font-bold text-center border border-slate-200 rounded-lg p-1.5 outline-none"
+                          className="w-24 text-xs font-bold text-center border border-slate-200 rounded-lg p-2 outline-none"
                         />
+
                         <select
                           value={l.unidad}
                           onChange={(e) => {
@@ -692,12 +830,13 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                             nuevo[idx].unidad = e.target.value;
                             setLineasProductos(nuevo);
                           }}
-                          className="text-xs border border-slate-200 rounded-lg p-1.5 bg-slate-50 outline-none"
+                          className="text-xs border border-slate-200 rounded-lg p-2 bg-slate-50 outline-none"
                         >
                           {modalidadActualConfig.unidades.map(u => (
                             <option key={u} value={u}>{u}</option>
                           ))}
                         </select>
+
                         <button
                           type="button"
                           onClick={() => setLineasProductos(lineasProductos.filter((_, i) => i !== idx))}
@@ -711,16 +850,7 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                 </div>
               )}
 
-              {/* Datalist con productos para autocompletar */}
-              <datalist id="fertilizantes-list">
-                {fertilizantesDisponibles.map((f, i) => (
-                  <option key={i} value={f.nombreComercial}>
-                    {f.categoria} — {f.composicion || f.distribuidores || ''}
-                  </option>
-                ))}
-              </datalist>
-
-              {/* Instrucciones para el productor */}
+              {/* Instrucciones */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
                   Instrucciones Específicas para el Productor / Regador
