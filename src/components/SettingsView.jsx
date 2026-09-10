@@ -242,7 +242,7 @@ export default function SettingsView({ onDataReload }) {
                 type={showKey ? 'text' : 'password'}
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder="AIzaSy..."
+                placeholder="Pegue aquí su clave (ej: AQ.Ab... o AIzaSy...)"
                 className="w-full bg-slate-50 border border-slate-300 rounded-xl pl-3 pr-10 py-2.5 text-xs font-mono text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
               />
               <button
@@ -314,7 +314,7 @@ export default function SettingsView({ onDataReload }) {
             <span className="font-bold text-slate-800 block">¿Cómo obtener su clave gratis de Google Gemini?</span>
             <p>1. Ingrese con su cuenta de Google a: <a href="https://aistudio.google.com/" target="_blank" rel="noreferrer" className="text-blue-600 underline font-semibold">aistudio.google.com</a></p>
             <p>2. Presione en <strong>"Get API key"</strong> ➔ <strong>"Create API key in new project"</strong>.</p>
-            <p>3. Copie la clave que inicia con <code className="bg-slate-200 px-1 py-0.2 rounded font-mono">AIzaSy...</code> y péguela aquí en su teléfono.</p>
+            <p>3. Copie la clave que inicia con <code className="bg-slate-200 px-1 py-0.2 rounded font-mono">AQ.Ab...</code> o <code className="bg-slate-200 px-1 py-0.2 rounded font-mono">AIzaSy...</code> y péguela aquí en su teléfono.</p>
           </div>
         </div>
       </div>

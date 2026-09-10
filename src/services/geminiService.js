@@ -1,11 +1,69 @@
 /**
  * Servicio de Asistente Virtual Agronómico con Google Gemini API
  * Contextualizado para el Ing. Agr. Ricardo Manuel Barquero Chacón (Colegiado Ord. 5896).
+ * Compatible con nuevas claves de autenticación de Google AI Studio (prefijo AQ.Ab...) y estándar (AIzaSy...)
+ * Modelos soportados: gemini-3.6-flash, gemini-3.6, gemini-2.0-flash, gemini-1.5-flash.
  * "LA ÚLTIMA DECISIÓN LA TOMA EL INGENIERO AGRÓNOMO"
  */
 
+// Modelos ordenados por prioridad de nueva generación
+const MODELOS_DISPONIBLES = [
+  'gemini-3.6-flash',
+  'gemini-3.6',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash'
+];
+
+async function llamarApiGeminiConCascada({ key, requestBody }) {
+  let ultimoError = null;
+
+  for (const modelo of MODELOS_DISPONIBLES) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${encodeURIComponent(key)}`;
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': key // Obligatorio para las nuevas claves que inician con AQ.
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        const texto = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        return {
+          exito: true,
+          texto,
+          modeloUsado: modelo
+        };
+      }
+
+      const errData = await response.json().catch(() => ({}));
+      const msg = errData.error?.message || `HTTP ${response.status}`;
+      ultimoError = msg;
+
+      // Si el modelo específico no está disponible en este tier o clave, probar siguiente modelo
+      if (response.status === 404 || msg.toLowerCase().includes('not found')) {
+        console.warn(`Modelo ${modelo} no encontrado para esta clave, intentando siguiente...`);
+        continue;
+      } else {
+        // Error de credenciales u otro problema
+        return { exito: false, error: msg, modeloUsado: modelo };
+      }
+    } catch (e) {
+      ultimoError = e.message;
+    }
+  }
+
+  return {
+    exito: false,
+    error: ultimoError || 'No se pudo conectar con los servidores de Google Gemini.'
+  };
+}
+
 export const geminiService = {
-  // Clave guardada en localStorage
   getApiKey() {
     return localStorage.getItem('agroasesor_gemini_api_key') || '';
   },
@@ -19,37 +77,31 @@ export const geminiService = {
   },
 
   /**
-   * Probar conectividad real con la clave API de Gemini
+   * Probar conectividad real con la clave API de Gemini (acepta claves AQ.Ab... y AIzaSy...)
    */
   async probarConexion(claveAProbar) {
     const key = (claveAProbar || this.getApiKey() || '').trim();
     if (!key) {
       return { exito: false, error: 'Por favor ingrese una clave de API antes de probar.' };
     }
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: 'Responde únicamente con la palabra "CONECTADO" si recibes este mensaje de prueba.' }] }]
-        })
-      });
 
-      if (!response.ok) {
-        const errData = await response.json();
-        return { exito: false, error: errData.error?.message || `Error HTTP ${response.status} de autenticación.` };
-      }
+    const testBody = {
+      contents: [{ parts: [{ text: 'Responde únicamente con la palabra "CONECTADO" si recibes este mensaje de prueba.' }] }]
+    };
 
-      const result = await response.json();
-      const texto = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      return { 
-        exito: true, 
-        mensaje: '¡Conexión exitosa con Google Gemini! Clave verificada y activa.',
-        respuesta: texto.trim()
+    const res = await llamarApiGeminiConCascada({ key, requestBody: testBody });
+    if (res.exito) {
+      return {
+        exito: true,
+        mensaje: `¡Conexión exitosa con Google Gemini (${res.modeloUsado})! Clave nueva ${key.startsWith('AQ.') ? 'AQ' : 'estándar'} verificada y activa en el teléfono.`,
+        respuesta: res.texto.trim(),
+        modelo: res.modeloUsado
       };
-    } catch (e) {
-      return { exito: false, error: `Fallo de conexión o red: ${e.message}` };
+    } else {
+      return {
+        exito: false,
+        error: `Fallo al validar clave: ${res.error}`
+      };
     }
   },
 
@@ -79,7 +131,7 @@ REGLAS DE ORO OBLIGATORIAS:
    - Las aplicaciones de FUNGICIDAS con FERTILIZANTES FOLIARES van juntos (metalosatos, elementos menores, bioestimulantes).
    - Las aplicaciones de INSECTICIDAS y ACARICIDAS van en aplicaciones SEPARADAS. NO se mezclan en el mismo caldo que los fungicidas/foliares.
 5. FERTIRRIEGO Y NUTRICIÓN MULTIMODAL:
-   El módulo de fertirriego no se limita a riego básico ni solo a tanques A/B. Se manejan 6 modalidades técnicas:
+   El módulo de fertirriego maneja 6 modalidades técnicas:
    - Tanque directo
    - Mezclas con Venturi
    - Dosatron (Tanque A y Tanque B con inyección proporcional)
@@ -102,46 +154,32 @@ ${JSON.stringify(contexto, null, 2)}
 ${promptUsuario || 'Revisar la información de este módulo, verificar compatibilidad agronómica, rotación anti-resistencia FRAC/IRAC o balance nutricional para Costa Rica.'}
 `;
 
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    const parts = [{ text: `${systemPrompt}\n\n${contenidoPrompt}` }];
 
-      const parts = [{ text: `${systemPrompt}\n\n${contenidoPrompt}` }];
-
-      if (imagenBase64) {
-        const cleanBase64 = imagenBase64.replace(/^data:image\/\w+;base64,/, '');
-        parts.push({
-          inlineData: {
-            mimeType: 'image/jpeg',
-            data: cleanBase64
-          }
-        });
-      }
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts }]
-        })
+    if (imagenBase64) {
+      const cleanBase64 = imagenBase64.replace(/^data:image\/\w+;base64,/, '');
+      parts.push({
+        inlineData: {
+          mimeType: 'image/jpeg',
+          data: cleanBase64
+        }
       });
+    }
 
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error?.message || `Error HTTP ${response.status}`);
-      }
+    const requestBody = { contents: [{ parts }] };
 
-      const result = await response.json();
-      const texto = result.candidates?.[0]?.content?.parts?.[0]?.text || 'No se recibió respuesta del modelo.';
+    const res = await llamarApiGeminiConCascada({ key: apiKey, requestBody });
 
+    if (res.exito) {
       return {
         exito: true,
-        texto,
-        origen: 'Google Gemini 2.0 Flash (En vivo)'
+        texto: res.texto,
+        origen: `Google Gemini (${res.modeloUsado}) [En vivo]`
       };
-    } catch (error) {
-      console.warn('Error al llamar a Gemini API:', error);
+    } else {
+      console.warn('Error al llamar a Gemini API:', res.error);
       return {
-        error: `Error de conexión con Gemini: ${error.message}`,
+        error: `Error de conexión con Gemini: ${res.error}`,
         sugerencias: this.generarRespuestaOffline({ modulo, contexto, promptUsuario })
       };
     }
