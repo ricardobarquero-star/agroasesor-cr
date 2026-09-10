@@ -10,6 +10,7 @@ import PesticideModule from './components/PesticideModule';
 import ReportModule from './components/ReportModule';
 import AiAssistantModal from './components/AiAssistantModal';
 import SettingsModal from './components/SettingsModal';
+import SettingsView from './components/SettingsView';
 import { weatherService } from './services/weatherService';
 import { storageService } from './services/storageService';
 import { crAgroDatabase } from './data/crAgroDatabase';
@@ -130,7 +131,7 @@ export default function App() {
                 </span>
               </div>
               <p className="text-[11px] text-emerald-200/90 font-medium">
-                Ing. Agr. Ricardo Barquero • Coronado, CR
+                Ing. Agr. Ricardo Manuel Barquero • Coronado, CR
               </p>
             </div>
           </div>
@@ -156,11 +157,15 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => setShowSettings(true)}
-              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 transition active:scale-95"
-              title="Ajustes y Respaldo"
+              onClick={() => setActiveTab('configuracion')}
+              className={`p-2 rounded-xl border transition active:scale-95 ${
+                activeTab === 'configuracion'
+                  ? 'bg-amber-400 text-slate-900 border-amber-300 shadow-sm'
+                  : 'bg-white/10 hover:bg-white/20 border-white/20 text-white'
+              }`}
+              title="Configuración, Perfil y Seguridad"
             >
-              <Settings className="w-4 h-4 text-white" />
+              <Settings className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -269,20 +274,36 @@ export default function App() {
             onOpenAi={handleOpenAi}
           />
         )}
+
+        {activeTab === 'configuracion' && (
+          <SettingsView
+            onDataReload={() => setVisita(storageService.getVisitaActiva())}
+          />
+        )}
+
+        {/* PIE DE PÁGINA CON DERECHOS DE AUTOR */}
+        <footer className="mt-8 text-center text-[11px] text-slate-400 no-print pb-2">
+          <p className="font-semibold text-slate-600">
+            © 2026 <strong>Ricardo Manuel Barquero Chacón</strong> • AgroAsesor Pro CR™
+          </p>
+          <p className="text-[10px] text-slate-400 mt-0.5">
+            Colegiado Ordinario No. 5896 • Todos los derechos reservados
+          </p>
+        </footer>
       </main>
 
       {/* BARRA DE NAVEGACIÓN INFERIOR (5 Pestañas adaptadas para iPhone 17) */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 safe-bottom no-print shadow-lg">
-        <div className="max-w-md mx-auto grid grid-cols-5 px-1 py-1.5">
+        <div className="max-w-lg mx-auto grid grid-cols-6 px-1 py-1.5">
           
           <button
             onClick={() => setActiveTab('visitas')}
             className={`flex flex-col items-center justify-center py-1 transition-transform active:scale-95 ${activeTab === 'visitas' ? 'text-emerald-700 font-bold' : 'text-slate-500 hover:text-slate-800'}`}
           >
             <div className={`p-1 rounded-xl transition ${activeTab === 'visitas' ? 'bg-emerald-100' : ''}`}>
-              <Users className="w-5 h-5" />
+              <Users className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <span className="text-[10px] mt-0.5">Visitas</span>
+            <span className="text-[9px] sm:text-[10px] mt-0.5">Visitas</span>
           </button>
 
           <button
@@ -290,9 +311,9 @@ export default function App() {
             className={`flex flex-col items-center justify-center py-1 transition-transform active:scale-95 ${activeTab === 'hallazgos' ? 'text-amber-700 font-bold' : 'text-slate-500 hover:text-slate-800'}`}
           >
             <div className={`p-1 rounded-xl transition ${activeTab === 'hallazgos' ? 'bg-amber-100' : ''}`}>
-              <Camera className="w-5 h-5" />
+              <Camera className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <span className="text-[10px] mt-0.5">Hallazgos</span>
+            <span className="text-[9px] sm:text-[10px] mt-0.5">Hallazgos</span>
           </button>
 
           <button
@@ -300,9 +321,9 @@ export default function App() {
             className={`flex flex-col items-center justify-center py-1 transition-transform active:scale-95 ${activeTab === 'fertirriego' ? 'text-blue-700 font-bold' : 'text-slate-500 hover:text-slate-800'}`}
           >
             <div className={`p-1 rounded-xl transition ${activeTab === 'fertirriego' ? 'bg-blue-100' : ''}`}>
-              <Droplet className="w-5 h-5" />
+              <Droplet className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <span className="text-[10px] mt-0.5">Fertirriego</span>
+            <span className="text-[9px] sm:text-[10px] mt-0.5">Nutrición</span>
           </button>
 
           <button
@@ -310,9 +331,9 @@ export default function App() {
             className={`flex flex-col items-center justify-center py-1 transition-transform active:scale-95 ${activeTab === 'plaguicidas' ? 'text-purple-700 font-bold' : 'text-slate-500 hover:text-slate-800'}`}
           >
             <div className={`p-1 rounded-xl transition ${activeTab === 'plaguicidas' ? 'bg-purple-100' : ''}`}>
-              <ShieldCheck className="w-5 h-5" />
+              <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <span className="text-[10px] mt-0.5">Plaguicidas</span>
+            <span className="text-[9px] sm:text-[10px] mt-0.5">Sanidad</span>
           </button>
 
           <button
@@ -320,9 +341,19 @@ export default function App() {
             className={`flex flex-col items-center justify-center py-1 transition-transform active:scale-95 ${activeTab === 'reporte' ? 'text-emerald-700 font-bold' : 'text-slate-500 hover:text-slate-800'}`}
           >
             <div className={`p-1 rounded-xl transition ${activeTab === 'reporte' ? 'bg-emerald-100' : ''}`}>
-              <FileText className="w-5 h-5" />
+              <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <span className="text-[10px] mt-0.5">Informe</span>
+            <span className="text-[9px] sm:text-[10px] mt-0.5">Informe</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('configuracion')}
+            className={`flex flex-col items-center justify-center py-1 transition-transform active:scale-95 ${activeTab === 'configuracion' ? 'text-slate-900 font-black' : 'text-slate-500 hover:text-slate-800'}`}
+          >
+            <div className={`p-1 rounded-xl transition ${activeTab === 'configuracion' ? 'bg-slate-200' : ''}`}>
+              <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
+            </div>
+            <span className="text-[9px] sm:text-[10px] mt-0.5">Ajustes</span>
           </button>
 
         </div>

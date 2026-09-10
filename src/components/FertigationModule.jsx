@@ -57,9 +57,10 @@ const MODALIDADES = [
 export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) {
   const [semanaActiva, setSemanaActiva] = useState(1);
   const [mostrarModalEvento, setMostrarModalEvento] = useState(false);
+  const [eventoEditandoId, setEventoEditandoId] = useState(null); // null = nuevo, string = editando
   const [modalidadSeleccionada, setModalidadSeleccionada] = useState('dosatron');
   
-  // Campos del nuevo evento
+  // Campos del evento
   const [nombreEvento, setNombreEvento] = useState('');
   const [alcanceEvento, setAlcanceEvento] = useState('Toda la Finca');
   const [conductividad, setConductividad] = useState('1.5');
@@ -117,8 +118,9 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
 
   const alertaCalcioA = modalidadSeleccionada === 'dosatron' ? verificarIncompatibilidadCalcio(lineasTanqueA) : null;
 
-  // Abrir modal configurando un lienzo limpio
+  // Abrir modal configurando un lienzo limpio para nuevo cuadro
   const handleAbrirModalConModalidad = (modId) => {
+    setEventoEditandoId(null);
     setModalidadSeleccionada(modId);
     setNombreEvento('');
     setAlcanceEvento('Toda la Finca');
@@ -132,6 +134,41 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
     } else {
       const config = MODALIDADES.find(m => m.id === modId) || MODALIDADES[0];
       setLineasProductos([{ producto: '', dosis: '', unidad: config.unidades[0], aporte: '', esManual: false }]);
+      setLineasTanqueA([]);
+      setLineasTanqueB([]);
+    }
+    setMostrarModalEvento(true);
+  };
+
+  // Abrir modal para editar un cuadro existente
+  const handleEditarEvento = (ev) => {
+    setEventoEditandoId(ev.id);
+    setModalidadSeleccionada(ev.modalidad || 'dosatron');
+    setNombreEvento(ev.nombreEvento || '');
+    setAlcanceEvento(ev.alcance || 'Toda la Finca');
+    setConductividad(ev.conductividadObjetivo ? ev.conductividadObjetivo.replace(' mS/cm', '').trim() : '');
+    setPh(ev.phObjetivo || '');
+    setObservaciones(ev.observacionesPie || '');
+
+    if (ev.modalidad === 'dosatron') {
+      const lineasA = (ev.lineasTanqueA || []).map(l => ({
+        ...l,
+        esManual: l.esManual !== undefined ? l.esManual : !productosTanqueA.some(p => p.nombreComercial.toLowerCase() === (l.producto || '').toLowerCase())
+      }));
+      const lineasB = (ev.lineasTanqueB || []).map(l => ({
+        ...l,
+        esManual: l.esManual !== undefined ? l.esManual : !productosTanqueB.some(p => p.nombreComercial.toLowerCase() === (l.producto || '').toLowerCase())
+      }));
+      setLineasTanqueA(lineasA.length > 0 ? lineasA : [{ producto: '', dosis: '', unidad: 'kg / tanque 1000 L', aporte: '', esManual: false }]);
+      setLineasTanqueB(lineasB.length > 0 ? lineasB : [{ producto: '', dosis: '', unidad: 'kg / tanque 1000 L', aporte: '', esManual: false }]);
+      setLineasProductos([]);
+    } else {
+      const config = MODALIDADES.find(m => m.id === (ev.modalidad || modalidadSeleccionada)) || MODALIDADES[0];
+      const prods = (ev.productos || []).map(l => ({
+        ...l,
+        esManual: l.esManual !== undefined ? l.esManual : !todosFertilizantes.some(p => p.nombreComercial.toLowerCase() === (l.producto || '').toLowerCase())
+      }));
+      setLineasProductos(prods.length > 0 ? prods : [{ producto: '', dosis: '', unidad: config.unidades[0], aporte: '', esManual: false }]);
       setLineasTanqueA([]);
       setLineasTanqueB([]);
     }
@@ -178,12 +215,12 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
       }
     });
 
-    const nuevoEvento = {
-      id: 'ev-' + Date.now(),
+    const eventoFinal = {
+      id: eventoEditandoId || ('ev-' + Date.now()),
       modalidad: modalidadSeleccionada,
       modalidadNombre: modalidadActualConfig.nombre,
       modalidadIcono: modalidadActualConfig.icono,
-      nombreEvento: nombreEvento || `${modalidadActualConfig.nombre} (${recomendacionSemana.eventos.length + 1})`,
+      nombreEvento: nombreEvento || `${modalidadActualConfig.nombre} (${(recomendacionSemana.eventos || []).length + 1})`,
       alcance: alcanceEvento,
       sistema: modalidadActualConfig.subtitulo,
       conductividadObjetivo: modalidadSeleccionada !== 'granular' && conductividad ? `${conductividad} mS/cm` : null,
@@ -194,7 +231,15 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
       observacionesPie: observaciones || ''
     };
 
-    const eventosActualizados = [...(recomendacionSemana.eventos || []), nuevoEvento];
+    let eventosActualizados = [];
+    if (eventoEditandoId) {
+      eventosActualizados = (recomendacionSemana.eventos || []).map(ev => 
+        ev.id === eventoEditandoId ? eventoFinal : ev
+      );
+    } else {
+      eventosActualizados = [...(recomendacionSemana.eventos || []), eventoFinal];
+    }
+
     const recActualizada = { ...recomendacionSemana, eventos: eventosActualizados };
 
     const todasRecs = recomendaciones.filter(r => r.semana !== semanaActiva);
@@ -203,6 +248,7 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
 
     onUpdateVisita({ ...visita, recomendacionesFertirriego: todasRecs });
     setMostrarModalEvento(false);
+    setEventoEditandoId(null);
   };
 
   const handleEliminarEvento = (id) => {
@@ -363,6 +409,15 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                     </span>
                   )}
                   <button
+                    onClick={() => handleEditarEvento(ev)}
+                    className="px-2.5 py-1 text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition flex items-center gap-1 text-xs font-bold border border-blue-200"
+                    title="Editar cuadro de recomendación"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Editar</span>
+                  </button>
+
+                  <button
                     onClick={() => handleEliminarEvento(ev.id)}
                     className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
                     title="Eliminar este cuadro"
@@ -459,7 +514,7 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                 <span className="text-2xl">{modalidadActualConfig.icono}</span>
                 <div>
                   <h3 className="font-extrabold text-sm sm:text-base leading-tight">
-                    Nuevo Cuadro: {modalidadActualConfig.nombre}
+                    {eventoEditandoId ? `Editar Cuadro: ${nombreEvento || modalidadActualConfig.nombre}` : `Nuevo Cuadro: ${modalidadActualConfig.nombre}`}
                   </h3>
                   <p className="text-[11px] text-blue-200">Semana {semanaActiva} • {modalidadActualConfig.subtitulo}</p>
                 </div>
@@ -883,7 +938,7 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                   }`}
                 >
                   <Check className="w-4 h-4" />
-                  <span>Guardar Cuadro de {modalidadActualConfig.nombre}</span>
+                  <span>{eventoEditandoId ? 'Actualizar Cuadro' : `Guardar Cuadro de ${modalidadActualConfig.nombre}`}</span>
                 </button>
               </div>
 

@@ -1,6 +1,6 @@
 /**
  * Servicio de Asistente Virtual Agronómico con Google Gemini API
- * Contextualizado para el Ing. Agr. Ricardo Barquero Chacón (Colegiado Ord. 5896).
+ * Contextualizado para el Ing. Agr. Ricardo Manuel Barquero Chacón (Colegiado Ord. 5896).
  * "LA ÚLTIMA DECISIÓN LA TOMA EL INGENIERO AGRÓNOMO"
  */
 
@@ -12,6 +12,45 @@ export const geminiService = {
 
   setApiKey(key) {
     localStorage.setItem('agroasesor_gemini_api_key', key.trim());
+  },
+
+  removeApiKey() {
+    localStorage.removeItem('agroasesor_gemini_api_key');
+  },
+
+  /**
+   * Probar conectividad real con la clave API de Gemini
+   */
+  async probarConexion(claveAProbar) {
+    const key = (claveAProbar || this.getApiKey() || '').trim();
+    if (!key) {
+      return { exito: false, error: 'Por favor ingrese una clave de API antes de probar.' };
+    }
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: 'Responde únicamente con la palabra "CONECTADO" si recibes este mensaje de prueba.' }] }]
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        return { exito: false, error: errData.error?.message || `Error HTTP ${response.status} de autenticación.` };
+      }
+
+      const result = await response.json();
+      const texto = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      return { 
+        exito: true, 
+        mensaje: '¡Conexión exitosa con Google Gemini! Clave verificada y activa.',
+        respuesta: texto.trim()
+      };
+    } catch (e) {
+      return { exito: false, error: `Fallo de conexión o red: ${e.message}` };
+    }
   },
 
   /**
@@ -27,7 +66,7 @@ export const geminiService = {
     }
 
     const systemPrompt = `
-Eres el Copiloto Agronómico de Inteligencia Artificial para el Ingeniero Agrónomo Ricardo Barquero Chacón (Colegiado Ord. 5896, Costa Rica).
+Eres el Copiloto Agronómico de Inteligencia Artificial para el Ingeniero Agrónomo Ricardo Manuel Barquero Chacón (Colegiado Ord. 5896, Costa Rica).
 El Ing. Barquero es un consultor de alto nivel especializado en fresa, flores de corte (crisantemo, clavel, rosa, gypsophila, gerbera), chile dulce, tomate, papa y hortalizas en Costa Rica.
 
 REGLAS DE ORO OBLIGATORIAS:

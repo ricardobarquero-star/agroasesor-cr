@@ -4,7 +4,20 @@ const STORAGE_KEYS = {
   CLIENTES: 'agroasesor_clientes_db_v2',
   VISITAS: 'agroasesor_visitas_db_v2',
   VISITA_ACTUAL_ID: 'agroasesor_visita_activa_id_v2',
-  CATALOGO_PERSONALIZADO: 'agroasesor_custom_catalog_v2'
+  CATALOGO_PERSONALIZADO: 'agroasesor_custom_catalog_v2',
+  PERFIL_INGENIERO: 'agroasesor_perfil_ingeniero_v2'
+};
+
+const PERFIL_INGENIERO_DEFECTO = {
+  nombre: 'Ing. Agr. Ricardo Manuel Barquero Chacón',
+  titulo: 'Ingeniero Agrónomo',
+  colegiado: 'Colegiado Ord. 5896',
+  colegio: 'Colegio de Ingenieros Agrónomos de Costa Rica',
+  telefono: '+506 8894-5662',
+  email: 'h7coordinador@gmail.com',
+  ubicacion: 'Vázquez de Coronado, San José, Costa Rica',
+  especialidad: 'Especialista en Fresa, Flores de Corte, Solanáceas y Hortalizas',
+  firmaDigital: null
 };
 
 // Catálogo personalizado inicial (se va nutriendo automáticamente)
@@ -549,5 +562,68 @@ export const storageService = {
   eliminarVisita(visitaId) {
     const historial = this.getHistorialVisitas().filter(v => v.id !== visitaId);
     localStorage.setItem(STORAGE_KEYS.VISITAS, JSON.stringify(historial));
-  }
+  },
+
+  // ==========================================
+  // PERFIL DEL INGENIERO AGRÓNOMO Y DERECHOS
+  // ==========================================
+  getPerfilIngeniero() {
+    const raw = localStorage.getItem(STORAGE_KEYS.PERFIL_INGENIERO);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.PERFIL_INGENIERO, JSON.stringify(PERFIL_INGENIERO_DEFECTO));
+      return PERFIL_INGENIERO_DEFECTO;
+    }
+    try {
+      return { ...PERFIL_INGENIERO_DEFECTO, ...JSON.parse(raw) };
+    } catch {
+      return PERFIL_INGENIERO_DEFECTO;
+    }
+  },
+
+  guardarPerfilIngeniero(perfil) {
+    localStorage.setItem(STORAGE_KEYS.PERFIL_INGENIERO, JSON.stringify(perfil));
+    return perfil;
+  },
+
+  // ==========================================
+  // EXPORTACIÓN E IMPORTACIÓN DE RESPALDOS JSON
+  // ==========================================
+  exportarRespaldoJSON() {
+    const data = {
+      version: '2.3',
+      fechaExportacion: new Date().toISOString(),
+      autor: 'Ricardo Manuel Barquero Chacón',
+      perfil: this.getPerfilIngeniero(),
+      clientes: this.getClientes(),
+      visitas: this.getHistorialVisitas(),
+      catalogoPersonalizado: this.getCatalogoPersonalizado()
+    };
+
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `AgroAsesor_Respaldo_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    return true;
+  },
+
+  importarRespaldoJSON(jsonString) {
+    try {
+      const data = JSON.parse(jsonString);
+      if (!data.clientes || !data.visitas) {
+        return { exito: false, error: 'Formato de respaldo no válido.' };
+      }
+      if (data.perfil) localStorage.setItem(STORAGE_KEYS.PERFIL_INGENIERO, JSON.stringify(data.perfil));
+      if (data.clientes) localStorage.setItem(STORAGE_KEYS.CLIENTES, JSON.stringify(data.clientes));
+      if (data.visitas) localStorage.setItem(STORAGE_KEYS.VISITAS, JSON.stringify(data.visitas));
+      if (data.catalogoPersonalizado) localStorage.setItem(STORAGE_KEYS.CATALOGO_PERSONALIZADO, JSON.stringify(data.catalogoPersonalizado));
+      return { exito: true };
+    } catch (e) {
+      return { exito: false, error: e.message };
+    }
+  },
 };

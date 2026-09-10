@@ -3,7 +3,7 @@ import {
   ShieldCheck, Plus, Trash2, AlertTriangle, Sparkles, Check, 
   Layers, FlaskConical, Calendar, AlertOctagon, HelpCircle,
   X, CheckCircle2, Sliders, Shield, Sprout, ArrowRight, MapPin,
-  List
+  List, Edit3
 } from 'lucide-react';
 import { crAgroDatabase } from '../data/crAgroDatabase';
 import { storageService } from '../services/storageService';
@@ -11,6 +11,7 @@ import { storageService } from '../services/storageService';
 export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
   const [semanaActiva, setSemanaActiva] = useState(1);
   const [mostrarModalApp, setMostrarModalApp] = useState(false);
+  const [appEditandoId, setAppEditandoId] = useState(null); // null = nuevo, string = editando
   const [tipoMezcla, setTipoMezcla] = useState('fungicida_foliar'); // 'fungicida_foliar' o 'insecticida_acaricida'
   
   // Campos del modal de aplicación
@@ -60,8 +61,9 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
   const fincaActual = clienteActual?.fincas?.find(f => f.id === visita.finca?.id);
   const lotesDeFinca = fincaActual?.lotes || [visita.lote].filter(Boolean);
 
-  // Abrir modal configurando un lienzo limpio según la categoría seleccionada
+  // Abrir modal configurando un lienzo limpio para nueva aplicación
   const handleAbrirModalMezcla = (tipo) => {
+    setAppEditandoId(null);
     setTipoMezcla(tipo);
     setObservaciones('');
     setAlcanceApp('Toda la Finca');
@@ -82,12 +84,38 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
     setMostrarModalApp(true);
   };
 
-  // Manejar selección de producto en el dropdown de plaguicidas
+  // Abrir modal para editar una aplicación fitosanitaria existente
+  const handleEditarAplicacion = (app) => {
+    setAppEditandoId(app.id);
+    setTipoMezcla(app.tipoMezcla || 'fungicida_foliar');
+    setNombreApp(app.nombre || '');
+    setAlcanceApp(app.alcance || 'Toda la Finca');
+    setVolumenTanque(app.volumenTanque || 'Estañón de 200 L');
+    setBoquilla(app.boquilla || 'Cono hueco TX-4 (45 PSI)');
+    setObservaciones(app.observacionesPie || '');
+
+    const lineas = (app.ordenMezcla || []).map((l, idx) => ({
+      ...l,
+      orden: l.orden || (idx + 1),
+      esManual: l.esManual !== undefined ? l.esManual : !todosPlaguicidas.some(p => p.nombreComercial.toLowerCase() === (l.producto || '').toLowerCase())
+    }));
+    setLineasMezcla(lineas.length > 0 ? lineas : [
+      { orden: 1, tipo: 'Acondicionador', producto: '', dosis: '', fracIrac: '', funcion: '', esManual: false }
+    ]);
+    setMostrarModalApp(true);
+  };
+
+  // Manejar selección de producto en el dropdown de plaguicidas (con limpieza estricta al digitar)
   const handleSeleccionarPlaguicida = (valor, idx) => {
     const nuevas = [...lineasMezcla];
     if (valor === '__manual__') {
+      // Al cambiar a digitación manual: LIMPIAR ABSOLUTAMENTE TODO el registro anterior
       nuevas[idx].esManual = true;
       nuevas[idx].producto = '';
+      nuevas[idx].fracIrac = ''; // OBLIGATORIO: Queda en limpio sin heredar datos
+      nuevas[idx].dosis = '';    // Queda en limpio
+      nuevas[idx].funcion = '';  // Queda en limpio
+      nuevas[idx].tipo = tipoMezcla === 'fungicida_foliar' ? 'Fungicida' : 'Insecticida';
     } else {
       nuevas[idx].esManual = false;
       nuevas[idx].producto = valor;
@@ -96,7 +124,7 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
       const encontrado = todosPlaguicidas.find(p => p.nombreComercial === valor);
       if (encontrado) {
         nuevas[idx].tipo = encontrado.categoria || nuevas[idx].tipo;
-        nuevas[idx].fracIrac = encontrado.codigoFracIrac || nuevas[idx].fracIrac;
+        nuevas[idx].fracIrac = encontrado.codigoFracIrac || '';
         nuevas[idx].dosis = encontrado.dosisEstandar || nuevas[idx].dosis;
         nuevas[idx].funcion = encontrado.blancoBiologico || encontrado.ingredienteActivo || nuevas[idx].funcion;
       }
@@ -167,18 +195,26 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
       }
     });
 
-    const nuevaApp = {
-      id: 'ap-' + Date.now(),
+    const appFinal = {
+      id: appEditandoId || ('ap-' + Date.now()),
       tipoMezcla,
       nombre: nombreApp || (tipoMezcla === 'fungicida_foliar' ? 'Mezcla Fungicida + Foliar' : 'Mezcla Insecticida + Acaricida'),
       alcance: alcanceApp,
       volumenTanque,
       boquilla,
-      ordenMezcla: lineasMezcla.filter(l => l.producto.trim()),
+      ordenMezcla: lineasMezcla.filter(l => l.producto && l.producto.trim()),
       observacionesPie: observaciones || ''
     };
 
-    const appsActualizadas = [...(recomendacionSemana.aplicaciones || []), nuevaApp];
+    let appsActualizadas = [];
+    if (appEditandoId) {
+      appsActualizadas = (recomendacionSemana.aplicaciones || []).map(a => 
+        a.id === appEditandoId ? appFinal : a
+      );
+    } else {
+      appsActualizadas = [...(recomendacionSemana.aplicaciones || []), appFinal];
+    }
+
     const recActualizada = { 
       ...recomendacionSemana, 
       sinAplicacion: false,
@@ -191,6 +227,7 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
 
     onUpdateVisita({ ...visita, recomendacionesPlaguicidas: todasRecs });
     setMostrarModalApp(false);
+    setAppEditandoId(null);
   };
 
   const handleEliminarAplicacion = (id) => {
@@ -395,13 +432,24 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                   </div>
                 </div>
 
-                <button
-                  onClick={() => handleEliminarAplicacion(app.id)}
-                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
-                  title="Eliminar esta aplicación"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => handleEditarAplicacion(app)}
+                    className="px-2.5 py-1 text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg transition flex items-center gap-1 text-xs font-bold border border-purple-200"
+                    title="Editar esta aplicación"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Editar</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleEliminarAplicacion(app.id)}
+                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                    title="Eliminar esta aplicación"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
               {/* Tabla con Orden de Mezcla */}
@@ -488,7 +536,7 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                 <span className="text-2xl">{tipoMezcla === 'fungicida_foliar' ? '🌿' : '🐛'}</span>
                 <div>
                   <h3 className="font-extrabold text-sm sm:text-base leading-tight">
-                    {tipoMezcla === 'fungicida_foliar' ? 'Mezcla 1: Fungicida + Nutrición Foliar' : 'Mezcla 2: Insecticida + Acaricida'}
+                    {appEditandoId ? `Editar Aplicación: ${nombreApp}` : (tipoMezcla === 'fungicida_foliar' ? 'Mezcla 1: Fungicida + Nutrición Foliar' : 'Mezcla 2: Insecticida + Acaricida')}
                   </h3>
                   <p className="text-[11px] text-white/80">Semana {semanaActiva} • Selección desplegable del Catálogo CR</p>
                 </div>
@@ -639,7 +687,7 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                               nuevo[idx].esManual = false;
                               setLineasMezcla(nuevo);
                             }}
-                            className="p-1 text-purple-700 hover:bg-purple-50 rounded"
+                            className="p-1.5 text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg border border-purple-200"
                             title="Volver a lista desplegable"
                           >
                             <List className="w-4 h-4" />
@@ -727,7 +775,7 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                   className="px-5 py-2 rounded-xl text-xs font-black bg-purple-700 hover:bg-purple-800 text-white shadow-md flex items-center gap-1.5 transition active:scale-95"
                 >
                   <Check className="w-4 h-4" />
-                  <span>Guardar Aplicación</span>
+                  <span>{appEditandoId ? 'Actualizar Aplicación' : 'Guardar Aplicación'}</span>
                 </button>
               </div>
 

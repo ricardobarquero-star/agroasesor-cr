@@ -16,6 +16,7 @@ export default function ReportModule({ visita, onOpenAi }) {
   
   // Filtro de alcance para el reporte (Toda la Finca o Lote Específico)
   const [filtroLote, setFiltroLote] = useState('todos');
+  const perfilIngeniero = storageService.getPerfilIngeniero();
 
   const productor = visita.productor || {};
   const finca = visita.finca || {};
@@ -113,7 +114,7 @@ export default function ReportModule({ visita, onOpenAi }) {
     const texto = encodeURIComponent(
       `Estimado(a) ${productor.nombre || 'Productor'}:\n\n` +
       `Le adjunto el resumen del INFORME TÉCNICO AGRONÓMICO de la visita a ${finca.nombre || 'su finca'} (${loteTexto}).\n\n` +
-      `📋 ASESOR: Ing. Agr. Ricardo Barquero Chacón (Colegiado Ord. 5896)\n` +
+      `📋 ASESOR: Ing. Agr. Ricardo Manuel Barquero Chacón (Colegiado Ord. 5896)\n` +
       `🌧️ Lluvia acumulada 7 días: ${clima.lluviaAcumulada7Dias || 0} mm\n` +
       `🔍 Hallazgos en campo: ${hallazgosFiltrados.length} diagnosticados.\n` +
       `💧 Cuadros de Fertirriego: ${recFertirriegoFiltradas.length} programados.\n` +
@@ -135,7 +136,7 @@ export default function ReportModule({ visita, onOpenAi }) {
       `Estimado(a) ${productor.nombre || 'Productor'}:\n\n` +
       `Adjunto el informe de asesoría agronómica correspondiente a la visita del ${visita.fecha} en la finca ${finca.nombre || ''}.\n\n` +
       `Atentamente,\n` +
-      `Ing. Agr. Ricardo Barquero Chacón\n` +
+      `Ing. Agr. Ricardo Manuel Barquero Chacón\n` +
       `Colegiado No. 5896 - Colegio de Ingenieros Agrónomos de Costa Rica\n` +
       `Tel: +506 8894-5662 | Coronado, San José, Costa Rica`
     );
@@ -232,13 +233,13 @@ export default function ReportModule({ visita, onOpenAi }) {
                   COLEGIO DE INGENIEROS AGRÓNOMOS DE COSTA RICA
                 </span>
                 <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight leading-tight">
-                  Ing. Agr. Ricardo Barquero Chacón
+                  {perfilIngeniero.nombre || 'Ing. Agr. Ricardo Manuel Barquero Chacón'}
                 </h1>
                 <p className="text-xs font-semibold text-slate-600">
-                  Colegiado Ordinario No. 5896 • Asesoría y Consultoría Agronómica
+                  {perfilIngeniero.colegiado || 'Colegiado Ordinario No. 5896'} • {perfilIngeniero.titulo || 'Ingeniero Agrónomo'}
                 </p>
                 <p className="text-[11px] text-slate-500">
-                  Tel: +506 8894-5662 • Coronado, San José, Costa Rica • h7coordinador@gmail.com
+                  Tel: {perfilIngeniero.telefono || '+506 8894-5662'} • {perfilIngeniero.ubicacion || 'Coronado, San José, Costa Rica'} • {perfilIngeniero.email || 'h7coordinador@gmail.com'}
                 </p>
               </div>
             </div>
@@ -604,14 +605,14 @@ export default function ReportModule({ visita, onOpenAi }) {
           <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
             <div className="text-center sm:text-left space-y-1">
               <div className="text-xl text-emerald-900 font-bold italic tracking-wide">
-                Ricardo Barquero Chacón
+                Ricardo M. Barquero Chacón
               </div>
-              <div className="w-48 h-0.5 bg-slate-400 mx-auto sm:mx-0"></div>
+              <div className="w-56 h-0.5 bg-slate-400 mx-auto sm:mx-0"></div>
               <p className="text-xs font-bold text-slate-900">
-                Ing. Agr. Ricardo Barquero Chacón
+                {perfilIngeniero.nombre || 'Ing. Agr. Ricardo Manuel Barquero Chacón'}
               </p>
               <p className="text-[11px] text-slate-600">
-                Colegiado No. 5896 • Colegio de Ingenieros Agrónomos de CR
+                {perfilIngeniero.colegiado || 'Colegiado No. 5896'} • {perfilIngeniero.colegio || 'Colegio de Ingenieros Agrónomos de Costa Rica'}
               </p>
               <p className="text-[10px] text-slate-500">
                 Firma Técnica y Validación Profesional de Asesoría en Campo
@@ -630,6 +631,16 @@ export default function ReportModule({ visita, onOpenAi }) {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* PIE LEGAL Y DERECHOS DE AUTOR */}
+        <div className="mt-8 pt-4 border-t border-slate-200 text-center text-[10px] text-slate-400 space-y-0.5 print-avoid-break">
+          <p className="font-semibold text-slate-500">
+            © 2026 <strong>Ricardo Manuel Barquero Chacón</strong>. Todos los derechos reservados.
+          </p>
+          <p>
+            AgroAsesor Pro CR™ • Software agronómico bajo propiedad intelectual de Ricardo Manuel Barquero Chacón. Documento oficial de prescripción fitosanitaria y nutricional.
+          </p>
         </div>
 
       </div>

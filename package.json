@@ -24,5 +24,8 @@
     "oxlint": "^1.79.0",
     "tailwindcss": "^4.3.3",
     "vite": "^8.2.2"
-  }
+  },
+  "author": "Ing. Agr. Ricardo Manuel Barquero Chac\u00f3n <h7coordinador@gmail.com>",
+  "copyright": "Copyright \u00a9 2026 Ricardo Manuel Barquero Chac\u00f3n. Todos los derechos reservados.",
+  "license": "Proprietary - Propiedad Intelectual Exclusiva de Ricardo Manuel Barquero Chac\u00f3n"
 }
