@@ -7,6 +7,11 @@
  */
 
 import { storageService } from './storageService';
+import { 
+  calcularNutrientesTotales, 
+  auditarIncompatibilidadQuimica, 
+  auditarObjetivoFenologico 
+} from './nutritionCalculatorService';
 
 // Modelos ordenados por prioridad (incorporando soporte oficial para claves AQ.Ab y modelos 3.8 / 3.6 flash)
 const MODELOS_DISPONIBLES = [
@@ -559,6 +564,69 @@ Responde en viñetas concisas y profesionales.`;
     }
 
     return { ...resultadoLocal, origen: 'Auditoría Agronómica Costa Rica' };
+  },
+
+  /**
+   * Asistente de I.A. Nutricional: Evalúa estequiometría N-P-K-Ca-Mg, incompatibilidad química y curvas fenológicas
+   */
+  async auditarNutricionFertirriego({ cultivo, etapaFenologica, objetivoFertilizacion, semana, modalidad, lineasA = [], lineasB = [], lineasProductos = [] }) {
+    const todasLineas = [...lineasA, ...lineasB, ...lineasProductos];
+    const metricas = calcularNutrientesTotales(todasLineas);
+    const compatibilidad = auditarIncompatibilidadQuimica({ modalidad, lineasA, lineasB, lineasProductos });
+    const fenologia = auditarObjetivoFenologico({ cultivo, etapaFenologica, objetivoFertilizacion, metricas });
+
+    const resultadoLocal = {
+      metricas,
+      compatibilidad,
+      fenologia,
+      fechaAuditoria: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      origen: 'Bioquímica Agronómica Costa Rica (Offline)'
+    };
+
+    const apiKey = this.getApiKey();
+    if (!apiKey || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+      return resultadoLocal;
+    }
+
+    try {
+      const prompt = `Actúa como especialista senior en Fertirriego y Nutrición Vegetal en Costa Rica para el Ing. Ricardo Barquero.
+Audita la siguiente formulación de fertilización para la Semana ${semana}:
+- Cultivo: ${cultivo || 'Fresa / Cultivo general'}
+- Etapa Fenológica: ${etapaFenologica || 'No especificada'}
+- Objetivo de Fertilización: ${objetivoFertilizacion || 'Nutrición balanceada'}
+- Modalidad: ${modalidad}
+- Insumos Tanque A: ${JSON.stringify(lineasA)}
+- Insumos Tanque B: ${JSON.stringify(lineasB)}
+- Insumos Tanque Único: ${JSON.stringify(lineasProductos)}
+
+Cálculo estequiométrico estimado:
+N Total: ${metricas.nTotalKg.toFixed(2)} kg (Nítrico: ${metricas.formasNitrogeno.pctNitrico}%, Amoniacal: ${metricas.formasNitrogeno.pctAmoniacal}%)
+P2O5: ${metricas.p2o5Kg.toFixed(2)} kg
+K2O: ${metricas.k2oKg.toFixed(2)} kg (Relación K:N = ${metricas.relacionKN})
+CaO: ${metricas.caoKg.toFixed(2)} kg
+MgO: ${metricas.mgoKg.toFixed(2)} kg
+S: ${metricas.sKg.toFixed(2)} kg
+Microelementos (Fe, Zn, Mn, B): Fe=${metricas.feGramos.toFixed(1)}g, Zn=${metricas.znGramos.toFixed(1)}g, B=${metricas.bGramos.toFixed(1)}g
+
+Por favor, en 3 viñetas agronómicas muy claras y concisas:
+1. Valida si la fórmula alcanza el objetivo ("${objetivoFertilizacion}") y si corresponde a la curva de absorción de la etapa "${etapaFenologica}".
+2. Alerta sobre incompatibilidades químicas de sales (yeso, fosfatos insolubles, pH).
+3. Recomienda ajustes específicos (qué subir, qué bajar o qué adicionar) para optimizar el balance N-P-K-Ca-Mg.`;
+
+      const requestBody = { contents: [{ parts: [{ text: prompt }] }] };
+      const res = await llamarApiGeminiConCascada({ key: apiKey, requestBody });
+      if (res.exito && res.texto) {
+        return {
+          ...resultadoLocal,
+          comentarioIa: res.texto,
+          origen: `Google Gemini (${res.modeloUsado}) [En vivo]`
+        };
+      }
+    } catch (e) {
+      console.warn('Fallo enriquecimiento con Gemini en nutrición, retornando cálculo estequiométrico local:', e);
+    }
+
+    return resultadoLocal;
   },
 
   /**

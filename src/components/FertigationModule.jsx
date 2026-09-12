@@ -8,6 +8,13 @@ import {
 import { crAgroDatabase } from '../data/crAgroDatabase';
 import { storageService } from '../services/storageService';
 import { geminiService } from '../services/geminiService';
+import { 
+  ETAPAS_FENOLOGICAS, 
+  OBJETIVOS_FERTILIZACION, 
+  calcularNutrientesTotales, 
+  auditarIncompatibilidadQuimica, 
+  auditarObjetivoFenologico 
+} from '../services/nutritionCalculatorService';
 
 // Modalidades oficiales solicitadas por el Ing. Agr. Ricardo Barquero
 const MODALIDADES = [
@@ -118,6 +125,9 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
   const [investigandoFertIdx, setInvestigandoFertIdx] = useState(null);
   const [eventoEditandoId, setEventoEditandoId] = useState(null); // null = nuevo, string = editando
   const [modalidadSeleccionada, setModalidadSeleccionada] = useState('dosatron');
+  const [auditandoNutricion, setAuditandoNutricion] = useState(false);
+  const [resultadoAuditoriaNutricional, setResultadoAuditoriaNutricional] = useState(null);
+  const [mostrarPanelAuditoria, setMostrarPanelAuditoria] = useState(true);
   
   // Campos del evento
   const [nombreEvento, setNombreEvento] = useState('');
@@ -243,13 +253,9 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
     } else {
       nuevas[idx].esManual = false;
       nuevas[idx].producto = valor;
-      // Auto-completar dosis sugerida si existe
-      const encontrado = listaFuente.find(p => p.nombreComercial === valor);
-      if (encontrado && encontrado.dosisTipica && !nuevas[idx].dosis) {
-        const partes = encontrado.dosisTipica.split(' ');
-        if (partes.length >= 1 && !isNaN(parseFloat(partes[0]))) {
-          nuevas[idx].dosis = partes[0];
-        }
+      // NO autocompletar dosis automáticamente (la dosis varía según lote, suelo y cultivo)
+      if (!nuevas[idx].dosis) {
+        nuevas[idx].dosis = '';
       }
     }
     setLineas(nuevas);
@@ -318,6 +324,53 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
     todasRecs.push(recActualizada);
     todasRecs.sort((a, b) => a.semana - b.semana);
     onUpdateVisita({ ...visita, recomendacionesFertirriego: todasRecs });
+  };
+
+  const handleActualizarEtapaYObjetivo = (nuevaEtapa, nuevoObjetivo) => {
+    const recActualizada = { 
+      ...recomendacionSemana, 
+      etapaFenologica: nuevaEtapa !== undefined ? nuevaEtapa : (recomendacionSemana.etapaFenologica || ''),
+      objetivoFertilizacion: nuevoObjetivo !== undefined ? nuevoObjetivo : (recomendacionSemana.objetivoFertilizacion || '')
+    };
+    const todasRecs = recomendaciones.filter(r => r.semana !== semanaActiva);
+    todasRecs.push(recActualizada);
+    todasRecs.sort((a, b) => a.semana - b.semana);
+    onUpdateVisita({ ...visita, recomendacionesFertirriego: todasRecs });
+  };
+
+  // Función para auditar la nutrición y fertilización de la semana activa
+  const handleAuditarNutricionSemanal = async () => {
+    setAuditandoNutricion(true);
+    try {
+      const eventosDeSemana = recomendacionSemana.eventos || [];
+      const todasLineasA = [];
+      const todasLineasB = [];
+      const todasLineasProd = [];
+
+      eventosDeSemana.forEach(ev => {
+        if (ev.lineasTanqueA) todasLineasA.push(...ev.lineasTanqueA);
+        if (ev.lineasTanqueB) todasLineasB.push(...ev.lineasTanqueB);
+        if (ev.productos) todasLineasProd.push(...ev.productos);
+      });
+
+      const res = await geminiService.auditarNutricionFertirriego({
+        cultivo: visita.lote?.cultivoNombre || 'Cultivo',
+        etapaFenologica: recomendacionSemana.etapaFenologica || 'Planta saliendo de cosecha / Recuperación',
+        objetivoFertilizacion: recomendacionSemana.objetivoFertilizacion || 'Promoción de floración y fertilidad de polen',
+        semana: semanaActiva,
+        modalidad: eventosDeSemana[0]?.modalidad || 'dosatron',
+        lineasA: todasLineasA,
+        lineasB: todasLineasB,
+        lineasProductos: todasLineasProd
+      });
+
+      setResultadoAuditoriaNutricional(res);
+      setMostrarPanelAuditoria(true);
+    } catch (e) {
+      console.error('Error auditando nutrición:', e);
+    } finally {
+      setAuditandoNutricion(false);
+    }
   };
 
   const handleAgregarSemana = () => {
@@ -401,6 +454,255 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
           </button>
         )}
       </div>
+
+      {/* PANEL DE CONTROL AGRONÓMICO: ETAPA FENOLÓGICA Y OBJETIVO DE FERTILIZACIÓN */}
+      <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 text-white p-3.5 sm:p-4 rounded-2xl shadow-md space-y-3 border border-emerald-700/50">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-700/60 pb-2.5">
+          <div className="flex items-center gap-2">
+            <span className="w-8 h-8 rounded-xl bg-[#acf847] text-[#102000] flex items-center justify-center font-black text-sm shadow-xs">
+              🌱
+            </span>
+            <div>
+              <h3 className="font-headline font-bold text-sm text-white flex items-center gap-1.5">
+                <span>Semana {semanaActiva} • Curva de Absorción y Metas Fenológicas</span>
+              </h3>
+              <p className="text-[11px] text-emerald-200/90 font-body">
+                Cultivo: <strong>{visita.lote?.cultivoNombre || 'Cultivo'}</strong> ({visita.lote?.variedad || 'Variedad estándar'})
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleAuditarNutricionSemanal}
+            disabled={auditandoNutricion || (recomendacionSemana.eventos || []).length === 0}
+            className="px-3 py-1.5 rounded-xl bg-[#acf847] hover:bg-[#91db2a] text-[#102000] text-xs font-black transition flex items-center gap-1.5 shadow-sm active:scale-95 disabled:opacity-50 self-start sm:self-auto"
+            title="Evaluar balance químico y estequiométrico con IA"
+          >
+            <Sparkles className={`w-3.5 h-3.5 text-[#102000] ${auditandoNutricion ? 'animate-spin' : ''}`} />
+            <span>{auditandoNutricion ? 'Auditando...' : '⚡ Auditar Nutrición con I.A.'}</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 text-xs">
+          {/* Selector de Etapa Fenológica */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-headline font-bold text-emerald-200 flex items-center justify-between">
+              <span>🌿 Etapa Fenológica del Cultivo:</span>
+              <span className="text-[10px] text-emerald-300/80 font-normal">Requerimiento nutricional</span>
+            </label>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={recomendacionSemana.etapaFenologica || ''}
+                onChange={(e) => handleActualizarEtapaYObjetivo(e.target.value, undefined)}
+                placeholder="Ej: Planta saliendo de cosecha, Floración..."
+                className="flex-1 bg-emerald-950/90 text-white placeholder:text-emerald-400/60 border border-emerald-600/70 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#acf847] outline-none"
+              />
+              <select
+                onChange={(e) => {
+                  if (e.target.value) handleActualizarEtapaYObjetivo(e.target.value, undefined);
+                }}
+                value=""
+                className="bg-emerald-800 hover:bg-emerald-700 text-white text-xs border border-emerald-600 rounded-xl px-2 py-2 cursor-pointer outline-none"
+                title="Seleccionar etapa predefinida"
+              >
+                <option value="" disabled>Sugerencias...</option>
+                {ETAPAS_FENOLOGICAS.map((et, i) => (
+                  <option key={i} value={et}>{et}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Selector de Objetivo de Fertilización */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-headline font-bold text-emerald-200 flex items-center justify-between">
+              <span>🎯 Objetivo de la Fertilización:</span>
+              <span className="text-[10px] text-emerald-300/80 font-normal">Meta agronómica</span>
+            </label>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={recomendacionSemana.objetivoFertilizacion || ''}
+                onChange={(e) => handleActualizarEtapaYObjetivo(undefined, e.target.value)}
+                placeholder="Ej: Promoción de floración, Llenado de fruto..."
+                className="flex-1 bg-emerald-950/90 text-white placeholder:text-emerald-400/60 border border-emerald-600/70 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#acf847] outline-none"
+              />
+              <select
+                onChange={(e) => {
+                  if (e.target.value) handleActualizarEtapaYObjetivo(undefined, e.target.value);
+                }}
+                value=""
+                className="bg-emerald-800 hover:bg-emerald-700 text-white text-xs border border-emerald-600 rounded-xl px-2 py-2 cursor-pointer outline-none"
+                title="Seleccionar objetivo predefinido"
+              >
+                <option value="" disabled>Sugerencias...</option>
+                {OBJETIVOS_FERTILIZACION.map((ob, i) => (
+                  <option key={i} value={ob}>{ob}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* PANEL DE ASISTENTE I.A. NUTRICIONAL Y BALANCE ESTEQUIOMÉTRICO */}
+      {resultadoAuditoriaNutricional && mostrarPanelAuditoria && (
+        <div className="bg-white rounded-2xl border-2 border-[#00652c] p-4 shadow-sm space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 rounded-xl bg-[#acf847] text-[#416900] flex items-center justify-center">
+                <Sparkles className="w-4 h-4" />
+              </span>
+              <div>
+                <h4 className="font-headline font-bold text-sm text-slate-900 flex items-center gap-2">
+                  <span>Asistente I.A. Nutricional: Balance Elemental y Curvas Fenológicas</span>
+                  <span className="text-[9.5px] font-mono font-bold bg-[#d3ffd5] text-[#005323] px-2 py-0.5 rounded-full border border-[#79db8d]">
+                    Semana {semanaActiva}
+                  </span>
+                </h4>
+                <p className="text-[10.5px] text-slate-500 font-mono">
+                  {resultadoAuditoriaNutricional.origen} • Evaluado a las {resultadoAuditoriaNutricional.fechaAuditoria}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setMostrarPanelAuditoria(false)}
+              className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              title="Cerrar panel de auditoría"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Tarjetas de Aporte Elemental Acumulado */}
+          <div className="space-y-1.5">
+            <span className="text-[11px] font-headline font-bold text-slate-700 uppercase tracking-wider block">
+              📊 Aporte Estequiométrico de Nutrientes en la Semana {semanaActiva}:
+            </span>
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 text-center font-mono">
+              <div className="bg-blue-50/70 p-2 rounded-xl border border-blue-200">
+                <span className="text-[10px] text-blue-800 font-bold block font-body">N Total</span>
+                <strong className="text-xs text-blue-950 font-black">{resultadoAuditoriaNutricional.metricas.nTotalKg.toFixed(2)} kg</strong>
+                <span className="text-[8.5px] text-slate-500 block font-sans">
+                  NO3: {resultadoAuditoriaNutricional.metricas.formasNitrogeno.pctNitrico}%
+                </span>
+              </div>
+              <div className="bg-emerald-50/70 p-2 rounded-xl border border-emerald-200">
+                <span className="text-[10px] text-emerald-800 font-bold block font-body">P2O5</span>
+                <strong className="text-xs text-emerald-950 font-black">{resultadoAuditoriaNutricional.metricas.p2o5Kg.toFixed(2)} kg</strong>
+                <span className="text-[8.5px] text-slate-500 block font-sans">
+                  P: {resultadoAuditoriaNutricional.metricas.pElementalKg.toFixed(2)} kg
+                </span>
+              </div>
+              <div className="bg-purple-50/70 p-2 rounded-xl border border-purple-200">
+                <span className="text-[10px] text-purple-800 font-bold block font-body">K2O</span>
+                <strong className="text-xs text-purple-950 font-black">{resultadoAuditoriaNutricional.metricas.k2oKg.toFixed(2)} kg</strong>
+                <span className="text-[8.5px] text-purple-700 font-bold block font-sans">
+                  K:N = {resultadoAuditoriaNutricional.metricas.relacionKN}
+                </span>
+              </div>
+              <div className="bg-cyan-50/70 p-2 rounded-xl border border-cyan-200">
+                <span className="text-[10px] text-cyan-800 font-bold block font-body">CaO</span>
+                <strong className="text-xs text-cyan-950 font-black">{resultadoAuditoriaNutricional.metricas.caoKg.toFixed(2)} kg</strong>
+                <span className="text-[8.5px] text-slate-500 block font-sans">
+                  Ca: {resultadoAuditoriaNutricional.metricas.caElementalKg.toFixed(2)} kg
+                </span>
+              </div>
+              <div className="bg-amber-50/70 p-2 rounded-xl border border-amber-200">
+                <span className="text-[10px] text-amber-800 font-bold block font-body">MgO</span>
+                <strong className="text-xs text-amber-950 font-black">{resultadoAuditoriaNutricional.metricas.mgoKg.toFixed(2)} kg</strong>
+                <span className="text-[8.5px] text-slate-500 block font-sans">
+                  Mg: {resultadoAuditoriaNutricional.metricas.mgElementalKg.toFixed(2)} kg
+                </span>
+              </div>
+              <div className="bg-yellow-50/70 p-2 rounded-xl border border-yellow-200">
+                <span className="text-[10px] text-yellow-800 font-bold block font-body">Azufre (S)</span>
+                <strong className="text-xs text-yellow-950 font-black">{resultadoAuditoriaNutricional.metricas.sKg.toFixed(2)} kg</strong>
+                <span className="text-[8.5px] text-slate-500 block font-sans">
+                  Sulfatos
+                </span>
+              </div>
+            </div>
+
+            {/* Microelementos */}
+            {(resultadoAuditoriaNutricional.metricas.feGramos > 0 || resultadoAuditoriaNutricional.metricas.bGramos > 0 || resultadoAuditoriaNutricional.metricas.znGramos > 0) && (
+              <div className="bg-slate-50 p-2 rounded-xl border border-slate-200 flex flex-wrap items-center gap-3 text-[11px] font-mono text-slate-700">
+                <span className="font-bold text-slate-900 font-body">🔬 Microelementos:</span>
+                {resultadoAuditoriaNutricional.metricas.feGramos > 0 && <span>Fe: <strong>{resultadoAuditoriaNutricional.metricas.feGramos.toFixed(1)} g</strong></span>}
+                {resultadoAuditoriaNutricional.metricas.znGramos > 0 && <span>Zn: <strong>{resultadoAuditoriaNutricional.metricas.znGramos.toFixed(1)} g</strong></span>}
+                {resultadoAuditoriaNutricional.metricas.mnGramos > 0 && <span>Mn: <strong>{resultadoAuditoriaNutricional.metricas.mnGramos.toFixed(1)} g</strong></span>}
+                {resultadoAuditoriaNutricional.metricas.bGramos > 0 && <span>B: <strong>{resultadoAuditoriaNutricional.metricas.bGramos.toFixed(1)} g</strong></span>}
+              </div>
+            )}
+          </div>
+
+          {/* Alertas de Incompatibilidad Química */}
+          {resultadoAuditoriaNutricional.compatibilidad.alertas.length > 0 && (
+            <div className="space-y-1">
+              {resultadoAuditoriaNutricional.compatibilidad.alertas.map((alt, aIdx) => (
+                <div key={aIdx} className="bg-red-50 p-2.5 rounded-xl border border-red-200 text-xs text-red-950 font-bold flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <span>{alt}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Advertencias de solubilidad */}
+          {resultadoAuditoriaNutricional.compatibilidad.advertencias.length > 0 && (
+            <div className="space-y-1">
+              {resultadoAuditoriaNutricional.compatibilidad.advertencias.map((adv, aIdx) => (
+                <div key={aIdx} className="bg-amber-50 p-2 rounded-xl border border-amber-200 text-xs text-amber-950 flex items-start gap-2">
+                  <span className="material-symbols-outlined text-[16px] text-amber-600 shrink-0">info</span>
+                  <span>{adv}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Diagnóstico Fenológico y Sugerencias de Ajuste */}
+          <div className="bg-[#f2f3ff] p-3 rounded-xl border border-[#dae2fd] text-xs space-y-2">
+            <div className="flex items-center justify-between border-b border-[#dae2fd] pb-1">
+              <span className="font-headline font-bold text-[#00652c] flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[16px]">psychology</span>
+                <span>Evaluación de la Curva de Absorción ({recomendacionSemana.etapaFenologica || 'Etapa Actual'} • {recomendacionSemana.objetivoFertilizacion || 'Objetivo'}):</span>
+              </span>
+            </div>
+
+            {resultadoAuditoriaNutricional.fenologia.sugerencias.length > 0 && (
+              <div className="space-y-1">
+                {resultadoAuditoriaNutricional.fenologia.sugerencias.map((sug, sIdx) => (
+                  <p key={sIdx} className="text-slate-800 text-[11.5px] leading-relaxed bg-white p-2 rounded-lg border border-amber-200/70">
+                    {sug}
+                  </p>
+                ))}
+              </div>
+            )}
+
+            {resultadoAuditoriaNutricional.fenologia.observaciones.length > 0 && (
+              <div className="space-y-1">
+                {resultadoAuditoriaNutricional.fenologia.observaciones.map((obs, oIdx) => (
+                  <p key={oIdx} className="text-[#005323] text-[11.5px] leading-relaxed bg-[#d3ffd5]/40 p-2 rounded-lg border border-[#79db8d]">
+                    {obs}
+                  </p>
+                ))}
+              </div>
+            )}
+
+            {/* Comentario en vivo de Gemini si existe */}
+            {resultadoAuditoriaNutricional.comentarioIa && (
+              <div className="mt-2 pt-2 border-t border-[#dae2fd] text-slate-800 text-xs space-y-1">
+                <strong className="text-[#005b8c] font-headline font-bold block">
+                  🌐 Dictamen Especializado de Gemini AI:
+                </strong>
+                <div className="whitespace-pre-line leading-relaxed text-[11.5px] bg-white p-2.5 rounded-lg border border-slate-200">
+                  {resultadoAuditoriaNutricional.comentarioIa}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Botones de Modalidades */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
