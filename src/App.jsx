@@ -12,6 +12,7 @@ import AiAssistantModal from './components/AiAssistantModal';
 import SettingsModal from './components/SettingsModal';
 import SettingsView from './components/SettingsView';
 import SfeCatalogModal from './components/SfeCatalogModal';
+import ErrorBoundary from './components/ErrorBoundary';
 import { weatherService } from './services/weatherService';
 import { storageService } from './services/storageService';
 import { crAgroDatabase } from './data/crAgroDatabase';
@@ -258,51 +259,54 @@ export default function App() {
 
       {/* CONTENIDO PRINCIPAL SEGÚN PESTAÑA */}
       <main className="flex-1 max-w-4xl w-full mx-auto p-3 sm:p-4 pb-24">
-        {activeTab === 'visitas' && (
-          <ClientVisitModule
-            visitaActiva={visita}
-            onSelectVisita={handleSelectVisita}
-            onVisitaIniciada={handleVisitaIniciada}
-            onOpenAi={handleOpenAi}
-          />
-        )}
+        <ErrorBoundary onReset={() => setActiveTab('visitas')}>
+          {activeTab === 'visitas' && (
+            <ClientVisitModule
+              visitaActiva={visita}
+              onSelectVisita={handleSelectVisita}
+              onVisitaIniciada={handleVisitaIniciada}
+              onOpenAi={handleOpenAi}
+            />
+          )}
 
-        {activeTab === 'hallazgos' && (
-          <FindingsModule
-            visita={visita}
-            onUpdateVisita={handleUpdateVisita}
-            onOpenAi={handleOpenAi}
-          />
-        )}
+          {activeTab === 'hallazgos' && (
+            <FindingsModule
+              visita={visita}
+              onUpdateVisita={handleUpdateVisita}
+              onOpenAi={handleOpenAi}
+            />
+          )}
 
-        {activeTab === 'fertirriego' && (
-          <FertigationModule
-            visita={visita}
-            onUpdateVisita={handleUpdateVisita}
-            onOpenAi={handleOpenAi}
-          />
-        )}
+          {activeTab === 'fertirriego' && (
+            <FertigationModule
+              visita={visita}
+              onUpdateVisita={handleUpdateVisita}
+              onOpenAi={handleOpenAi}
+            />
+          )}
 
-        {activeTab === 'plaguicidas' && (
-          <PesticideModule
-            visita={visita}
-            onUpdateVisita={handleUpdateVisita}
-            onOpenAi={handleOpenAi}
-          />
-        )}
+          {activeTab === 'plaguicidas' && (
+            <PesticideModule
+              visita={visita}
+              onUpdateVisita={handleUpdateVisita}
+              onOpenAi={handleOpenAi}
+            />
+          )}
 
-        {activeTab === 'reporte' && (
-          <ReportModule
-            visita={visita}
-            onOpenAi={handleOpenAi}
-          />
-        )}
+          {activeTab === 'reporte' && (
+            <ReportModule
+              visita={visita}
+              onOpenAi={handleOpenAi}
+              onNavegarTab={setActiveTab}
+            />
+          )}
 
-        {activeTab === 'configuracion' && (
-          <SettingsView
-            onDataReload={() => setVisita(storageService.getVisitaActiva())}
-          />
-        )}
+          {activeTab === 'configuracion' && (
+            <SettingsView
+              onDataReload={() => setVisita(storageService.getVisitaActiva())}
+            />
+          )}
+        </ErrorBoundary>
 
         {/* PIE DE PÁGINA CON DERECHOS DE AUTOR */}
         <footer className="mt-8 text-center text-[11px] text-slate-400 no-print pb-2">

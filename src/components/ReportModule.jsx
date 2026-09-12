@@ -13,7 +13,31 @@ import { storageService } from '../services/storageService';
 import { calcularDosisDual } from '../utils/doseCalculator';
 import { agroEpidemiologyService } from '../services/agroEpidemiologyService';
 
-export default function ReportModule({ visita, onOpenAi }) {
+export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
+  if (!visita || !visita?.id) {
+    return (
+      <div className="max-w-2xl mx-auto my-12 p-8 bg-white rounded-3xl border border-slate-200 shadow-sm text-center space-y-4">
+        <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center mx-auto text-3xl border border-emerald-200">
+          📋
+        </div>
+        <h3 className="text-xl font-extrabold text-slate-800">
+          No hay una visita activa seleccionada
+        </h3>
+        <p className="text-sm text-slate-600 max-w-md mx-auto">
+          Para visualizar y generar el informe agronómico oficial, seleccione una visita existente o cree una nueva en el módulo de Visitas.
+        </p>
+        {onNavegarTab && (
+          <button
+            type="button"
+            onClick={() => onNavegarTab('visitas')}
+            className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-2xl shadow-md active:scale-95 transition text-sm"
+          >
+            Ir al Módulo de Visitas
+          </button>
+        )}
+      </div>
+    );
+  }
   const reportRef = useRef(null);
   const [generandoPdf, setGenerandoPdf] = useState(false);
   const [mensajeEstado, setMensajeEstado] = useState('');
@@ -26,10 +50,19 @@ export default function ReportModule({ visita, onOpenAi }) {
   const [copiadoWhatsapp, setCopiadoWhatsapp] = useState(false);
   const perfilIngeniero = storageService.getPerfilIngeniero();
 
-  const productor = visita.productor || {};
-  const finca = visita.finca || {};
-  const lote = visita.lote || {};
-  const clima = visita.clima || {};
+  const productor = visita?.productor || {};
+  const finca = visita?.finca || {};
+  const lote = visita?.lote || {};
+  const clima = visita?.clima || {};
+
+  // Obtener todos los lotes de la finca para el selector de filtro
+  const clientes = storageService.getClientes();
+  const clienteActual = clientes.find(c => c.id === visita?.clienteId);
+  const fincaActual = clienteActual?.fincas?.find(f => f.id === finca.id);
+  const lotesDeFinca = fincaActual?.lotes || [lote].filter(Boolean);
+
+  // Estadísticas climáticas acumuladas de la finca
+  const estadisticasClima = storageService.getEstadisticasClimaClienteFinca(visita?.clienteId, finca.id);
 
   // Variables climáticas normalizadas (garantiza valores numéricos sin omisiones)
   const altitudFinca = finca.gps?.altitud || clima.altitud || 1680;
@@ -44,45 +77,56 @@ export default function ReportModule({ visita, onOpenAi }) {
 
   // Análisis de I.A. sobre Factores Climáticos y Riesgos Fitosanitarios (enfermedades y plagas propensas)
   const analisisClimaIa = React.useMemo(() => {
-    if (visita.analisisEpidemiologico?.impactoFisiologico && visita.analisisEpidemiologico?.enfermedadesPropensas?.length > 0) {
-      return visita.analisisEpidemiologico;
+    try {
+      if (visita?.analisisEpidemiologico?.impactoFisiologico && visita?.analisisEpidemiologico?.enfermedadesPropensas?.length > 0) {
+        return visita?.analisisEpidemiologico;
+      }
+      return agroEpidemiologyService.generarAnalisisClimaticoIa({
+        cultivoNombre: lote?.cultivoNombre || 'Fresa',
+        variedad: lote?.variedad || '',
+        temp: tempFinca,
+        humedad: humedadFinca,
+        lluvia7d: lluvia7d,
+        altitud: altitudFinca,
+        loteNombre: filtroLote === 'todos' ? 'Toda la Finca' : filtroLote,
+        hallazgos: (visita?.hallazgos || [])
+      });
+    } catch (err) {
+      console.error('Error generando análisis agroclimático:', err);
+      return {
+        cultivo: lote?.cultivoNombre || 'Cultivo',
+        variedad: lote?.variedad || 'Estándar',
+        temperatura: tempFinca,
+        humedadRelativa: humedadFinca,
+        lluviaSemanal: lluvia7d,
+        altitud: altitudFinca,
+        pisoAltitudinal: 'Piso Medio',
+        descAltitud: 'Condiciones templadas.',
+        impactoFisiologico: 'Condiciones climáticas bajo monitoreo agronómico continuo.',
+        enfermedadesPropensas: [],
+        insectosAcarosPropensos: [],
+        medidasPreventivas: 'Monitoreo preventivo semanal en campo.',
+        resumenEjecutivo: 'Monitoreo de parámetros climáticos activo.',
+        estadoAprobacion: 'aprobado'
+      };
     }
-    return agroEpidemiologyService.generarAnalisisClimaticoIa({
-      cultivoNombre: lote.cultivoNombre || 'Fresa',
-      variedad: lote.variedad || '',
-      temp: tempFinca,
-      humedad: humedadFinca,
-      lluvia7d: lluvia7d,
-      altitud: altitudFinca,
-      loteNombre: filtroLote === 'todos' ? 'Toda la Finca' : filtroLote,
-      hallazgos: (visita.hallazgos || [])
-    });
-  }, [visita.analisisEpidemiologico, lote.cultivoNombre, lote.variedad, tempFinca, humedadFinca, lluvia7d, altitudFinca, filtroLote, visita.hallazgos]);
-  
-  // Obtener todos los lotes de la finca para el selector de filtro
-  const clientes = storageService.getClientes();
-  const clienteActual = clientes.find(c => c.id === visita.clienteId);
-  const fincaActual = clienteActual?.fincas?.find(f => f.id === finca.id);
-  const lotesDeFinca = fincaActual?.lotes || [lote].filter(Boolean);
-
-  // Estadísticas climáticas acumuladas de la finca
-  const estadisticasClima = storageService.getEstadisticasClimaClienteFinca(visita.clienteId, finca.id);
+  }, [visita?.analisisEpidemiologico, lote?.cultivoNombre, lote?.variedad, tempFinca, humedadFinca, lluvia7d, altitudFinca, filtroLote, visita?.hallazgos]);
 
   // Mediciones de suelo en campo
-  const medicionesSuelo = (visita.medicionesSuelo || []).filter(m => m.estadoAprobacion !== 'eliminado');
+  const medicionesSuelo = (visita?.medicionesSuelo || []).filter(m => m.estadoAprobacion !== 'eliminado');
   const cultivoDef = crAgroDatabase.cultivos.find(c => c.id === lote.cultivoId || c.nombre.toLowerCase() === (lote.cultivoNombre || '').toLowerCase()) || crAgroDatabase.cultivos[0];
 
   // Análisis epidemiológico
-  const analisisEpidemiologico = visita.analisisEpidemiologico || {};
+  const analisisEpidemiologico = visita?.analisisEpidemiologico || {};
 
   // Filtrado de hallazgos
-  const todosHallazgos = visita.hallazgos || [];
+  const todosHallazgos = visita?.hallazgos || [];
   const hallazgosFiltrados = filtroLote === 'todos'
     ? todosHallazgos
     : todosHallazgos.filter(h => !h.loteId || h.loteId === filtroLote || h.loteNombre === filtroLote);
 
   // Filtrado de recomendaciones de fertirriego
-  const todasRecFertirriego = visita.recomendacionesFertirriego || [];
+  const todasRecFertirriego = visita?.recomendacionesFertirriego || [];
   const recFertirriegoFiltradas = todasRecFertirriego.map(semana => {
     if (filtroLote === 'todos') return semana;
     const eventosFiltrados = (semana.eventos || []).filter(ev => 
@@ -92,7 +136,7 @@ export default function ReportModule({ visita, onOpenAi }) {
   }).filter(semana => semana.eventos && semana.eventos.length > 0);
 
   // Filtrado de recomendaciones de plaguicidas
-  const todasRecPlaguicidas = visita.recomendacionesPlaguicidas || [];
+  const todasRecPlaguicidas = visita?.recomendacionesPlaguicidas || [];
   const recPlaguicidasFiltradas = todasRecPlaguicidas.map(semana => {
     if (filtroLote === 'todos') return semana;
     const appsFiltradas = (semana.aplicaciones || []).filter(app => 
@@ -176,7 +220,7 @@ export default function ReportModule({ visita, onOpenAi }) {
 
       const nombreLoteStr = filtroLote === 'todos' ? 'Consolidado' : filtroLote.replace(/\s+/g, '_');
       const fincaLimpia = (finca.nombre || 'Finca').replace(/\s+/g, '_');
-      const fileName = `Informe_${fincaLimpia}_${nombreLoteStr}_${visita.fecha || '2026'}.pdf`;
+      const fileName = `Informe_${fincaLimpia}_${nombreLoteStr}_${visita?.fecha || '2026'}.pdf`;
 
       const pdfBlob = pdf.output('blob');
       const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
@@ -198,12 +242,12 @@ export default function ReportModule({ visita, onOpenAi }) {
   const handleGuardarEnExpediente = () => {
     const nuevoReporte = {
       id: 'rep-' + Date.now(),
-      visitaId: visita.id,
-      clienteId: visita.clienteId,
+      visitaId: visita?.id,
+      clienteId: visita?.clienteId,
       fincaId: finca.id,
       fincaNombre: finca.nombre || 'Finca Principal',
       productorNombre: productor.nombre || 'Cliente',
-      fecha: visita.fecha || new Date().toISOString().split('T')[0],
+      fecha: visita?.fecha || new Date().toISOString().split('T')[0],
       cultivoNombre: lote.cultivoNombre || 'Cultivo',
       alcance: filtroLote === 'todos' ? 'Toda la Finca' : `Lote: ${filtroLote}`,
       hallazgosCount: hallazgosFiltrados.length,
@@ -212,7 +256,7 @@ export default function ReportModule({ visita, onOpenAi }) {
       medicionesSueloCount: medicionesSuelo.length,
       resumenWhatsApp: generarTextoCompletoWhatsApp()
     };
-    storageService.guardarReporteEnExpediente(visita.clienteId, nuevoReporte);
+    storageService.guardarReporteEnExpediente(visita?.clienteId, nuevoReporte);
     setGuardadoEnExpediente(true);
     setTimeout(() => setGuardadoEnExpediente(false), 3500);
   };
@@ -253,7 +297,7 @@ export default function ReportModule({ visita, onOpenAi }) {
         await navigator.share({
           files: [pdfFile],
           title: `Informe Agronómico - ${finca.nombre || 'Finca'}`,
-          text: `Estimado(a) ${productor.nombre || 'Productor'}: Adjunto informe técnico oficial de la visita del ${visita.fecha}.`
+          text: `Estimado(a) ${productor.nombre || 'Productor'}: Adjunto informe técnico oficial de la visita del ${visita?.fecha}.`
         });
       } else {
         // Fallback para computadoras u otros navegadores
@@ -292,7 +336,7 @@ export default function ReportModule({ visita, onOpenAi }) {
         await navigator.share({
           files: [pdfFile],
           title: `Informe Agronómico - ${finca.nombre || 'Finca'}`,
-          text: `🌱 *AGROASESOR PRO CR - INFORME OFICIAL*\nProductor: ${productor.nombre}\nFinca: ${finca.nombre} (${visita.fecha})\n\nAdjunto el informe técnico completo en documento PDF.`
+          text: `🌱 *AGROASESOR PRO CR - INFORME OFICIAL*\nProductor: ${productor.nombre}\nFinca: ${finca.nombre} (${visita?.fecha})\n\nAdjunto el informe técnico completo en documento PDF.`
         });
       } else {
         // En PC o navegador web: descargar el PDF y abrir la conversación de WhatsApp
@@ -333,7 +377,7 @@ export default function ReportModule({ visita, onOpenAi }) {
       const cc = 'h7coordinador@gmail.com';
       const asunto = `Informe Agronómico Oficial - ${finca.nombre || 'Finca'} - Ing. Ricardo Barquero`;
       const cuerpo = `Estimado(a) ${productor.nombre || 'Productor'}:\n\n` +
-        `Adjunto el informe de asesoría agronómica correspondiente a la visita del ${visita.fecha} en la finca ${finca.nombre || ''}.\n\n` +
+        `Adjunto el informe de asesoría agronómica correspondiente a la visita del ${visita?.fecha} en la finca ${finca.nombre || ''}.\n\n` +
         `Atentamente,\n` +
         `Ing. Agr. Ricardo Manuel Barquero Chacón\n` +
         `Colegiado No. 5896 • Ingeniero Agrónomo\n` +
@@ -374,7 +418,7 @@ export default function ReportModule({ visita, onOpenAi }) {
     msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
     msg += `👨‍🌾 *Productor:* ${productor.nombre || 'Cliente'}\n`;
     msg += `🏡 *Finca:* ${finca.nombre || 'Finca'} (${loteTexto})\n`;
-    msg += `📅 *Fecha:* ${visita.fecha || 'Hoy'} • ${visita.hora || ''}\n`;
+    msg += `📅 *Fecha:* ${visita?.fecha || 'Hoy'} • ${visita?.hora || ''}\n`;
     msg += `🌱 *Cultivo:* ${lote.cultivoNombre || 'Cultivo'} (Var: ${lote.variedad || 'Estándar'})
 `;
     msg += `🏔️ *Altitud Finca:* ${altitudFinca} msnm • 🌧️ *Lluvia 7 días:* ${lluvia7d} mm
@@ -633,7 +677,7 @@ export default function ReportModule({ visita, onOpenAi }) {
               <span className="text-[10px] font-extrabold uppercase tracking-wider bg-white/20 px-2 py-0.5 rounded-full">
                 Informe Digital para Móvil
               </span>
-              <span className="text-xs font-bold text-emerald-200">{visita.fecha}</span>
+              <span className="text-xs font-bold text-emerald-200">{visita?.fecha}</span>
             </div>
             <h3 className="text-lg sm:text-xl font-black">{productor.nombre || 'Productor'}</h3>
             <p className="text-xs text-emerald-100">
@@ -974,10 +1018,10 @@ export default function ReportModule({ visita, onOpenAi }) {
               </span>
               <div className="mt-1 text-xs font-bold text-slate-700">
                 <span>Fecha: </span>
-                <span className="text-slate-900">{visita.fecha || '2026-03-10'}</span>
+                <span className="text-slate-900">{visita?.fecha || '2026-03-10'}</span>
               </div>
               <div className="text-[11px] text-slate-500">
-                Folio: AGRO-CR-{visita.id?.slice(-5) || '001'}
+                Folio: AGRO-CR-{visita?.id?.slice(-5) || '001'}
               </div>
             </div>
           </div>
@@ -1625,7 +1669,7 @@ export default function ReportModule({ visita, onOpenAi }) {
                 Informe emitido conforme a las Buenas Prácticas Agrícolas (BPA) y legislación fitosanitaria de Costa Rica.
               </p>
               <div className="pt-1 text-[10px] text-slate-400 font-mono">
-                REG-CR: 5896 • {visita.fecha || '2026-03-10'}
+                REG-CR: 5896 • {visita?.fecha || '2026-03-10'}
               </div>
             </div>
           </div>
@@ -1693,7 +1737,7 @@ export default function ReportModule({ visita, onOpenAi }) {
               <p>
                 {modalDescargaInfo.destino === 'whatsapp' ? (
                   <>
-                    Se abrió la conversación de WhatsApp con el resumen de la visita. Para que el cliente reciba el informe oficial completo, presione el icono de <strong>clip (📎) ➔ Documento</strong> y seleccione el archivo PDF descargado.
+                    Se abrió la conversación de WhatsApp con el resumen de la visita?. Para que el cliente reciba el informe oficial completo, presione el icono de <strong>clip (📎) ➔ Documento</strong> y seleccione el archivo PDF descargado.
                   </>
                 ) : (
                   <>
