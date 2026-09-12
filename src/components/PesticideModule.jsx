@@ -9,6 +9,7 @@ import { crAgroDatabase } from '../data/crAgroDatabase';
 import { storageService } from '../services/storageService';
 import { geminiService } from '../services/geminiService';
 import SfeCatalogModal from './SfeCatalogModal';
+import { calcularDosisDual, convertirLitroAEstanon, convertirEstanonALitro } from '../utils/doseCalculator';
 
 export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
   const [semanaActiva, setSemanaActiva] = useState(1);
@@ -197,12 +198,15 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
   // Seleccionar producto desde el Catálogo Oficial SFE
   const handleSeleccionarDesdeCatalogoSfe = (p) => {
     if (filaSeleccionandoIdx !== null && lineasMezcla[filaSeleccionandoIdx]) {
+      const dual = calcularDosisDual(p.dosisEstandar || '');
       const nuevas = [...lineasMezcla];
       nuevas[filaSeleccionandoIdx].esManual = false;
       nuevas[filaSeleccionandoIdx].producto = p.nombreComercial;
       nuevas[filaSeleccionandoIdx].tipo = p.categoria || nuevas[filaSeleccionandoIdx].tipo;
       nuevas[filaSeleccionandoIdx].fracIrac = p.codigoFracIrac || '';
-      nuevas[filaSeleccionandoIdx].dosis = p.dosisEstandar || nuevas[filaSeleccionandoIdx].dosis;
+      nuevas[filaSeleccionandoIdx].dosisLitro = p.dosisLitro || dual.dosisLitro;
+      nuevas[filaSeleccionandoIdx].dosisEstanon = p.dosisEstanon || dual.dosisEstanon;
+      nuevas[filaSeleccionandoIdx].dosis = p.dosisEstandar || (dual.dosisEstanon ? `${dual.dosisLitro} (${dual.dosisEstanon})` : dual.dosisLitro);
       nuevas[filaSeleccionandoIdx].funcion = p.blancoBiologico || p.ingredienteActivo || nuevas[filaSeleccionandoIdx].funcion;
       nuevas[filaSeleccionandoIdx].registroSfe = p.registroSfe || p.registroSFE || '';
       setLineasMezcla(nuevas);
@@ -210,6 +214,7 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
     } else {
       const esInsecticida = (p.categoria || '').toLowerCase().includes('insecticida') || (p.categoria || '').toLowerCase().includes('acaricida');
       const tipo = esInsecticida ? 'insecticida_acaricida' : 'fungicida_foliar';
+      const dual = calcularDosisDual(p.dosisEstandar || '');
       setTipoMezcla(tipo);
       setAppEditandoId(null);
       setAlcanceApp('Toda la Finca');
@@ -217,8 +222,8 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
       setBoquilla('Cono hueco TX-4 (45 PSI)');
       setNombreApp(tipo === 'fungicida_foliar' ? 'Mezcla Foliar: Fungicida + Nutrición' : 'Mezcla Foliar: Insecticida + Acaricida');
       setLineasMezcla([
-        { orden: 1, tipo: 'Acondicionador', producto: 'Carrier', dosis: '100 - 150 cc / 200 L', fracIrac: 'Acondicionador', funcion: 'Regulación de pH 5.0 y dureza', esManual: false, registroSfe: 'Reg. SFE No. AC-102' },
-        { orden: 2, tipo: p.categoria || (esInsecticida ? 'Insecticida' : 'Fungicida'), producto: p.nombreComercial, dosis: p.dosisEstandar || '', fracIrac: p.codigoFracIrac || '', funcion: p.blancoBiologico || p.ingredienteActivo || '', esManual: false, registroSfe: p.registroSfe || p.registroSFE || '' }
+        { orden: 1, tipo: 'Acondicionador', producto: 'Carrier', dosisLitro: '0.5 - 0.75 cc/L', dosisEstanon: '100 - 150 cc / 200 L', dosis: '100 - 150 cc / 200 L', fracIrac: 'Acondicionador', funcion: 'Regulación de pH 5.0 y dureza', esManual: false, registroSfe: 'Reg. SFE No. AC-102' },
+        { orden: 2, tipo: p.categoria || (esInsecticida ? 'Insecticida' : 'Fungicida'), producto: p.nombreComercial, dosisLitro: p.dosisLitro || dual.dosisLitro, dosisEstanon: p.dosisEstanon || dual.dosisEstanon, dosis: p.dosisEstandar || (dual.dosisEstanon ? `${dual.dosisLitro} (${dual.dosisEstanon})` : dual.dosisLitro), fracIrac: p.codigoFracIrac || '', funcion: p.blancoBiologico || p.ingredienteActivo || '', esManual: false, registroSfe: p.registroSfe || p.registroSFE || '' }
       ]);
       setMostrarModalApp(true);
     }
@@ -241,9 +246,12 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
       // Autocompletar categoría, FRAC/IRAC, dosis y función desde la base de datos
       const encontrado = todosPlaguicidas.find(p => p.nombreComercial === valor);
       if (encontrado) {
+        const dual = calcularDosisDual(encontrado.dosisEstandar || '');
         nuevas[idx].tipo = encontrado.categoria || nuevas[idx].tipo;
         nuevas[idx].fracIrac = encontrado.codigoFracIrac || '';
-        nuevas[idx].dosis = encontrado.dosisEstandar || nuevas[idx].dosis;
+        nuevas[idx].dosisLitro = encontrado.dosisLitro || dual.dosisLitro;
+        nuevas[idx].dosisEstanon = encontrado.dosisEstanon || dual.dosisEstanon;
+        nuevas[idx].dosis = encontrado.dosisEstandar || (dual.dosisEstanon ? `${dual.dosisLitro} (${dual.dosisEstanon})` : dual.dosisLitro);
         nuevas[idx].funcion = encontrado.blancoBiologico || encontrado.ingredienteActivo || nuevas[idx].funcion;
         nuevas[idx].registroSfe = encontrado.registroSfe || encontrado.registroSFE || '';
       }
@@ -686,11 +694,12 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                 <table className="w-full text-xs text-left">
                   <thead>
                     <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
-                      <th className="py-2 px-2.5 rounded-l-lg font-bold w-12 text-center">Orden</th>
+                      <th className="py-2 px-2 rounded-l-lg font-bold w-10 text-center">Orden</th>
                       <th className="py-2 px-2 font-bold">Insumo / Producto Comercial</th>
                       <th className="py-2 px-2 font-bold">Categoría</th>
                       <th className="py-2 px-2 font-bold">FRAC / IRAC</th>
-                      <th className="py-2 px-2 font-bold text-right">Dosis</th>
+                      <th className="py-2 px-2 font-bold text-center text-blue-900 bg-blue-50/70 border-x border-blue-100">Dosis / Litro</th>
+                      <th className="py-2 px-2 font-bold text-center text-purple-950 bg-purple-50/70 border-r border-purple-100">Dosis / Estañón (200 L)</th>
                       <th className="py-2 px-2 rounded-r-lg font-bold">Función / Blanco</th>
                     </tr>
                   </thead>
@@ -724,9 +733,21 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                         <td className="py-2 px-2 font-bold text-indigo-700 text-[11px]">
                           {l.fracIrac || 'N/A'}
                         </td>
-                        <td className="py-2 px-2 font-black text-slate-900 text-right shrink-0">
-                          {l.dosis}
-                        </td>
+                        {(() => {
+                          const dual = calcularDosisDual(l.dosis || '');
+                          const dLitro = l.dosisLitro || dual.dosisLitro;
+                          const dEstanon = l.dosisEstanon || dual.dosisEstanon;
+                          return (
+                            <>
+                              <td className="py-2 px-2 font-bold text-blue-900 text-center bg-blue-50/20 border-x border-blue-100 whitespace-nowrap">
+                                {dLitro}
+                              </td>
+                              <td className="py-2 px-2 font-black text-purple-950 text-center bg-purple-50/30 border-r border-purple-100 whitespace-nowrap">
+                                {dEstanon}
+                              </td>
+                            </>
+                          );
+                        })()}
                         <td className="py-2 px-2 text-slate-600 text-[11px]">
                           {l.funcion || ''}
                         </td>
@@ -1040,17 +1061,61 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                         <option value="Coadyuvante">Coadyuv.</option>
                       </select>
 
-                      <input
-                        type="text"
-                        value={l.dosis}
-                        onChange={(e) => {
-                          const nuevo = [...lineasMezcla];
-                          nuevo[idx].dosis = e.target.value;
-                          setLineasMezcla(nuevo);
-                        }}
-                        placeholder="Dosis"
-                        className="w-24 text-xs font-bold text-center border border-slate-200 rounded-lg p-2 outline-none"
-                      />
+                      {/* Dosis dual sincronizada: Por Litro y Por Estañón (200 L) */}
+                      <div className="flex items-center gap-1">
+                        <div className="flex flex-col">
+                          <span className="text-[9px] font-bold text-blue-900">Dosis / L</span>
+                          <input
+                            type="text"
+                            value={l.dosisLitro !== undefined ? l.dosisLitro : (calcularDosisDual(l.dosis || '').dosisLitro)}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              const nuevo = [...lineasMezcla];
+                              nuevo[idx].dosisLitro = val;
+                              // Auto-calcular estañón de 200 L al digitar dosis por litro
+                              const num = parseFloat(val.replace(/,/g, '.'));
+                              if (!isNaN(num) && num > 0) {
+                                const unit = val.toLowerCase().includes('g') ? 'g' : 'cc';
+                                const calcEstanon = `${Number((num * 200).toFixed(1))} ${unit} / 200 L`;
+                                nuevo[idx].dosisEstanon = calcEstanon;
+                                nuevo[idx].dosis = `${val} (${calcEstanon})`;
+                              } else {
+                                nuevo[idx].dosis = val;
+                              }
+                              setLineasMezcla(nuevo);
+                            }}
+                            placeholder="1.5 cc/L"
+                            className="w-24 text-xs font-bold text-center text-blue-900 bg-blue-50/50 border border-blue-200 rounded-lg p-1.5 outline-none focus:ring-2 focus:ring-blue-500"
+                            title="Dosis por cada litro de agua"
+                          />
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-[9px] font-bold text-purple-900">Dosis / Estañón (200 L)</span>
+                          <input
+                            type="text"
+                            value={l.dosisEstanon !== undefined ? l.dosisEstanon : (calcularDosisDual(l.dosis || '').dosisEstanon)}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              const nuevo = [...lineasMezcla];
+                              nuevo[idx].dosisEstanon = val;
+                              // Auto-calcular dosis por litro al digitar estañón
+                              const num = parseFloat(val.replace(/,/g, '.'));
+                              if (!isNaN(num) && num > 0) {
+                                const unit = val.toLowerCase().includes('g') || val.toLowerCase().includes('kg') ? 'g/L' : 'cc/L';
+                                const calcLitro = `${Number((num / 200).toFixed(2))} ${unit}`;
+                                nuevo[idx].dosisLitro = calcLitro;
+                                nuevo[idx].dosis = `${calcLitro} (${val})`;
+                              } else {
+                                nuevo[idx].dosis = val;
+                              }
+                              setLineasMezcla(nuevo);
+                            }}
+                            placeholder="300 cc / 200 L"
+                            className="w-32 text-xs font-black text-center text-purple-950 bg-purple-50/50 border border-purple-200 rounded-lg p-1.5 outline-none focus:ring-2 focus:ring-purple-500"
+                            title="Dosis total por estañón de 200 Litros"
+                          />
+                        </div>
+                      </div>
 
                       <input
                         type="text"

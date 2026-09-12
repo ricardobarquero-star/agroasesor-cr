@@ -10,6 +10,7 @@ import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { crAgroDatabase } from '../data/crAgroDatabase';
 import { storageService } from '../services/storageService';
+import { calcularDosisDual } from '../utils/doseCalculator';
 
 export default function ReportModule({ visita, onOpenAi }) {
   const reportRef = useRef(null);
@@ -399,7 +400,10 @@ export default function ReportModule({ visita, onOpenAi }) {
           (s.aplicaciones || []).forEach(app => {
             msg += `▸ *${app.nombre}* [${app.volumenTanque}]:\n`;
             (app.ordenMezcla || []).forEach(l => {
-              msg += `  ${l.orden}. ${l.producto} - *${l.dosis}* (${l.fracIrac || l.tipo})\n`;
+              const dual = calcularDosisDual(l.dosis || '');
+              const dL = l.dosisLitro || dual.dosisLitro;
+              const dE = l.dosisEstanon || dual.dosisEstanon;
+              msg += `  ${l.orden}. ${l.producto} - *${dL}* [Estañón: *${dE}*] (${l.fracIrac || l.tipo})\n`;
             });
           });
         }
@@ -779,16 +783,34 @@ export default function ReportModule({ visita, onOpenAi }) {
                           <span className="text-purple-700 font-semibold">{app.volumenTanque}</span>
                         </div>
                         <ol className="list-decimal pl-4 space-y-0.5 text-slate-700">
-                          {(app.ordenMezcla || []).map((l, li) => (
-                            <li key={li}>
-                              <strong>{l.producto}</strong> — {l.dosis} ({l.fracIrac || l.tipo})
-                              {l.registroSfe && (
-                                <span className="text-[10px] text-emerald-800 font-bold ml-1">
-                                  • {l.registroSfe}
-                                </span>
-                              )}
-                            </li>
-                          ))}
+                          {(app.ordenMezcla || []).map((l, li) => {
+                            const dual = calcularDosisDual(l.dosis || '');
+                            const dL = l.dosisLitro || dual.dosisLitro;
+                            const dE = l.dosisEstanon || dual.dosisEstanon;
+                            return (
+                              <li key={li} className="py-0.5">
+                                <div className="flex flex-wrap items-center justify-between gap-1">
+                                  <div>
+                                    <strong className="text-slate-900">{l.producto}</strong>
+                                    <span className="text-[10px] text-slate-500 ml-1">({l.fracIrac || l.tipo})</span>
+                                    {l.registroSfe && (
+                                      <span className="text-[9px] text-emerald-800 font-bold ml-1 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                                        🏛️ {l.registroSfe}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[10px] font-bold flex items-center gap-1">
+                                    <span className="text-blue-900 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200" title="Dosis por litro">
+                                      💧 {dL}
+                                    </span>
+                                    <span className="text-purple-950 bg-purple-100/80 px-1.5 py-0.5 rounded border border-purple-200 font-black" title="Dosis total en estañón de 200 L">
+                                      🛢️ {dE}
+                                    </span>
+                                  </div>
+                                </div>
+                              </li>
+                            );
+                          })}
                         </ol>
                       </div>
                     ))
@@ -1339,40 +1361,49 @@ export default function ReportModule({ visita, onOpenAi }) {
                         <table className="w-full text-xs text-left">
                           <thead>
                             <tr className="bg-slate-100 text-slate-700 border-b border-slate-200 text-[11px]">
-                              <th className="py-1.5 px-2 font-bold w-12 text-center">Paso</th>
+                              <th className="py-1.5 px-2 font-bold w-10 text-center">Paso</th>
                               <th className="py-1.5 px-2 font-bold">Insumo Comercial</th>
                               <th className="py-1.5 px-2 font-bold">FRAC / IRAC</th>
-                              <th className="py-1.5 px-2 font-bold text-right">Dosis</th>
+                              <th className="py-1.5 px-2 font-bold text-center text-blue-900 bg-blue-50/70 border-x border-blue-100">Dosis / Litro</th>
+                              <th className="py-1.5 px-2 font-bold text-center text-purple-950 bg-purple-50/70 border-r border-purple-100">Dosis / Estañón 200 L</th>
                               <th className="py-1.5 px-2 font-bold">Objetivo / Blanco</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
-                            {(app.ordenMezcla || []).map((l, idx) => (
-                              <tr key={idx}>
-                                <td className="py-1 px-2 text-center font-bold text-[10px] text-slate-500">
-                                  {idx + 1}
-                                </td>
-                                <td className="py-1 px-2 font-bold text-slate-900">
-                                  <div>
-                                    <span>{l.producto}</span>
-                                    {l.registroSfe && (
-                                      <span className="block text-[9px] font-bold text-emerald-800">
-                                        🏛️ {l.registroSfe}
-                                      </span>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="py-1 px-2 font-bold text-indigo-700 text-[11px]">
-                                  {l.fracIrac || 'N/A'}
-                                </td>
-                                <td className="py-1 px-2 font-black text-slate-900 text-right">
-                                  {l.dosis}
-                                </td>
-                                <td className="py-1 px-2 text-slate-600 text-[11px]">
-                                  {l.funcion || ''}
-                                </td>
-                              </tr>
-                            ))}
+                            {(app.ordenMezcla || []).map((l, idx) => {
+                              const dual = calcularDosisDual(l.dosis || '');
+                              const dLitro = l.dosisLitro || dual.dosisLitro;
+                              const dEstanon = l.dosisEstanon || dual.dosisEstanon;
+                              return (
+                                <tr key={idx} className="hover:bg-slate-50/50">
+                                  <td className="py-1.5 px-2 text-center font-bold text-[10px] text-slate-500">
+                                    {idx + 1}
+                                  </td>
+                                  <td className="py-1.5 px-2 font-bold text-slate-900">
+                                    <div>
+                                      <span>{l.producto}</span>
+                                      {l.registroSfe && (
+                                        <span className="block text-[9px] font-bold text-emerald-800">
+                                          🏛️ {l.registroSfe}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="py-1.5 px-2 font-bold text-indigo-700 text-[11px]">
+                                    {l.fracIrac || 'N/A'}
+                                  </td>
+                                  <td className="py-1.5 px-2 font-bold text-blue-900 text-center bg-blue-50/20 border-x border-blue-100 whitespace-nowrap">
+                                    {dLitro}
+                                  </td>
+                                  <td className="py-1.5 px-2 font-black text-purple-950 text-center bg-purple-50/30 border-r border-purple-100 whitespace-nowrap">
+                                    {dEstanon}
+                                  </td>
+                                  <td className="py-1.5 px-2 text-slate-600 text-[11px]">
+                                    {l.funcion || ''}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
