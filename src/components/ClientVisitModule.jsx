@@ -75,7 +75,31 @@ export default function ClientVisitModule({
   // Formulario Nueva Finca (dentro de expediente)
   const [nombreNuevaFinca, setNombreNuevaFinca] = useState('');
   const [ubicacionNuevaFinca, setUbicacionNuevaFinca] = useState('');
-  const [altitudNuevaFinca, setAltitudNuevaFinca] = useState('1600');
+  const [altitudNuevaFinca, setAltitudNuevaFinca] = useState('1680');
+
+  // Auto-detectar altitud para nueva finca
+  const handleAutoDetectarAltitudNuevaFinca = async (ubicacionTexto = null) => {
+    try {
+      const gps = await weatherService.obtenerPosicionGPS();
+      const ubi = ubicacionTexto !== null ? ubicacionTexto : (ubicacionNuevaFinca || clienteExpediente?.ubicacion || '');
+      const alt = await weatherService.obtenerAltitudAutomatica(gps.lat, gps.lon, ubi);
+      if (alt) setAltitudNuevaFinca(alt.toString());
+    } catch (err) {
+      console.warn('Error auto-detectando altitud:', err);
+    }
+  };
+
+  // Auto-detectar altitud para edición de finca
+  const handleAutoDetectarAltitudEditarFinca = async () => {
+    try {
+      const gps = await weatherService.obtenerPosicionGPS();
+      const alt = await weatherService.obtenerAltitudAutomatica(gps.lat, gps.lon, editFincaUbicacion);
+      if (alt) setEditFincaAltitud(alt.toString());
+    } catch (err) {
+      console.warn('Error auto-detectando altitud en edicion:', err);
+    }
+  };
+
 
   // Formulario Nuevo Lote (dentro de expediente)
   const [nombreNuevoLote, setNombreNuevoLote] = useState('');
@@ -247,6 +271,8 @@ export default function ClientVisitModule({
       const clima = await weatherService.consultarClimaYAcumulado(gps.lat, gps.lon);
       const cultivoObj = crAgroDatabase.cultivos.find(c => c.id === lote.cultivoId) || crAgroDatabase.cultivos[0];
 
+      const altitudCalculada = clima.altitud || gps.altitud || finca.gps?.altitud || 1680;
+      finca.gps = { ...(finca.gps || {}), lat: gps.lat, lon: gps.lon, altitud: altitudCalculada };
       const nueva = storageService.crearNuevaVisita({
         cliente: cli,
         finca: finca,
@@ -328,8 +354,14 @@ export default function ClientVisitModule({
     setFincaEditando(finca);
     setEditFincaNombre(finca.nombre || '');
     setEditFincaUbicacion(finca.ubicacion || '');
-    setEditFincaAltitud(finca.gps?.altitud?.toString() || '1600');
+    const altActual = finca.gps?.altitud ? finca.gps.altitud.toString() : '';
+    setEditFincaAltitud(altActual || '1680');
     setShowModalEditarFinca(true);
+    if (!altActual || altActual === '1600' || altActual === '0') {
+      weatherService.obtenerAltitudAutomatica(finca.gps?.lat, finca.gps?.lon, finca.ubicacion).then(alt => {
+        if (alt) setEditFincaAltitud(alt.toString());
+      }).catch(console.warn);
+    }
   };
 
   const handleGuardarEdicionFinca = (e) => {
@@ -714,7 +746,10 @@ export default function ClientVisitModule({
                   <p className="text-[11px] text-slate-500">Agregue las diferentes propiedades y los lotes o cultivos específicos de cada una.</p>
                 </div>
                 <button
-                  onClick={() => setShowModalNuevaFinca(true)}
+                  onClick={() => {
+                  setShowModalNuevaFinca(true);
+                  handleAutoDetectarAltitudNuevaFinca(clienteExpediente?.ubicacion);
+                }}
                   className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl flex items-center gap-1 shadow-xs transition"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -737,7 +772,7 @@ export default function ClientVisitModule({
                           </h5>
                           <span className="text-slate-500 text-[11px] flex items-center gap-1 mt-0.5">
                             <MapPin className="w-3 h-3 text-emerald-600" />
-                            {finca.ubicacion || 'Costa Rica'} • Alt: {finca.gps?.altitud || 1600} msnm
+                            {finca.ubicacion || 'Costa Rica'} • <span className="inline-flex items-center gap-1 font-bold text-emerald-900 bg-emerald-100/90 px-2 py-0.5 rounded-md text-[10px] ml-1">🏔️ Altitud: {finca.gps?.altitud || 1680} m s.n.m.</span>
                           </span>
                         </div>
 
@@ -844,7 +879,10 @@ export default function ClientVisitModule({
                   <div className="p-6 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-300 text-center space-y-2">
                     <p className="font-bold text-slate-600">Este cliente aún no tiene fincas registradas</p>
                     <button
-                      onClick={() => setShowModalNuevaFinca(true)}
+                      onClick={() => {
+                  setShowModalNuevaFinca(true);
+                  handleAutoDetectarAltitudNuevaFinca(clienteExpediente?.ubicacion);
+                }}
                       className="px-4 py-2 bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs"
                     >
                       + Agregar Primera Finca
@@ -996,19 +1034,38 @@ export default function ClientVisitModule({
                   type="text"
                   value={ubicacionNuevaFinca}
                   onChange={(e) => setUbicacionNuevaFinca(e.target.value)}
+                  onBlur={() => handleAutoDetectarAltitudNuevaFinca(ubicacionNuevaFinca)}
                   placeholder="Ej. Cascajal de Coronado / Llano Grande"
                   className="w-full border border-slate-300 rounded-xl p-2 font-medium outline-none"
                 />
               </div>
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Altitud Aproximada (msnm)</label>
-                <input
-                  type="number"
-                  value={altitudNuevaFinca}
-                  onChange={(e) => setAltitudNuevaFinca(e.target.value)}
-                  placeholder="1680"
-                  className="w-full border border-slate-300 rounded-xl p-2 font-medium outline-none"
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-bold text-slate-700">Altitud de la Finca (msnm)</label>
+                  <button
+                    type="button"
+                    onClick={() => handleAutoDetectarAltitudNuevaFinca(ubicacionNuevaFinca)}
+                    className="text-[10px] text-emerald-800 hover:text-emerald-950 font-black flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded-lg border border-emerald-300 transition"
+                    title="Obtener altitud automática por GPS satelital o zona"
+                  >
+                    <span>⚡ Auto-detectar Altitud</span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={altitudNuevaFinca}
+                    onChange={(e) => setAltitudNuevaFinca(e.target.value)}
+                    placeholder="1680"
+                    className="w-full border border-slate-300 rounded-xl p-2.5 font-black text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500 bg-emerald-50/40 text-xs"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-extrabold text-emerald-800 bg-emerald-100/80 px-1.5 py-0.5 rounded">
+                    msnm (Automática)
+                  </span>
+                </div>
+                <p className="text-[10px] text-emerald-700 mt-1 flex items-center gap-1 font-semibold">
+                  <span>🏔️</span> Se calcula automáticamente con elevación satelital y cantón agroclimático.
+                </p>
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button
@@ -1529,18 +1586,34 @@ export default function ClientVisitModule({
                   type="text"
                   value={editFincaUbicacion}
                   onChange={(e) => setEditFincaUbicacion(e.target.value)}
+                  onBlur={handleAutoDetectarAltitudEditarFinca}
                   className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 outline-none"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Altitud Aproximada (msnm)</label>
-                <input
-                  type="number"
-                  value={editFincaAltitud}
-                  onChange={(e) => setEditFincaAltitud(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 outline-none"
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-bold text-slate-700">Altitud de la Finca (msnm)</label>
+                  <button
+                    type="button"
+                    onClick={handleAutoDetectarAltitudEditarFinca}
+                    className="text-[10px] text-emerald-800 hover:text-emerald-950 font-black flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded-lg border border-emerald-300 transition"
+                    title="Recalcular altitud automáticamente"
+                  >
+                    <span>⚡ Auto-detectar Altitud</span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={editFincaAltitud}
+                    onChange={(e) => setEditFincaAltitud(e.target.value)}
+                    className="w-full bg-emerald-50/40 border border-slate-300 rounded-xl px-3 py-2 text-xs font-black text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-extrabold text-emerald-800 bg-emerald-100/80 px-1.5 py-0.5 rounded">
+                    msnm (Automática)
+                  </span>
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">

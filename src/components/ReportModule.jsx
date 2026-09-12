@@ -320,8 +320,13 @@ export default function ReportModule({ visita, onOpenAi }) {
     msg += `👨‍🌾 *Productor:* ${productor.nombre || 'Cliente'}\n`;
     msg += `🏡 *Finca:* ${finca.nombre || 'Finca'} (${loteTexto})\n`;
     msg += `📅 *Fecha:* ${visita.fecha || 'Hoy'} • ${visita.hora || ''}\n`;
-    msg += `🌱 *Cultivo:* ${lote.cultivoNombre || 'Cultivo'} (Var: ${lote.variedad || 'Estándar'})\n`;
-    msg += `🌧️ *Lluvia 7 días:* ${clima.lluviaAcumulada7Dias || 0} mm • *HR:* ${clima.humedadActual || 85}% • *Temp:* ${clima.temperaturaActual || 18}°C\n`;
+    const altitudFinca = finca.gps?.altitud || clima.altitud || 1680;
+    msg += `🌱 *Cultivo:* ${lote.cultivoNombre || 'Cultivo'} (Var: ${lote.variedad || 'Estándar'})
+`;
+    msg += `🏔️ *Altitud Finca:* ${altitudFinca} msnm • 🌧️ *Lluvia 7 días:* ${clima.lluviaAcumulada7Dias || 0} mm
+`;
+    msg += `🌡️ *Temp:* ${clima.temperaturaActual || 18}°C • *HR:* ${clima.humedadActual || 85}%
+`;
     msg += `👨‍💼 *Asesor:* Ing. Agr. Ricardo M. Barquero Chacón (Col. 5896)\n\n`;
 
     // Clima acumulado
@@ -558,7 +563,8 @@ export default function ReportModule({ visita, onOpenAi }) {
             <p className="text-xs text-emerald-100">
               Finca: <strong>{finca.nombre}</strong> • {lote.cultivoNombre} ({lote.variedad || 'Estándar'})
             </p>
-            <div className="pt-2 border-t border-white/20 flex items-center justify-between text-xs">
+            <div className="pt-2 border-t border-white/20 flex flex-wrap items-center justify-between gap-1 text-xs">
+              <span>🏔️ Altitud: <strong>{finca.gps?.altitud || clima.altitud || 1680} msnm</strong></span>
               <span>🌧️ Lluvia 7d: <strong>{clima.lluviaAcumulada7Dias || 0} mm</strong></span>
               <span>Asesor: <strong>Ing. Ricardo Barquero (Col. 5896)</strong></span>
             </div>
@@ -605,27 +611,35 @@ export default function ReportModule({ visita, onOpenAi }) {
             </div>
           </div>
 
-          {/* Tarjeta de Clima Acumulado y Análisis Epidemiológico */}
-          {estadisticasClima && (
-            <div className="bg-white p-4 rounded-2xl border border-blue-200 shadow-xs space-y-3">
-              <h4 className="font-extrabold text-xs uppercase tracking-wider text-blue-900 flex items-center gap-1.5">
+          {/* Tarjeta de Parámetros Automáticos y Condiciones Agroclimáticas */}
+          <div className="bg-white p-4 rounded-2xl border border-blue-200 shadow-xs space-y-3">
+            <h4 className="font-extrabold text-xs uppercase tracking-wider text-blue-900 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
                 <CloudRain className="w-4 h-4 text-blue-700" />
-                <span>Condiciones Climáticas y Epidemiología de la Finca</span>
-              </h4>
-              <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                <div className="bg-blue-50 p-2 rounded-xl">
-                  <span className="text-[10px] text-blue-700 block font-semibold">Lluvia Total</span>
-                  <strong className="text-blue-950 font-black text-sm">{estadisticasClima.lluviaTotalAcumulada} mm</strong>
-                </div>
-                <div className="bg-blue-50 p-2 rounded-xl">
-                  <span className="text-[10px] text-blue-700 block font-semibold">Humedad Prom.</span>
-                  <strong className="text-blue-950 font-black text-sm">{estadisticasClima.promedioHumedadRelativa}%</strong>
-                </div>
-                <div className="bg-blue-50 p-2 rounded-xl">
-                  <span className="text-[10px] text-blue-700 block font-semibold">Temp Prom.</span>
-                  <strong className="text-blue-950 font-black text-sm">{estadisticasClima.promedioTemperatura}°C</strong>
-                </div>
+                <span>Parámetros Automáticos y Geoclima de la Finca</span>
+              </span>
+              <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                ⚡ Automático
+              </span>
+            </h4>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+              <div className="bg-amber-50/80 p-2 rounded-xl border border-amber-200">
+                <span className="text-[10px] text-amber-800 block font-semibold">🏔️ Altitud Finca</span>
+                <strong className="text-amber-950 font-black text-sm">{finca.gps?.altitud || clima.altitud || 1680} msnm</strong>
               </div>
+              <div className="bg-blue-50 p-2 rounded-xl">
+                <span className="text-[10px] text-blue-700 block font-semibold">🌧️ Lluvia Semanal</span>
+                <strong className="text-blue-950 font-black text-sm">{clima.lluviaAcumulada7Dias || 0} mm</strong>
+              </div>
+              <div className="bg-blue-50 p-2 rounded-xl">
+                <span className="text-[10px] text-blue-700 block font-semibold">💧 Humedad HR</span>
+                <strong className="text-blue-950 font-black text-sm">{estadisticasClima ? estadisticasClima.promedioHumedadRelativa : (clima.humedadActual || 85)}%</strong>
+              </div>
+              <div className="bg-blue-50 p-2 rounded-xl">
+                <span className="text-[10px] text-blue-700 block font-semibold">🌡️ Temp Finca</span>
+                <strong className="text-blue-950 font-black text-sm">{estadisticasClima ? estadisticasClima.promedioTemperatura : (clima.temperaturaActual || 18)}°C</strong>
+              </div>
+            </div>
               {analisisEpidemiologico.elNinoImpacto && (
                 <div className="bg-amber-50/80 p-2.5 rounded-xl border border-amber-200 text-xs text-amber-950 space-y-1">
                   <span className="font-bold block text-[11px]">🌦️ Impacto Fenómeno de El Niño:</span>
@@ -633,7 +647,6 @@ export default function ReportModule({ visita, onOpenAi }) {
                 </div>
               )}
             </div>
-          )}
 
           {/* Tarjeta de Mediciones de Suelo en Campo */}
           {medicionesSuelo.length > 0 && (
@@ -877,42 +890,133 @@ export default function ReportModule({ visita, onOpenAi }) {
           </div>
         </div>
 
-        {/* 2. CONDICIONES AGROCLIMÁTICAS Y ESTADÍSTICA ACUMULADA DE LA FINCA */}
+        {/* 2. TABLA DE PARÁMETROS AUTOMÁTICOS Y CONDICIONES AGROCLIMÁTICAS DE LA FINCA */}
         <div className="mb-6 print-avoid-break">
-          <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 mb-2 pb-1 border-b border-slate-200 flex items-center gap-1.5">
-            <span className="w-5 h-5 rounded-lg bg-blue-100 text-blue-800 flex items-center justify-center text-xs font-bold">2</span>
-            Condiciones Agroclimáticas Registradas y Acumuladas
-          </h3>
-          
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs mb-3">
-            <div className="bg-blue-50/50 p-2.5 rounded-xl border border-blue-100">
-              <span className="text-slate-500 block text-[10px]">Lluvia Visita (7 Días):</span>
-              <strong className="text-blue-900 font-extrabold text-sm">{clima.lluviaAcumulada7Dias || 0} mm</strong>
-              <span className="text-[10px] text-blue-700 block mt-0.5">
-                {clima.lluviaAcumulada7Dias > 40 ? '⚠️ Humedad alta' : 'Régimen normal'}
-              </span>
-            </div>
-            <div className="bg-blue-50/50 p-2.5 rounded-xl border border-blue-100">
-              <span className="text-slate-500 block text-[10px]">Temperatura en Visita:</span>
-              <strong className="text-slate-900 font-bold">{clima.temperaturaActual || 18}°C</strong>
-              <span className="text-[10px] text-slate-500 block mt-0.5">HR: {clima.humedadActual || 85}%</span>
-            </div>
-            <div className="bg-blue-50/50 p-2.5 rounded-xl border border-blue-100">
-              <span className="text-slate-500 block text-[10px]">Lluvia Acumulada Histórica:</span>
-              <strong className="text-blue-950 font-bold text-sm">
-                {estadisticasClima ? `${estadisticasClima.lluviaTotalAcumulada} mm` : `${clima.lluviaAcumulada7Dias || 0} mm`}
-              </strong>
-              <span className="text-[10px] text-slate-500 block mt-0.5">
-                {estadisticasClima ? `${estadisticasClima.totalVisitas} visitas registradas` : '1 visita'}
-              </span>
-            </div>
-            <div className="bg-blue-50/50 p-2.5 rounded-xl border border-blue-100">
-              <span className="text-slate-500 block text-[10px]">Coordenadas GPS / Altitud:</span>
-              <strong className="text-slate-800 font-bold text-[11px] block truncate">
-                {finca.gps?.lat ? `${finca.gps.lat}, ${finca.gps.lon}` : 'Coronado, San José'}
-              </strong>
-              <span className="text-[10px] text-slate-500">Altitud: {finca.gps?.altitud || 1680} msnm</span>
-            </div>
+          <div className="flex items-center justify-between border-b border-slate-200 mb-2.5 pb-1">
+            <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+              <span className="w-5 h-5 rounded-lg bg-blue-100 text-blue-800 flex items-center justify-center text-xs font-bold">2</span>
+              Tabla de Parámetros Automáticos y Condiciones Agroclimáticas de la Finca
+            </h3>
+            <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md">
+              ⚡ Parámetros Satelitales y GPS Automáticos
+            </span>
+          </div>
+
+          <div className="overflow-hidden border border-slate-200 rounded-xl mb-3 shadow-xs">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
+                <tr>
+                  <th className="p-2.5">Parámetro Automático</th>
+                  <th className="p-2.5">Valor Registrado</th>
+                  <th className="p-2.5">Origen / Sistema</th>
+                  <th className="p-2.5">Interpretación Técnica / Piso Agronómico</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                <tr className="hover:bg-blue-50/30">
+                  <td className="p-2.5 font-bold text-slate-800 flex items-center gap-1.5">
+                    <span className="text-amber-600 font-bold">🏔️</span> Altitud de la Finca
+                  </td>
+                  <td className="p-2.5">
+                    <strong className="text-blue-900 font-black text-sm bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                      {finca.gps?.altitud || clima.altitud || 1680} m s.n.m.
+                    </strong>
+                  </td>
+                  <td className="p-2.5 text-slate-500 text-[11px]">
+                    Satélite DEM / Open-Meteo Elevation
+                  </td>
+                  <td className="p-2.5 text-slate-700 text-[11px]">
+                    {(finca.gps?.altitud || clima.altitud || 1680) >= 2000 
+                      ? 'Piso Alto (2000+ msnm): Clima templado frío de altura, niebla recurrente' 
+                      : (finca.gps?.altitud || clima.altitud || 1680) >= 1400 
+                        ? 'Piso Medio-Alto (1400-1999 msnm): Clima templado húmedo, óptimo hortícola/café'
+                        : 'Piso Basal / Bajura (<1400 msnm): Mayor evapotranspiración'}
+                  </td>
+                </tr>
+                <tr className="hover:bg-blue-50/30">
+                  <td className="p-2.5 font-bold text-slate-800 flex items-center gap-1.5">
+                    <span className="text-red-500 font-bold">📍</span> Geolocalización GPS
+                  </td>
+                  <td className="p-2.5 font-mono text-slate-900 font-bold text-[11px]">
+                    {finca.gps?.lat ? `${finca.gps.lat}, ${finca.gps.lon}` : '10.0215, -83.9482'}
+                  </td>
+                  <td className="p-2.5 text-slate-500 text-[11px]">
+                    WGS84 Satélite GPS Móvil
+                  </td>
+                  <td className="p-2.5 text-slate-700 text-[11px]">
+                    {finca.ubicacion || 'Ubicación georreferenciada de la finca'}
+                  </td>
+                </tr>
+                <tr className="hover:bg-blue-50/30">
+                  <td className="p-2.5 font-bold text-slate-800 flex items-center gap-1.5">
+                    <span className="text-orange-500 font-bold">🌡️</span> Temperatura en Visita
+                  </td>
+                  <td className="p-2.5">
+                    <strong className="text-slate-900 font-bold text-sm">
+                      {clima.temperaturaActual || 18} °C
+                    </strong>
+                  </td>
+                  <td className="p-2.5 text-slate-500 text-[11px]">
+                    Estación Meteorológica Virtual
+                  </td>
+                  <td className="p-2.5 text-slate-700 text-[11px]">
+                    Condición térmica en campo al momento del recorrido
+                  </td>
+                </tr>
+                <tr className="hover:bg-blue-50/30">
+                  <td className="p-2.5 font-bold text-slate-800 flex items-center gap-1.5">
+                    <span className="text-cyan-600 font-bold">💧</span> Humedad Relativa & Rocío
+                  </td>
+                  <td className="p-2.5">
+                    <strong className="text-cyan-950 font-bold text-sm">
+                      {clima.humedadActual || 85} %
+                    </strong>
+                  </td>
+                  <td className="p-2.5 text-slate-500 text-[11px]">
+                    Sensor Atmosférico Satelital
+                  </td>
+                  <td className="p-2.5 text-slate-700 text-[11px]">
+                    {(clima.humedadActual || 85) >= 80 
+                      ? '⚠️ Alta humedad relativa: Conducente a libre de agua y esporulación fúngica' 
+                      : 'Humedad relativa en rango óptimo'}
+                  </td>
+                </tr>
+                <tr className="hover:bg-blue-50/30">
+                  <td className="p-2.5 font-bold text-slate-800 flex items-center gap-1.5">
+                    <span className="text-blue-600 font-bold">🌧️</span> Lluvia Acumulada (7 Días)
+                  </td>
+                  <td className="p-2.5">
+                    <strong className="text-blue-900 font-black text-sm">
+                      {clima.lluviaAcumulada7Dias || 0} mm
+                    </strong>
+                  </td>
+                  <td className="p-2.5 text-slate-500 text-[11px]">
+                    Pluviometría Semanal Satelital
+                  </td>
+                  <td className="p-2.5 text-slate-700 text-[11px]">
+                    {(clima.lluviaAcumulada7Dias || 0) > 40 
+                      ? '⚠️ Lluvias intensas recientes: Monitorear asfixia radicular y lavado' 
+                      : 'Régimen pluviométrico semanal estable'}
+                  </td>
+                </tr>
+                <tr className="hover:bg-blue-50/30">
+                  <td className="p-2.5 font-bold text-slate-800 flex items-center gap-1.5">
+                    <span className="text-indigo-600 font-bold">📊</span> Lluvia Histórica Expediente
+                  </td>
+                  <td className="p-2.5">
+                    <strong className="text-indigo-950 font-black text-sm">
+                      {estadisticasClima ? `${estadisticasClima.lluviaTotalAcumulada} mm` : `${clima.lluviaAcumulada7Dias || 0} mm`}
+                    </strong>
+                  </td>
+                  <td className="p-2.5 text-slate-500 text-[11px]">
+                    Historial de Visitas Finca ({estadisticasClima?.totalVisitas || 1} visitas)
+                  </td>
+                  <td className="p-2.5 text-slate-700 text-[11px]">
+                    Acumulado pluviométrico continuo registrado en el expediente del cliente
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
           {/* Panel de Análisis Epidemiológico (Fenómeno de El Niño) */}

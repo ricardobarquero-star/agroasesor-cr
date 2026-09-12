@@ -48,14 +48,22 @@ export default function App() {
     try {
       const gps = await weatherService.obtenerPosicionGPS();
       const climaData = await weatherService.consultarClimaYAcumulado(gps.lat, gps.lon);
+      const altitudCalculada = gps.altitud || climaData.altitud || visita?.finca?.gps?.altitud || 1680;
       
       const visitaActualizada = {
         ...visita,
         finca: {
           ...visita.finca,
-          gps
+          gps: {
+            ...(visita.finca?.gps || {}),
+            ...gps,
+            altitud: altitudCalculada
+          }
         },
-        clima: climaData
+        clima: {
+          ...climaData,
+          altitud: altitudCalculada
+        }
       };
       setVisita(visitaActualizada);
       storageService.guardarVisitaActiva(visitaActualizada);
@@ -187,6 +195,10 @@ export default function App() {
             <span className="flex items-center gap-1 text-emerald-300 font-semibold">
               <MapPin className="w-3.5 h-3.5" />
               {visita?.finca?.gps?.lat ? `${visita?.finca?.gps?.lat}, ${visita?.finca?.gps?.lon}` : 'GPS: Coronado'}
+            </span>
+            <span className="text-emerald-400/60">•</span>
+            <span className="font-bold text-amber-200 bg-amber-950/70 px-2 py-0.5 rounded border border-amber-800/50">
+              🏔️ {visita?.finca?.gps?.altitud || visita?.clima?.altitud || 1680} msnm
             </span>
             <span className="text-emerald-400/60">•</span>
             <span className="flex items-center gap-1">
