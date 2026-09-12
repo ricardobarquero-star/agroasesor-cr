@@ -26,6 +26,8 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
   const [lineasMezcla, setLineasMezcla] = useState([]);
   const [filtroCategoriaInsumo, setFiltroCategoriaInsumo] = useState('todos');
   const [investigandoIdx, setInvestigandoIdx] = useState(null);
+  const [auditandoMezcla, setAuditandoMezcla] = useState(false);
+  const [resultadoAuditoria, setResultadoAuditoria] = useState(null);
 
   const recomendaciones = visita.recomendacionesPlaguicidas || [];
   const recomendacionSemana = recomendaciones.find(r => r.semana === semanaActiva) || {
@@ -50,6 +52,12 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
     }
     if (filtroCategoriaInsumo === 'insecticida') {
       return cat.includes('insecticida') || cat.includes('acaricida');
+    }
+    if (filtroCategoriaInsumo === 'bactericida') {
+      return cat.includes('bactericida') || cat.includes('antibiótico') || nombre.includes('kasumin') || nombre.includes('phyton') || nombre.includes('terramicina') || nombre.includes('agry-genta') || nombre.includes('cobre');
+    }
+    if (filtroCategoriaInsumo === 'biologico') {
+      return cat.includes('biológico') || cat.includes('organico') || cat.includes('bio') || nombre.includes('serenade') || nombre.includes('botanigard') || nombre.includes('trichoderma') || nombre.includes('bioact') || nombre.includes('bassiana') || nombre.includes('kelpak') || nombre.includes('humiplex');
     }
     if (filtroCategoriaInsumo === 'foliar') {
       return cat.includes('foliar') || cat.includes('nutricional') || nombre.includes('metalosato') || nombre.includes('cosmoquel') || nombre.includes('quel') || cat.includes('boro') || cat.includes('zinc');
@@ -95,6 +103,41 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
   const clienteActual = clientes.find(c => c.id === visita.clienteId);
   const fincaActual = clienteActual?.fincas?.find(f => f.id === visita.finca?.id);
   const lotesDeFinca = fincaActual?.lotes || [visita.lote].filter(Boolean);
+
+
+  // Auditoría Fitosanitaria de Mezclas con IA (Cobertura de Hallazgos y Compatibilidad)
+  const handleAuditarMezclas = async () => {
+    setAuditandoMezcla(true);
+    try {
+      const res = await geminiService.auditarRecomendacionesMezclas({
+        visita,
+        aplicaciones: recomendacionSemana.aplicaciones || [],
+        hallazgos: visita.hallazgos || [],
+        semana: semanaActiva
+      });
+      setResultadoAuditoria(res);
+    } catch (err) {
+      console.warn('Error en auditoría IA:', err);
+    } finally {
+      setAuditandoMezcla(false);
+    }
+  };
+
+  const handleAprobarAuditoria = () => {
+    const recActualizada = {
+      ...recomendacionSemana,
+      auditoriaIa: {
+        aprobada: true,
+        fecha: new Date().toLocaleDateString(),
+        observacion: 'Aprobado por el Ing. Ricardo Manuel Barquero Chacón'
+      }
+    };
+    const todasRecs = recomendaciones.filter(r => r.semana !== semanaActiva);
+    todasRecs.push(recActualizada);
+    todasRecs.sort((a, b) => a.semana - b.semana);
+    onUpdateVisita({ ...visita, recomendacionesPlaguicidas: todasRecs });
+    setResultadoAuditoria(prev => prev ? { ...prev, estadoAprobacionIngeniero: 'Aprobado por Ing. Barquero' } : null);
+  };
 
   // Abrir modal configurando un lienzo limpio para nueva aplicación
   const handleAbrirModalMezcla = (tipo) => {
@@ -424,6 +467,84 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
             </div>
           </button>
         </div>
+
+        {/* Botón y Panel de Auditoría IA de Mezcla */}
+        <div className="pt-1">
+          <button
+            onClick={handleAuditarMezclas}
+            disabled={auditandoMezcla}
+            className="w-full py-2.5 px-4 rounded-xl bg-purple-50 hover:bg-purple-100 border border-purple-300 text-purple-900 font-extrabold text-xs flex items-center justify-center gap-2 transition shadow-xs active:scale-98 disabled:opacity-50"
+          >
+            <Sparkles className={`w-4 h-4 text-purple-700 ${auditandoMezcla ? 'animate-spin' : ''}`} />
+            <span>
+              {auditandoMezcla 
+                ? 'Auditando mezcla y cobertura de plagas/hongos con IA...' 
+                : '🔍 Auditar Mezclas y Cobertura de Hallazgos con IA'}
+            </span>
+          </button>
+        </div>
+
+        {/* Banner de Resultado de Auditoría */}
+        {resultadoAuditoria && (
+          <div className={`p-4 rounded-2xl border text-xs space-y-2.5 ${
+            resultadoAuditoria.alertas?.length > 0 
+              ? 'bg-amber-50/90 border-amber-300 text-amber-950' 
+              : 'bg-emerald-50/90 border-emerald-300 text-emerald-950'
+          }`}>
+            <div className="flex items-center justify-between border-b pb-1.5 border-slate-200/60">
+              <span className="font-extrabold flex items-center gap-1.5">
+                {resultadoAuditoria.alertas?.length > 0 ? '⚠️' : '✅'}
+                Auditoría Técnica de la Mezcla ({resultadoAuditoria.origen || 'IA'})
+              </span>
+              <span className="text-[10px] text-slate-500 font-semibold">{resultadoAuditoria.fechaAuditoria}</span>
+            </div>
+
+            <p className="font-semibold text-xs leading-relaxed">{resultadoAuditoria.resumen}</p>
+
+            {resultadoAuditoria.alertas?.length > 0 && (
+              <div className="space-y-1 bg-white/80 p-2.5 rounded-xl border border-amber-200">
+                <strong className="text-amber-900 font-bold block text-[11px]">Observaciones Fitosanitarias:</strong>
+                <ul className="list-disc pl-4 space-y-1 text-slate-800">
+                  {resultadoAuditoria.alertas.map((a, i) => (
+                    <li key={i}>{a}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {resultadoAuditoria.confirmaciones?.length > 0 && (
+              <div className="space-y-1 bg-white/80 p-2.5 rounded-xl border border-emerald-200">
+                <strong className="text-emerald-900 font-bold block text-[11px]">Validaciones Correctas:</strong>
+                <ul className="list-disc pl-4 space-y-1 text-slate-800">
+                  {resultadoAuditoria.confirmaciones.map((c, i) => (
+                    <li key={i}>{c}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {resultadoAuditoria.comentarioIa && (
+              <div className="bg-white/90 p-2.5 rounded-xl border border-purple-200 text-slate-700 whitespace-pre-line leading-relaxed">
+                <strong className="text-purple-950 font-bold block text-[11px] mb-1">Criterio Consultivo IA:</strong>
+                {resultadoAuditoria.comentarioIa}
+              </div>
+            )}
+
+            <div className="pt-1.5 flex items-center justify-between">
+              <span className="text-[11px] font-bold text-slate-600">
+                {resultadoAuditoria.estadoAprobacionIngeniero || 'Pendiente de aprobación profesional'}
+              </span>
+              <button
+                type="button"
+                onClick={handleAprobarAuditoria}
+                className="px-3 py-1.5 bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1 transition active:scale-95"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>[Aprobar Recomendación]</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ESTADO SI SE MARCÓ COMO SIN APLICACIÓN */}
@@ -605,10 +726,12 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                     onChange={(e) => setAlcanceApp(e.target.value)}
                     className="w-full text-xs font-bold border border-slate-300 rounded-xl p-2.5 bg-slate-50 outline-none"
                   >
-                    <option value="Toda la Finca">Toda la Finca ({visita.finca?.nombre || 'Finca'})</option>
+                    <option value="Toda la Finca">🌱 Toda la Finca ({visita.finca?.nombre || 'Finca'})</option>
+                    <option value="Solo Lotes en Producción">🍓 Solo Lotes en Producción</option>
+                    <option value="Solo Lotes en Crecimiento / Vegetativo">🌿 Solo Lotes en Crecimiento</option>
                     {lotesDeFinca.map(l => (
                       <option key={l.id} value={`Lote: ${l.nombre}`}>
-                        Lote específico: {l.nombre} ({l.cultivoNombre || ''})
+                        📍 Lote específico: {l.nombre} ({l.cultivoNombre || ''})
                       </option>
                     ))}
                   </select>
@@ -663,9 +786,11 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                     <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mr-1">Filtrar Insumos:</span>
                     {[
                       { id: 'todos', label: 'Todos' },
-                      { id: 'fungicida', label: '🍄 Solo Fungicidas' },
-                      { id: 'insecticida', label: '🐛 Solo Insecticidas/Acaricidas' },
-                      { id: 'foliar', label: '🍃 Solo Foliares' },
+                      { id: 'fungicida', label: '🍄 Fungicidas' },
+                      { id: 'insecticida', label: '🐛 Insecticidas/Ácaros' },
+                      { id: 'bactericida', label: '🧫 Bactericidas' },
+                      { id: 'biologico', label: '🌿 Biológicos/Orgánicos' },
+                      { id: 'foliar', label: '🍃 Foliares' },
                       { id: 'coadyuvante', label: '💧 Coadyuvantes' }
                     ].map(f => (
                       <button
@@ -805,9 +930,10 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                         <option value="Fungicida">Fungicida</option>
                         <option value="Insecticida">Insectic.</option>
                         <option value="Acaricida">Acaricida</option>
+                        <option value="Bactericida">Bactericida</option>
+                        <option value="Biológico">Biológico</option>
                         <option value="Foliar">Foliar</option>
                         <option value="Coadyuvante">Coadyuv.</option>
-                        <option value="Biológico">Biológico</option>
                       </select>
 
                       <input

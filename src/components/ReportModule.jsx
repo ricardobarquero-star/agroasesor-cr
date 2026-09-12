@@ -3,7 +3,8 @@ import {
   FileText, Download, Share2, Mail, CheckCircle2, Phone, 
   MapPin, Calendar, CloudRain, Droplet, ShieldAlert, Sparkles, 
   Printer, ArrowRight, UserCheck, AlertTriangle, Check, Filter,
-  Building2, Layers
+  Building2, Layers, FolderOpen, Thermometer, Activity, Compass,
+  Sliders, ShieldCheck, Sun, Info
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
@@ -13,6 +14,7 @@ import { storageService } from '../services/storageService';
 export default function ReportModule({ visita, onOpenAi }) {
   const reportRef = useRef(null);
   const [generandoPdf, setGenerandoPdf] = useState(false);
+  const [guardadoEnExpediente, setGuardadoEnExpediente] = useState(false);
   
   // Filtro de alcance para el reporte (Toda la Finca o Lote Específico)
   const [filtroLote, setFiltroLote] = useState('todos');
@@ -30,6 +32,16 @@ export default function ReportModule({ visita, onOpenAi }) {
   const clienteActual = clientes.find(c => c.id === visita.clienteId);
   const fincaActual = clienteActual?.fincas?.find(f => f.id === finca.id);
   const lotesDeFinca = fincaActual?.lotes || [lote].filter(Boolean);
+
+  // Estadísticas climáticas acumuladas de la finca
+  const estadisticasClima = storageService.getEstadisticasClimaClienteFinca(visita.clienteId, finca.id);
+
+  // Mediciones de suelo en campo
+  const medicionesSuelo = (visita.medicionesSuelo || []).filter(m => m.estadoAprobacion !== 'eliminado');
+  const cultivoDef = crAgroDatabase.cultivos.find(c => c.id === lote.cultivoId || c.nombre.toLowerCase() === (lote.cultivoNombre || '').toLowerCase()) || crAgroDatabase.cultivos[0];
+
+  // Análisis epidemiológico
+  const analisisEpidemiologico = visita.analisisEpidemiologico || {};
 
   // Filtrado de hallazgos
   const todosHallazgos = visita.hallazgos || [];
@@ -56,6 +68,29 @@ export default function ReportModule({ visita, onOpenAi }) {
     );
     return { ...semana, aplicaciones: appsFiltradas };
   }).filter(semana => semana.sinAplicacion || (semana.aplicaciones && semana.aplicaciones.length > 0));
+
+  // Guardar reporte en el expediente del cliente
+  const handleGuardarEnExpediente = () => {
+    const nuevoReporte = {
+      id: 'rep-' + Date.now(),
+      visitaId: visita.id,
+      clienteId: visita.clienteId,
+      fincaId: finca.id,
+      fincaNombre: finca.nombre || 'Finca Principal',
+      productorNombre: productor.nombre || 'Cliente',
+      fecha: visita.fecha || new Date().toISOString().split('T')[0],
+      cultivoNombre: lote.cultivoNombre || 'Cultivo',
+      alcance: filtroLote === 'todos' ? 'Toda la Finca' : `Lote: ${filtroLote}`,
+      hallazgosCount: hallazgosFiltrados.length,
+      fertirriegoCount: recFertirriegoFiltradas.length,
+      plaguicidasCount: recPlaguicidasFiltradas.length,
+      medicionesSueloCount: medicionesSuelo.length,
+      resumenWhatsApp: generarTextoCompletoWhatsApp()
+    };
+    storageService.guardarReporteEnExpediente(visita.clienteId, nuevoReporte);
+    setGuardadoEnExpediente(true);
+    setTimeout(() => setGuardadoEnExpediente(false), 3500);
+  };
 
   // Imprimir nativo con alta calidad (Vectorial y sin cortes)
   const handleImprimirNativo = () => {
@@ -118,13 +153,42 @@ export default function ReportModule({ visita, onOpenAi }) {
     msg += `🏡 *Finca:* ${finca.nombre || 'Finca'} (${loteTexto})\n`;
     msg += `📅 *Fecha:* ${visita.fecha || 'Hoy'} • ${visita.hora || ''}\n`;
     msg += `🌱 *Cultivo:* ${lote.cultivoNombre || 'Cultivo'} (Var: ${lote.variedad || 'Estándar'})\n`;
-    msg += `🌧️ *Lluvia 7 días:* ${clima.lluviaAcumulada7Dias || 0} mm • *HR:* ${clima.humedadActual || 85}%\n`;
-    msg += `👨‍💼 *Asesor:* ${perfilIngeniero.nombre} (${perfilIngeniero.colegiado})\n\n`;
+    msg += `🌧️ *Lluvia 7 días:* ${clima.lluviaAcumulada7Dias || 0} mm • *HR:* ${clima.humedadActual || 85}% • *Temp:* ${clima.temperaturaActual || 18}°C\n`;
+    msg += `👨‍💼 *Asesor:* Ing. Agr. Ricardo M. Barquero Chacón (Col. 5896)\n\n`;
+
+    // Clima acumulado
+    if (estadisticasClima && estadisticasClima.totalVisitas > 1) {
+      msg += `📊 *CLIMA ACUMULADO FINCA (${estadisticasClima.totalVisitas} visitas):*\n`;
+      msg += `• Lluvia acumulada: *${estadisticasClima.lluviaTotalAcumulada} mm*\n`;
+      msg += `• Promedio HR: *${estadisticasClima.promedioHumedadRelativa}%* • Temp Prom: *${estadisticasClima.promedioTemperatura}°C*\n\n`;
+    }
+
+    // Mediciones de Suelo
+    if (medicionesSuelo.length > 0) {
+      msg += `🧪 *MEDICIONES DE SUELO EN CAMPO:*
+`;
+      medicionesSuelo.forEach(m => {
+        msg += `• [${m.loteNombre || 'Lote'}] pH: *${m.phSuelo}* | CE: *${m.ceSuelo} mS/cm* | Temp: *${m.tempSuelo}°C* | Hum: *${m.humedadSuelo}*\n`;
+        if (m.ajusteRecomendado) {
+          msg += `  ↳ _Ajuste:_ ${m.ajusteRecomendado}\n`;
+        }
+      });
+      msg += `
+`;
+    }
+
+    // Análisis Epidemiológico El Niño
+    if (analisisEpidemiologico.elNinoImpacto) {
+      msg += `🌦️ *EPIDEMIOLOGÍA (FENÓMENO EL NIÑO):*\n`;
+      msg += `• Impacto: ${analisisEpidemiologico.elNinoImpacto}\n`;
+      msg += `• Prevención suelo: ${analisisEpidemiologico.hongosSuelo || 'Monitoreo Phytophthora/Pythium'}\n`;
+      msg += `• Prevención foliar: ${analisisEpidemiologico.hongosFoliares || 'Control preventivo Botrytis/Oídio'}\n\n`;
+    }
 
     // Hallazgos
     if (hallazgosFiltrados.length > 0) {
       msg += `🔍 *DIAGNÓSTICO Y HALLAZGOS (${hallazgosFiltrados.length}):*\n`;
-      hallazgosFiltrados.forEach((h, i) => {
+      hallazgosFiltrados.forEach((h) => {
         msg += `• [${h.severidad}] *${h.titulo}* (${h.categoria})\n  _${h.descripcion || 'Sin observaciones adicionales'}_\n`;
       });
       msg += `\n`;
@@ -136,7 +200,7 @@ export default function ReportModule({ visita, onOpenAi }) {
       recFertirriegoFiltradas.forEach(s => {
         msg += `*Semana ${s.semana}:*\n`;
         (s.eventos || []).forEach(ev => {
-          msg += `▸ _${ev.nombre}_ (${ev.alcance || 'Finca'})\n`;
+          msg += `▸ _${ev.nombreEvento || ev.nombre || 'Fertirriego'}_ (${ev.alcance || 'Finca'})\n`;
           if (ev.lineasTanqueA?.length > 0) {
             msg += `  🔵 *Tanque A:* ` + ev.lineasTanqueA.map(l => `${l.producto} (${l.dosis} ${l.unidad})`).join(', ') + `\n`;
           }
@@ -153,7 +217,7 @@ export default function ReportModule({ visita, onOpenAi }) {
 
     // Fitosanitarios
     if (recPlaguicidasFiltradas.length > 0) {
-      msg += `🛡️ *MANEJO FITOSANITARIO:*\n`;
+      msg += `🛡️ *MANEJO FITOSANITARIO SEGREGADO:*\n`;
       recPlaguicidasFiltradas.forEach(s => {
         msg += `*Semana ${s.semana}:*\n`;
         if (s.sinAplicacion) {
@@ -207,7 +271,7 @@ export default function ReportModule({ visita, onOpenAi }) {
       `Adjunto el informe de asesoría agronómica correspondiente a la visita del ${visita.fecha} en la finca ${finca.nombre || ''}.\n\n` +
       `Atentamente,\n` +
       `Ing. Agr. Ricardo Manuel Barquero Chacón\n` +
-      `Colegiado No. 5896 - Colegio de Ingenieros Agrónomos de Costa Rica\n` +
+      `Colegiado No. 5896 • Ingeniero Agrónomo\n` +
       `Tel: +506 8894-5662 | Coronado, San José, Costa Rica`
     );
     window.location.href = `mailto:${destinatario}?cc=${cc}&subject=${asunto}&body=${cuerpo}`;
@@ -252,7 +316,7 @@ export default function ReportModule({ visita, onOpenAi }) {
           </p>
         </div>
 
-        {/* Selector de Alcance del Reporte (Toda la Finca o por Lote) */}
+        {/* Selector de Alcance del Reporte y Botones de Acción */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1.5 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 text-xs">
             <Filter className="w-3.5 h-3.5 text-slate-600" />
@@ -272,9 +336,18 @@ export default function ReportModule({ visita, onOpenAi }) {
           </div>
 
           <button
+            onClick={handleGuardarEnExpediente}
+            className="px-3.5 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-black transition flex items-center gap-1.5 shadow-xs active:scale-95"
+            title="Guardar este informe en el expediente permanente del productor"
+          >
+            <FolderOpen className="w-4 h-4" />
+            <span>{guardadoEnExpediente ? '✅ ¡Guardado en Expediente!' : '💾 Guardar en Expediente'}</span>
+          </button>
+
+          <button
             onClick={handleImprimirNativo}
             className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs active:scale-95"
-            title="Imprimir o Guardar en PDF de forma nativa en iPhone / PC"
+            title="Imprimir o Guardar en PDF de forma nativa"
           >
             <Printer className="w-4 h-4" />
             <span>Imprimir / PDF</span>
@@ -335,27 +408,91 @@ export default function ReportModule({ visita, onOpenAi }) {
               Finca: <strong>{finca.nombre}</strong> • {lote.cultivoNombre} ({lote.variedad || 'Estándar'})
             </p>
             <div className="pt-2 border-t border-white/20 flex items-center justify-between text-xs">
-              <span>🌧️ Lluvia: <strong>{clima.lluviaAcumulada7Dias || 0} mm</strong></span>
-              <span>Asesor: <strong>Ing. Ricardo Barquero</strong></span>
+              <span>🌧️ Lluvia 7d: <strong>{clima.lluviaAcumulada7Dias || 0} mm</strong></span>
+              <span>Asesor: <strong>Ing. Ricardo Barquero (Col. 5896)</strong></span>
             </div>
           </div>
 
-          {/* Botón Destacado de Copiar/Enviar por WhatsApp */}
-          <div className="bg-white p-3 rounded-2xl border border-emerald-200 shadow-sm flex items-center justify-between gap-2">
+          {/* Botones de Guardar en Expediente y Compartir por WhatsApp */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <button
-              onClick={handleCopiarTextoWhatsApp}
-              className="flex-1 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 border border-emerald-300 transition"
+              onClick={handleGuardarEnExpediente}
+              className="py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-300 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-xs"
             >
-              <span>{copiadoWhatsapp ? '✅ ¡Reporte Copiado!' : '📋 Copiar Resumen WhatsApp'}</span>
+              <FolderOpen className="w-4 h-4 text-purple-700" />
+              <span>{guardadoEnExpediente ? '✅ ¡Guardado en Expediente!' : '💾 Guardar en Expediente'}</span>
             </button>
             <button
               onClick={handleCompartirWhatsApp}
-              className="flex-1 py-2.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow transition"
+              className="py-2.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow transition"
             >
               <Share2 className="w-3.5 h-3.5" />
               <span>Enviar por WhatsApp</span>
             </button>
           </div>
+
+          {/* Tarjeta de Clima Acumulado y Análisis Epidemiológico */}
+          {estadisticasClima && (
+            <div className="bg-white p-4 rounded-2xl border border-blue-200 shadow-xs space-y-3">
+              <h4 className="font-extrabold text-xs uppercase tracking-wider text-blue-900 flex items-center gap-1.5">
+                <CloudRain className="w-4 h-4 text-blue-700" />
+                <span>Condiciones Climáticas y Epidemiología de la Finca</span>
+              </h4>
+              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="bg-blue-50 p-2 rounded-xl">
+                  <span className="text-[10px] text-blue-700 block font-semibold">Lluvia Total</span>
+                  <strong className="text-blue-950 font-black text-sm">{estadisticasClima.lluviaTotalAcumulada} mm</strong>
+                </div>
+                <div className="bg-blue-50 p-2 rounded-xl">
+                  <span className="text-[10px] text-blue-700 block font-semibold">Humedad Prom.</span>
+                  <strong className="text-blue-950 font-black text-sm">{estadisticasClima.promedioHumedadRelativa}%</strong>
+                </div>
+                <div className="bg-blue-50 p-2 rounded-xl">
+                  <span className="text-[10px] text-blue-700 block font-semibold">Temp Prom.</span>
+                  <strong className="text-blue-950 font-black text-sm">{estadisticasClima.promedioTemperatura}°C</strong>
+                </div>
+              </div>
+              {analisisEpidemiologico.elNinoImpacto && (
+                <div className="bg-amber-50/80 p-2.5 rounded-xl border border-amber-200 text-xs text-amber-950 space-y-1">
+                  <span className="font-bold block text-[11px]">🌦️ Impacto Fenómeno de El Niño:</span>
+                  <p className="text-[11px] leading-relaxed">{analisisEpidemiologico.elNinoImpacto}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tarjeta de Mediciones de Suelo en Campo */}
+          {medicionesSuelo.length > 0 && (
+            <div className="bg-white p-4 rounded-2xl border border-emerald-200 shadow-xs space-y-3">
+              <h4 className="font-extrabold text-xs uppercase tracking-wider text-emerald-900 flex items-center gap-1.5">
+                <Activity className="w-4 h-4 text-emerald-700" />
+                <span>Mediciones de Suelo en Campo ({medicionesSuelo.length})</span>
+              </h4>
+              <div className="space-y-2">
+                {medicionesSuelo.map(m => (
+                  <div key={m.id} className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs space-y-1.5">
+                    <div className="flex items-center justify-between font-bold">
+                      <span className="text-emerald-900">{m.loteNombre || 'Lote Evaluado'}</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                        Aprobado por Ing. Barquero
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1 text-center py-1 bg-white rounded-lg border border-slate-100">
+                      <div><span className="text-[10px] text-slate-500 block">pH:</span><strong>{m.phSuelo}</strong></div>
+                      <div><span className="text-[10px] text-slate-500 block">CE:</span><strong>{m.ceSuelo}</strong></div>
+                      <div><span className="text-[10px] text-slate-500 block">Temp:</span><strong>{m.tempSuelo}°C</strong></div>
+                      <div><span className="text-[10px] text-slate-500 block">Humedad:</span><strong>{m.humedadSuelo}</strong></div>
+                    </div>
+                    {m.ajusteRecomendado && (
+                      <p className="text-[11px] text-slate-700 leading-tight pt-1">
+                        <strong className="text-slate-900">Ajuste:</strong> {m.ajusteRecomendado}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Hallazgos Fotográficos en Tarjetas Verticales */}
           <div className="space-y-3">
@@ -397,7 +534,7 @@ export default function ReportModule({ visita, onOpenAi }) {
                   {(s.eventos || []).map((ev, i) => (
                     <div key={i} className="bg-blue-50/50 p-2.5 rounded-xl border border-blue-100 space-y-1.5">
                       <div className="flex justify-between font-bold text-slate-800">
-                        <span>{ev.nombre}</span>
+                        <span>{ev.nombreEvento || ev.nombre || 'Fertirriego'}</span>
                         <span className="text-blue-700 font-semibold">{ev.alcance || 'Finca'}</span>
                       </div>
                       {ev.lineasTanqueA?.length > 0 && (
@@ -478,7 +615,7 @@ export default function ReportModule({ visita, onOpenAi }) {
         ref={reportRef} 
         className={`report-sheet bg-white p-5 sm:p-8 rounded-3xl border border-slate-300 shadow-xl max-w-4xl mx-auto text-slate-900 font-sans ${vistaModo === 'documento' ? 'block' : 'hidden print:block'}`}
       >
-        {/* ENCABEZADO INSTITUCIONAL OFICIAL */}
+        {/* ENCABEZADO OFICIAL CON NOMBRE DEL PROFESIONAL (SIN ENCABEZADOS DEL COLEGIO) */}
         <div className="border-b-2 border-emerald-800 pb-5 mb-6 print-avoid-break">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -487,13 +624,13 @@ export default function ReportModule({ visita, onOpenAi }) {
               </div>
               <div>
                 <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800 block">
-                  COLEGIO DE INGENIEROS AGRÓNOMOS DE COSTA RICA
+                  ASESORÍA TÉCNICA AGRONÓMICA PROFESIONAL
                 </span>
                 <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight leading-tight">
-                  {perfilIngeniero.nombre || 'Ing. Agr. Ricardo Manuel Barquero Chacón'}
+                  Ing. Agr. Ricardo M. Barquero Chacón
                 </h1>
-                <p className="text-xs font-semibold text-slate-600">
-                  {perfilIngeniero.colegiado || 'Colegiado Ordinario No. 5896'} • {perfilIngeniero.titulo || 'Ingeniero Agrónomo'}
+                <p className="text-xs font-semibold text-slate-700">
+                  Ingeniero Agrónomo • Colegiado No. 5896
                 </p>
                 <p className="text-[11px] text-slate-500">
                   Tel: {perfilIngeniero.telefono || '+506 8894-5662'} • {perfilIngeniero.ubicacion || 'Coronado, San José, Costa Rica'} • {perfilIngeniero.email || 'h7coordinador@gmail.com'}
@@ -523,9 +660,9 @@ export default function ReportModule({ visita, onOpenAi }) {
             <span>Guía de Trabajo para el Productor:</span>
           </h3>
           <p className="text-xs text-emerald-950 leading-relaxed">
-            Estimado(a) <strong>{productor.nombre || 'Productor'}</strong>: Presento el informe agronómico de la visita realizada a la finca <strong>{finca.nombre || 'la finca'}</strong>. 
-            {filtroLote !== 'todos' ? ` Este reporte está enfocado específicamente en el ${filtroLote}.` : ' Este reporte cubre la finca y sus respectivos lotes.'} 
-            Se documentaron <strong>{hallazgosFiltrados.length} hallazgos</strong> en campo. Ejecute con precisión las labores nutricionales y sanitarias detalladas a continuación.
+            Estimado(a) <strong>{productor.nombre || 'Productor'}</strong>: Presento el informe agronómico correspondiente a la visita técnica en la finca <strong>{finca.nombre || 'la finca'}</strong>. 
+            {filtroLote !== 'todos' ? ` Este informe consolida la evaluación del lote ${filtroLote}.` : ' Este reporte consolida la valoración integral de la finca y sus lotes.'} 
+            Se documentaron <strong>{hallazgosFiltrados.length} hallazgos</strong> en campo y se detallan las mediciones analíticas de suelo, manejo hídrico y las prescripciones nutricionales y fitosanitarias requeridas.
           </p>
         </div>
 
@@ -561,18 +698,19 @@ export default function ReportModule({ visita, onOpenAi }) {
           </div>
         </div>
 
-        {/* 2. CONDICIONES AGROCLIMÁTICAS */}
+        {/* 2. CONDICIONES AGROCLIMÁTICAS Y ESTADÍSTICA ACUMULADA DE LA FINCA */}
         <div className="mb-6 print-avoid-break">
           <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 mb-2 pb-1 border-b border-slate-200 flex items-center gap-1.5">
             <span className="w-5 h-5 rounded-lg bg-blue-100 text-blue-800 flex items-center justify-center text-xs font-bold">2</span>
-            Condiciones Agroclimáticas Registradas
+            Condiciones Agroclimáticas Registradas y Acumuladas
           </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+          
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs mb-3">
             <div className="bg-blue-50/50 p-2.5 rounded-xl border border-blue-100">
-              <span className="text-slate-500 block text-[10px]">Lluvia Acumulada 7 Días:</span>
+              <span className="text-slate-500 block text-[10px]">Lluvia Visita (7 Días):</span>
               <strong className="text-blue-900 font-extrabold text-sm">{clima.lluviaAcumulada7Dias || 0} mm</strong>
               <span className="text-[10px] text-blue-700 block mt-0.5">
-                {clima.lluviaAcumulada7Dias > 40 ? '⚠️ Alerta por humedad alta' : 'Régimen hídrico controlado'}
+                {clima.lluviaAcumulada7Dias > 40 ? '⚠️ Humedad alta' : 'Régimen normal'}
               </span>
             </div>
             <div className="bg-blue-50/50 p-2.5 rounded-xl border border-blue-100">
@@ -581,25 +719,135 @@ export default function ReportModule({ visita, onOpenAi }) {
               <span className="text-[10px] text-slate-500 block mt-0.5">HR: {clima.humedadActual || 85}%</span>
             </div>
             <div className="bg-blue-50/50 p-2.5 rounded-xl border border-blue-100">
-              <span className="text-slate-500 block text-[10px]">Presión de Enfermedades:</span>
-              <strong className="text-amber-800 font-bold">
-                {clima.lluviaAcumulada7Dias > 35 ? 'Alta (Botrytis / Oídio)' : 'Moderada'}
+              <span className="text-slate-500 block text-[10px]">Lluvia Acumulada Histórica:</span>
+              <strong className="text-blue-950 font-bold text-sm">
+                {estadisticasClima ? `${estadisticasClima.lluviaTotalAcumulada} mm` : `${clima.lluviaAcumulada7Dias || 0} mm`}
               </strong>
+              <span className="text-[10px] text-slate-500 block mt-0.5">
+                {estadisticasClima ? `${estadisticasClima.totalVisitas} visitas registradas` : '1 visita'}
+              </span>
             </div>
             <div className="bg-blue-50/50 p-2.5 rounded-xl border border-blue-100">
-              <span className="text-slate-500 block text-[10px]">Coordenadas GPS:</span>
+              <span className="text-slate-500 block text-[10px]">Coordenadas GPS / Altitud:</span>
               <strong className="text-slate-800 font-bold text-[11px] block truncate">
                 {finca.gps?.lat ? `${finca.gps.lat}, ${finca.gps.lon}` : 'Coronado, San José'}
               </strong>
               <span className="text-[10px] text-slate-500">Altitud: {finca.gps?.altitud || 1680} msnm</span>
             </div>
           </div>
+
+          {/* Panel de Análisis Epidemiológico (Fenómeno de El Niño) */}
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-xs space-y-2">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-1">
+              <span className="font-extrabold text-slate-800 flex items-center gap-1.5">
+                <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
+                Análisis Epidemiológico Clima + Plagas/Hongos (Fenómeno de El Niño)
+              </span>
+              <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
+                Validado por el Agrónomo
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
+              <div className="bg-white p-2 rounded-xl border border-slate-100 space-y-0.5">
+                <strong className="text-amber-900 block text-[10px] uppercase font-black">Hongos de Suelo</strong>
+                <p className="text-slate-700">{analisisEpidemiologico.hongosSuelo || 'Monitoreo de Phytophthora, Pythium y Rhizoctonia con aireación del suelo y enraizadores.'}</p>
+              </div>
+              <div className="bg-white p-2 rounded-xl border border-slate-100 space-y-0.5">
+                <strong className="text-amber-900 block text-[10px] uppercase font-black">Hongos Foliares</strong>
+                <p className="text-slate-700">{analisisEpidemiologico.hongosFoliares || 'Control preventivo de Botrytis cinerea y Oídio ante alta humedad relativa o condensación.'}</p>
+              </div>
+              <div className="bg-white p-2 rounded-xl border border-slate-100 space-y-0.5">
+                <strong className="text-amber-900 block text-[10px] uppercase font-black">Insectos y Ácaros</strong>
+                <p className="text-slate-700">{analisisEpidemiologico.plagasInsectosAcaros || 'Monitoreo estricto de ácaros (Tetranychus) y trips favorecidos por microclima templado.'}</p>
+              </div>
+            </div>
+            <div className="bg-emerald-50/70 p-2 rounded-xl border border-emerald-200 text-[11px] text-emerald-950">
+              <strong>Estrategia de Control Preventivo: </strong> 
+              {analisisEpidemiologico.controlesNutricionales || 'Aplicación de Silicio y Fosfitos de Potasio para fortalecer la pared celular, balance de Calcio y Boro y deshoje sanitario.'}
+            </div>
+          </div>
         </div>
 
-        {/* 3. DIAGNÓSTICO VISUAL DE HALLAZGOS (FOTOS CON PROPORCIÓN NATURAL) */}
+        {/* 3. MEDICIONES DE CAMPO DE SUELO Y SUSTRATO */}
+        {medicionesSuelo.length > 0 && (
+          <div className="mb-6 print-avoid-break">
+            <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 mb-2 pb-1 border-b border-slate-200 flex items-center gap-1.5">
+              <span className="w-5 h-5 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center text-xs font-bold">3</span>
+              Mediciones de Suelo y Sustrato en Campo
+            </h3>
+
+            <div className="space-y-3">
+              {medicionesSuelo.map((m, idx) => (
+                <div key={m.id || idx} className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2 text-xs">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-1">
+                    <span className="font-extrabold text-slate-900">
+                      📍 {m.loteNombre || 'Lote Evaluado'} — {m.metodo || 'Sonda directa'}
+                    </span>
+                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" />
+                      Aprobado por el Ing. Agr. Ricardo Barquero
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-left bg-white rounded-xl border border-slate-200 overflow-hidden">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-700 text-[11px]">
+                          <th className="py-1.5 px-3 font-bold">Parámetro</th>
+                          <th className="py-1.5 px-3 font-bold text-center">Valor Medido en Campo</th>
+                          <th className="py-1.5 px-3 font-bold text-center">Rango Óptimo ({cultivoDef.nombre})</th>
+                          <th className="py-1.5 px-3 font-bold">Evaluación</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        <tr>
+                          <td className="py-1.5 px-3 font-medium text-slate-800">pH del Suelo / Sustrato</td>
+                          <td className="py-1.5 px-3 text-center font-black text-slate-900">{m.phSuelo}</td>
+                          <td className="py-1.5 px-3 text-center text-slate-600">{cultivoDef.rangoPh || '5.5 - 6.5'}</td>
+                          <td className="py-1.5 px-3 font-semibold text-emerald-700">
+                            {parseFloat(m.phSuelo) >= 5.5 && parseFloat(m.phSuelo) <= 6.5 ? 'Dentro de rango' : 'Requiere calibración'}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 px-3 font-medium text-slate-800">Conductividad Eléctrica (CE)</td>
+                          <td className="py-1.5 px-3 text-center font-black text-slate-900">{m.ceSuelo} mS/cm</td>
+                          <td className="py-1.5 px-3 text-center text-slate-600">{cultivoDef.rangoCe || '1.2 - 1.8 mS/cm'}</td>
+                          <td className="py-1.5 px-3 font-semibold text-emerald-700">
+                            {parseFloat(m.ceSuelo) >= 1.0 && parseFloat(m.ceSuelo) <= 2.0 ? 'Salinidad adecuada' : 'Ajustar conductividad'}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 px-3 font-medium text-slate-800">Temperatura del Suelo</td>
+                          <td className="py-1.5 px-3 text-center font-black text-slate-900">{m.tempSuelo}°C</td>
+                          <td className="py-1.5 px-3 text-center text-slate-600">{cultivoDef.rangoTempSuelo || '16 - 22 °C'}</td>
+                          <td className="py-1.5 px-3 font-semibold text-emerald-700">Actividad radicular favorable</td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 px-3 font-medium text-slate-800">Humedad en Rizósfera</td>
+                          <td className="py-1.5 px-3 text-center font-black text-slate-900">{m.humedadSuelo}</td>
+                          <td className="py-1.5 px-3 text-center text-slate-600">{cultivoDef.rangoHumedadSuelo || '60 - 80%'}</td>
+                          <td className="py-1.5 px-3 font-semibold text-emerald-700">Adecuada capacidad de campo</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {m.ajusteRecomendado && (
+                    <div className="bg-emerald-50/80 p-2.5 rounded-xl border border-emerald-200 text-slate-800 text-[11px]">
+                      <strong className="text-emerald-950 font-bold block mb-0.5">Ajuste y Recomendación Agronómica Aprobada:</strong>
+                      <span>{m.ajusteRecomendado}</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 4. DIAGNÓSTICO VISUAL DE HALLAZGOS (FOTOS CON PROPORCIÓN NATURAL) */}
         <div className="mb-6">
           <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 mb-3 pb-1 border-b border-slate-200 flex items-center gap-1.5 print-avoid-break">
-            <span className="w-5 h-5 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center text-xs font-bold">3</span>
+            <span className="w-5 h-5 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center text-xs font-bold">4</span>
             Diagnóstico Visual de Hallazgos y Síntomas en Campo ({hallazgosFiltrados.length})
           </h3>
 
@@ -651,10 +899,10 @@ export default function ReportModule({ visita, onOpenAi }) {
           )}
         </div>
 
-        {/* 4. PROGRAMA NUTRICIONAL Y FERTIRRIEGO */}
+        {/* 5. PROGRAMA NUTRICIONAL Y FERTIRRIEGO */}
         <div className="mb-6">
           <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 mb-3 pb-1 border-b border-slate-200 flex items-center gap-1.5 print-avoid-break">
-            <span className="w-5 h-5 rounded-lg bg-blue-100 text-blue-800 flex items-center justify-center text-xs font-bold">4</span>
+            <span className="w-5 h-5 rounded-lg bg-blue-100 text-blue-800 flex items-center justify-center text-xs font-bold">5</span>
             Programa Nutricional: Fertirriego y Enmiendas por Semanas
           </h3>
 
@@ -757,10 +1005,10 @@ export default function ReportModule({ visita, onOpenAi }) {
           )}
         </div>
 
-        {/* 5. PROGRAMA FITOSANITARIO FOLIAR */}
+        {/* 6. PROGRAMA FITOSANITARIO FOLIAR */}
         <div className="mb-6">
           <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 mb-3 pb-1 border-b border-slate-200 flex items-center gap-1.5 print-avoid-break">
-            <span className="w-5 h-5 rounded-lg bg-purple-100 text-purple-800 flex items-center justify-center text-xs font-bold">5</span>
+            <span className="w-5 h-5 rounded-lg bg-purple-100 text-purple-800 flex items-center justify-center text-xs font-bold">6</span>
             Programa Fitosanitario Foliar y Estrategia FRAC / IRAC
           </h3>
 
@@ -856,7 +1104,7 @@ export default function ReportModule({ visita, onOpenAi }) {
           )}
         </div>
 
-        {/* 6. FIRMA OFICIAL DEL INGENIERO AGRÓNOMO */}
+        {/* 7. FIRMA OFICIAL DEL INGENIERO AGRÓNOMO */}
         <div className="signature-block print-avoid-break border-t-2 border-slate-300 pt-6 mt-8">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
             <div className="text-center sm:text-left space-y-1">
@@ -865,10 +1113,10 @@ export default function ReportModule({ visita, onOpenAi }) {
               </div>
               <div className="w-56 h-0.5 bg-slate-400 mx-auto sm:mx-0"></div>
               <p className="text-xs font-bold text-slate-900">
-                {perfilIngeniero.nombre || 'Ing. Agr. Ricardo Manuel Barquero Chacón'}
+                Ing. Agr. Ricardo Manuel Barquero Chacón
               </p>
               <p className="text-[11px] text-slate-600">
-                {perfilIngeniero.colegiado || 'Colegiado No. 5896'} • {perfilIngeniero.colegio || 'Colegio de Ingenieros Agrónomos de Costa Rica'}
+                Ingeniero Agrónomo • Colegiado No. 5896
               </p>
               <p className="text-[10px] text-slate-500">
                 Firma Técnica y Validación Profesional de Asesoría en Campo

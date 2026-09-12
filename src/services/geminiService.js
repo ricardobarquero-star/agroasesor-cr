@@ -348,6 +348,134 @@ ${promptUsuario || 'Revisar la información de este módulo, verificar compatibi
     }
   },
 
+
+  /**
+   * Auditoría de recomendaciones de mezclas fitosanitarias contra hallazgos diagnosticados,
+   * incompatibilidad física/química y rotación FRAC/IRAC.
+   */
+  async auditarRecomendacionesMezclas({ visita, aplicaciones = [], hallazgos = [], semana = 1 }) {
+    // 1. Diagnóstico de hallazgos
+    const problemasReportados = (hallazgos || []).map(h => ({
+      titulo: h.titulo || '',
+      categoria: h.categoria || '',
+      severidad: h.severidad || 'Media',
+      lote: h.loteNombre || 'General'
+    }));
+
+    const textoHallazgos = problemasReportados.map(p => `${p.titulo} (${p.categoria})`).join(', ');
+
+    // 2. Insumos en la mezcla
+    const todosInsumos = [];
+    (aplicaciones || []).forEach(app => {
+      (app.ordenMezcla || []).forEach(l => {
+        if (l.producto) {
+          todosInsumos.push({
+            producto: l.producto,
+            tipo: l.tipo,
+            fracIrac: l.fracIrac,
+            dosis: l.dosis,
+            tipoMezcla: app.tipoMezcla,
+            mezclaNombre: app.nombre
+          });
+        }
+      });
+    });
+
+    const textoInsumos = todosInsumos.map(i => `${i.producto} [${i.tipo} ${i.fracIrac || ''}]`).join(', ');
+
+    // 3. Reglas agronómicas locales de validación instantánea (Costa Rica)
+    const alertas = [];
+    const confirmaciones = [];
+
+    // Chequeo de Botrytis
+    const tieneBotrytis = textoHallazgos.toLowerCase().includes('botrytis') || textoHallazgos.toLowerCase().includes('moho gris');
+    const cubreBotrytis = textoInsumos.toLowerCase().includes('switch') || textoInsumos.toLowerCase().includes('bellis') || textoInsumos.toLowerCase().includes('serenade') || textoInsumos.toLowerCase().includes('captan') || textoInsumos.toLowerCase().includes('botry') || textoInsumos.toLowerCase().includes('frac 9') || textoInsumos.toLowerCase().includes('frac 7');
+    if (tieneBotrytis && !cubreBotrytis) {
+      alertas.push('⚠️ Se diagnosticó Botrytis en campo pero NO se ha programado ningún botryticida específico (ej. Switch, Bellis, Serenade).');
+    } else if (tieneBotrytis && cubreBotrytis) {
+      confirmaciones.push('✅ Botrytis cinerea cubierta con producto botryticida específico en mezcla foliar.');
+    }
+
+    // Chequeo de Ácaros / Tetranychus
+    const tieneAcaros = textoHallazgos.toLowerCase().includes('ácaro') || textoHallazgos.toLowerCase().includes('acaro') || textoHallazgos.toLowerCase().includes('arañita') || textoHallazgos.toLowerCase().includes('tetranychus');
+    const cubreAcaros = textoInsumos.toLowerCase().includes('oberon') || textoInsumos.toLowerCase().includes('vertimec') || textoInsumos.toLowerCase().includes('abamect') || textoInsumos.toLowerCase().includes('danitol') || textoInsumos.toLowerCase().includes('envidor') || textoInsumos.toLowerCase().includes('acari') || textoInsumos.toLowerCase().includes('irac 23') || textoInsumos.toLowerCase().includes('irac 6');
+    if (tieneAcaros && !cubreAcaros) {
+      alertas.push('⚠️ Se diagnosticó afectación por Ácaros / Arañita Roja pero NO hay acaricida específico formulado en Mezcla 2.');
+    } else if (tieneAcaros && cubreAcaros) {
+      confirmaciones.push('✅ Población de ácaros cubierta con acaricida en aplicación separada.');
+    }
+
+    // Chequeo de Trips / Gusanos
+    const tieneTrips = textoHallazgos.toLowerCase().includes('trips') || textoHallazgos.toLowerCase().includes('lepidóptero') || textoHallazgos.toLowerCase().includes('gusano') || textoHallazgos.toLowerCase().includes('spodoptera');
+    const cubreTrips = textoInsumos.toLowerCase().includes('delegate') || textoInsumos.toLowerCase().includes('proclaim') || textoInsumos.toLowerCase().includes('lannate') || textoInsumos.toLowerCase().includes('vertimec') || textoInsumos.toLowerCase().includes('botanigard') || textoInsumos.toLowerCase().includes('irac 5') || textoInsumos.toLowerCase().includes('irac 6');
+    if (tieneTrips && !cubreTrips) {
+      alertas.push('⚠️ Se reportaron trips o larvas masticadoras pero no se evidencia insecticida específico en Mezcla 2.');
+    }
+
+    // Chequeo de Bacteriosis
+    const tieneBacteria = textoHallazgos.toLowerCase().includes('bacteri') || textoHallazgos.toLowerCase().includes('xanthomonas') || textoHallazgos.toLowerCase().includes('erwinia') || textoHallazgos.toLowerCase().includes('ralstonia');
+    const cubreBacteria = textoInsumos.toLowerCase().includes('kasumin') || textoInsumos.toLowerCase().includes('phyton') || textoInsumos.toLowerCase().includes('terramicina') || textoInsumos.toLowerCase().includes('cobre') || textoInsumos.toLowerCase().includes('agry-genta');
+    if (tieneBacteria && !cubreBacteria) {
+      alertas.push('⚠️ Se identificaron síntomas bacterianos en campo pero no se observa bactericida o cobre quelatado en el programa.');
+    }
+
+    // Chequeo de Compatibilidad y Segregación
+    (aplicaciones || []).forEach(app => {
+      const prods = (app.ordenMezcla || []).map(p => `${p.producto} ${p.tipo}`).join(' ').toLowerCase();
+      if (app.tipoMezcla === 'fungicida_foliar' && (prods.includes('insecticida') || prods.includes('acaricida'))) {
+        alertas.push(`⚠️ Segregación: La aplicación "${app.nombre}" combina fungicidas/foliares con insecticidas/acaricidas. Se recomienda aplicar insecticidas en pase separado.`);
+      }
+      if (prods.includes('cobre') && prods.includes('fosfito')) {
+        alertas.push(`⚠️ Incompatibilidad: Riesgo de fitotoxicidad al mezclar sales de cobre con fosfitos o compuestos fuertemente ácidos.`);
+      }
+      if (prods.includes('azufre') && (prods.includes('aceite') || prods.includes('organosiliconado'))) {
+        alertas.push(`⚠️ Incompatibilidad: Riesgo de quemazón foliar por mezclar azufre elemental con aceites o tensioactivos organosiliconados.`);
+      }
+    });
+
+    const resultadoLocal = {
+      aprobado: alertas.length === 0,
+      alertas,
+      confirmaciones,
+      resumen: alertas.length === 0 
+        ? 'Programa fitosanitario agronómicamente compatible, debidamente segregado y con cobertura adecuada de los hallazgos reportados.' 
+        : `Se detectaron ${alertas.length} observaciones técnicas que requieren validación por el agrónomo.`,
+      fechaAuditoria: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    // Si hay clave y conexión, enriquecer con Gemini
+    const apiKey = this.getApiKey();
+    if (!apiKey || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+      return { ...resultadoLocal, origen: 'Auditoría Heurística Agronómica (Offline)' };
+    }
+
+    try {
+      const prompt = `Actúa como auditor fitosanitario senior en Costa Rica para el Ing. Ricardo Barquero.
+Audita esta mezcla y recomendaciones de la Semana ${semana}:
+Hallazgos diagnosticados: ${textoHallazgos || 'Monitoreo preventivo general'}
+Aplicaciones programadas: ${JSON.stringify(aplicaciones)}
+Verifica:
+1. Cobertura de hallazgos (¿Falta algún producto para controlar lo diagnosticado?)
+2. Incompatibilidad fisicoquímica o riesgo de fitotoxicidad en el caldo.
+3. Rotación FRAC/IRAC anti-resistencia.
+Responde en viñetas concisas y profesionales.`;
+
+      const requestBody = { contents: [{ parts: [{ text: prompt }] }] };
+      const res = await llamarApiGeminiConCascada({ key: apiKey, requestBody });
+      if (res.exito && res.texto) {
+        return {
+          ...resultadoLocal,
+          comentarioIa: res.texto,
+          origen: `Google Gemini (${res.modeloUsado}) [En vivo]`
+        };
+      }
+    } catch (e) {
+      console.warn('Fallo enriquecimiento con Gemini, retornando auditoría local:', e);
+    }
+
+    return { ...resultadoLocal, origen: 'Auditoría Agronómica Costa Rica' };
+  },
+
   /**
    * Respuestas agronómicas inteligentes 100% offline cuando no hay internet en la finca
    */

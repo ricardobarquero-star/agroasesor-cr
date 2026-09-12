@@ -16,42 +16,98 @@ const MODALIDADES = [
     nombre: 'Dosatron (Tanque A y B)', 
     icono: '🧪', 
     subtitulo: 'Inyección proporcional dual (A: Calcio/Nitratos, B: Fosfatos/Sulfatos)',
-    unidades: ['kg / tanque 1000 L', 'g / tanque 1000 L', 'L / tanque 1000 L', 'cc / tanque 1000 L', '% inyección (ej: 1:100)']
+    unidades: [
+      'kg / tanque 1000 L', 
+      'g / tanque 1000 L', 
+      'cc / 1000 L', 
+      'L / 1000 L', 
+      'kg / estañón (200 L)', 
+      'g / estañón (200 L)', 
+      'cc / estañón (200 L)', 
+      '% inyección (ej: 1:100)'
+    ]
   },
   { 
     id: 'tanque_directo', 
     nombre: 'Tanque Directo', 
     icono: '💧', 
     subtitulo: 'Mezcla en un solo tanque listo para riego o goteo directo',
-    unidades: ['kg / tanque 1000 L', 'g / tanque 1000 L', 'kg / estañón (200 L)', 'g / estañón (200 L)', 'g / L', 'cc / L']
+    unidades: [
+      'kg / tanque 1000 L', 
+      'g / tanque 1000 L', 
+      'cc / 1000 L', 
+      'L / 1000 L', 
+      'kg / estañón (200 L)', 
+      'g / estañón (200 L)', 
+      'cc / estañón (200 L)', 
+      'g / L', 
+      'cc / L'
+    ]
   },
   { 
     id: 'venturi', 
     nombre: 'Mezclas con Venturi', 
     icono: '🔄', 
     subtitulo: 'Succión por depresión Venturi desde estañón o tanque nodriza',
-    unidades: ['kg / estañón (200 L)', 'g / estañón (200 L)', 'L / estañón (200 L)', 'cc / estañón (200 L)', 'kg / tanque 1000 L', 'g / L']
+    unidades: [
+      'kg / estañón (200 L)', 
+      'g / estañón (200 L)', 
+      'L / estañón (200 L)', 
+      'cc / estañón (200 L)', 
+      'cc / 1000 L', 
+      'g / 1000 L', 
+      'kg / tanque 1000 L', 
+      'L / 1000 L', 
+      'g / L'
+    ]
   },
   { 
     id: 'inyeccion', 
     nombre: 'Inyección de Fertirriego', 
     icono: '⚡', 
     subtitulo: 'Cabezal de inyección automatizada o bombas dosificadoras',
-    unidades: ['L / m3 de agua', 'cc / m3 de agua', 'g / m3 de agua', 'kg / m3 de agua', 'kg / ha']
+    unidades: [
+      'cc / 1000 L', 
+      'L / 1000 L', 
+      'g / 1000 L', 
+      'kg / 1000 L', 
+      'L / m3 de agua', 
+      'cc / m3 de agua', 
+      'g / m3 de agua', 
+      'kg / m3 de agua', 
+      'kg / ha'
+    ]
   },
   { 
     id: 'drench', 
     nombre: 'Drench por Estañón / Planta', 
     icono: '🪴', 
     subtitulo: 'Aplicación localizada al cuello o raíz con bomba o lanza',
-    unidades: ['g / estañón (200 L)', 'cc / estañón (200 L)', 'kg / estañón (200 L)', 'g / planta', 'cc / planta (ej: 150-200 cc)', 'L / estañón (200 L)']
+    unidades: [
+      'cc / estañón (200 L)', 
+      'g / estañón (200 L)', 
+      'kg / estañón (200 L)', 
+      'cc / 1000 L', 
+      'g / 1000 L', 
+      'L / 1000 L', 
+      'cc / planta (ej: 150-200 cc)', 
+      'g / planta', 
+      'cc / bomba (18-20 L)', 
+      'g / bomba (18-20 L)'
+    ]
   },
   { 
     id: 'granular', 
     nombre: 'Fertilización Granular al Suelo', 
     icono: '🌾', 
     subtitulo: 'Abonamiento edáfico sólido (Pre-siembra, aporque o desarrollo)',
-    unidades: ['kg / ha', 'sacos (46 kg) / ha', 'g / planta', 'kg / cama (100 m)', 'quintales / mz']
+    unidades: [
+      'kg / ha', 
+      'sacos (46 kg) / ha', 
+      'g / planta', 
+      'kg / cama (100 m)', 
+      'quintales / mz'
+    ]
   }
 ];
 
@@ -553,10 +609,12 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                     onChange={(e) => setAlcanceEvento(e.target.value)}
                     className="w-full text-xs font-bold border border-slate-300 rounded-xl p-2.5 bg-slate-50 outline-none"
                   >
-                    <option value="Toda la Finca">Toda la Finca ({visita.finca?.nombre || 'Finca'})</option>
+                    <option value="Toda la Finca">🌱 Toda la Finca ({visita.finca?.nombre || 'Finca'})</option>
+                    <option value="Solo Lotes en Producción">🍓 Solo Lotes en Producción / Cosecha</option>
+                    <option value="Solo Lotes en Crecimiento">🌿 Solo Lotes en Crecimiento / Vegetativo</option>
                     {lotesDeFinca.map(l => (
                       <option key={l.id} value={`Lote: ${l.nombre}`}>
-                        Lote específico: {l.nombre} ({l.cultivoNombre || ''})
+                        📍 Lote específico: {l.nombre} ({l.cultivoNombre || ''})
                       </option>
                     ))}
                   </select>

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { 
-  Users, Plus, MapPin, Phone, Mail, Calendar, CheckCircle2, 
+  Users, Share2, Plus, MapPin, Phone, Mail, Calendar, CheckCircle2, 
   Search, ArrowRight, Trash2, Edit2, Play, ChevronRight, 
   CloudSun, Sparkles, Building2, Layers, AlertCircle, FileText,
   FolderOpen, X, Check, Sprout, CornerDownRight
@@ -765,6 +765,25 @@ export default function ClientVisitModule({
                           </button>
                         </div>
                       </div>
+                      {/* Dashboard de Estadística Climática Acumulada de la Finca */}
+                      {(() => {
+                        const stats = storageService.getEstadisticasClimaClienteFinca(clienteExpediente.id, finca.id);
+                        return (
+                          <div className="bg-blue-50/70 border border-blue-100 rounded-xl p-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-blue-950">
+                            <div className="flex items-center gap-1.5 font-bold text-blue-900">
+                              <CloudSun className="w-4 h-4 text-blue-700 shrink-0" />
+                              <span>Historial Climático de la Finca:</span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2.5 sm:gap-4">
+                              <span>🌧️ Lluvia Acum: <strong>{stats.lluviaTotalAcumulada} mm</strong></span>
+                              <span>💧 HR Prom: <strong>{stats.promedioHumedadRelativa}%</strong></span>
+                              <span>🌡️ Temp Prom: <strong>{stats.promedioTemperatura}°C</strong></span>
+                              <span className="text-slate-500 font-semibold">({stats.totalVisitas} visitas)</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
 
                       {/* Lotes dentro de la Finca */}
                       <div className="space-y-2 pl-2">
@@ -833,6 +852,104 @@ export default function ClientVisitModule({
                   </div>
                 )}
               </div>
+
+              {/* ========================================================
+                  SECCIÓN: INFORMES TÉCNICOS GUARDADOS EN EXPEDIENTE
+                 ======================================================== */}
+              {(() => {
+                const reportesCliente = storageService.getReportesDeCliente(clienteExpediente.id);
+                return (
+                  <div className="border-t border-slate-200 pt-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-extrabold text-sm text-slate-900 flex items-center gap-1.5">
+                          <FileText className="w-4 h-4 text-purple-700" />
+                          <span>Informes Técnicos Guardados en Expediente ({reportesCliente.length})</span>
+                        </h4>
+                        <p className="text-[11px] text-slate-500">
+                          Historial de informes técnicos generados para este productor listos para consultar, imprimir o reenviar.
+                        </p>
+                      </div>
+                    </div>
+
+                    {reportesCliente.length > 0 ? (
+                      <div className="space-y-2">
+                        {reportesCliente.map((rep) => (
+                          <div key={rep.id} className="bg-slate-50 p-3 rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-slate-900">
+                                  📄 {rep.fincaNombre || 'Finca'} — {rep.alcance || 'Toda la Finca'}
+                                </span>
+                                <span className="text-[10px] bg-purple-100 text-purple-800 px-2 py-0.5 rounded font-bold">
+                                  {rep.fecha}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-1">
+                                <span>🌱 {rep.cultivoNombre || 'Cultivo'}</span>
+                                <span>📸 {rep.hallazgosCount || 0} hallazgos</span>
+                                <span>💧 {rep.fertirriegoCount || 0} fertirriego</span>
+                                <span>🛡️ {rep.plaguicidasCount || 0} fitosanitarios</span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 self-end sm:self-center">
+                              <button
+                                onClick={() => {
+                                  const visitaEncontrada = visitas.find(v => v.id === rep.visitaId);
+                                  if (visitaEncontrada) {
+                                    onSelectVisita(visitaEncontrada);
+                                    setClienteExpediente(null);
+                                  } else {
+                                    alert('La visita original se encuentra archivada en el historial.');
+                                  }
+                                }}
+                                className="px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 shadow-xs"
+                                title="Abrir visita / informe técnico"
+                              >
+                                <FolderOpen className="w-3.5 h-3.5" />
+                                <span>Abrir</span>
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  const telefono = (clienteExpediente.telefono || '').replace(/[^0-9]/g, '');
+                                  const texto = encodeURIComponent(rep.resumenWhatsApp || `Informe técnico de visita: ${rep.fecha}`);
+                                  const url = telefono 
+                                    ? `https://api.whatsapp.com/send?phone=${telefono}&text=${texto}`
+                                    : `https://api.whatsapp.com/send?text=${texto}`;
+                                  window.open(url, '_blank');
+                                }}
+                                className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl border border-emerald-300 transition"
+                                title="Compartir por WhatsApp al productor"
+                              >
+                                <Share2 className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  if (confirm('¿Desea eliminar este informe del expediente?')) {
+                                    storageService.eliminarReporteDeCliente(clienteExpediente.id, rep.id);
+                                    refrescarDatos();
+                                  }
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition"
+                                title="Eliminar informe"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-dashed border-slate-300 text-center text-slate-500 text-xs">
+                        No hay informes guardados aún para este productor. Al generar un informe en la pestaña <strong>Reportes</strong>, utilice el botón <strong>"💾 Guardar en Expediente"</strong>.
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
             </div>
 

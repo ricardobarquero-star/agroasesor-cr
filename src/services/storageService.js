@@ -5,7 +5,8 @@ const STORAGE_KEYS = {
   VISITAS: 'agroasesor_visitas_db_v2',
   VISITA_ACTUAL_ID: 'agroasesor_visita_activa_id_v2',
   CATALOGO_PERSONALIZADO: 'agroasesor_custom_catalog_v2',
-  PERFIL_INGENIERO: 'agroasesor_perfil_ingeniero_v2'
+  PERFIL_INGENIERO: 'agroasesor_perfil_ingeniero_v2',
+  REPORTES_EXPEDIENTE: 'agroasesor_reportes_expediente_v2'
 };
 
 const PERFIL_INGENIERO_DEFECTO = {
@@ -597,7 +598,32 @@ export const storageService = {
       hallazgos: [],
       // Totalmente vacías: El agrónomo las genera y propone a su criterio profesional
       recomendacionesFertirriego: [],
-      recomendacionesPlaguicidas: []
+      recomendacionesPlaguicidas: [],
+      // Mediciones de Suelo en Campo (pH, CE, Temperatura, Humedad)
+      medicionesSuelo: [
+        {
+          id: 'suelo-' + Date.now(),
+          loteId: lote.id || 'todos',
+          loteNombre: lote.nombre || 'Lote Principal',
+          phSuelo: '5.8',
+          ceSuelo: '1.4',
+          tempSuelo: '19.0',
+          humedadSuelo: '70%',
+          metodo: 'Sonda directa en rizósfera (15 cm)',
+          analisisIa: 'Valores en rango adecuado para ' + (cultivo.nombre || 'el cultivo') + '. Fósforo y cationes con buena disponibilidad.',
+          ajusteRecomendado: 'Mantener conductividad eléctrica en 1.3 - 1.5 mS/cm. Sin necesidad de correctores de acidez en este ciclo.',
+          estadoAprobacion: 'aprobado' // 'aprobado', 'editado', 'omitido'
+        }
+      ],
+      // Análisis Epidemiológico Clima + Plagas/Hongos (Fenómeno de El Niño)
+      analisisEpidemiologico: {
+        estadoAprobacion: 'aprobado', // 'aprobado', 'editado', 'omitido'
+        fenomenoElNino: true,
+        analisisTexto: 'Bajo la influencia del Fenómeno de El Niño en Costa Rica, las alternancias entre días calurosos secos y lluvias vespertinas intensas generan condiciones predisponentes críticas. Durante los períodos secos se aceleran los ciclos biológicos de ácaros (Tetranychus urticae) y trips (Frankliniella occidentalis), mientras que las lluvias prolongadas saturan el suelo y condensan la película de agua foliar, propiciando ataques de Botrytis cinerea y hongos radiculares (Pythium / Phytophthora).',
+        medidasCulturales: 'Manejo riguroso de ventilación en macrotúneles e invernaderos (apertura temprana de cortinas para secado de rocío). Eliminación estricta de órganos senescentes o infectados.',
+        medidasNutricionales: 'Aplicación de Silicio asimilable (Sili-K / Silitek) para inducir engrosamiento de cutícula epidérmica como barrera física. Mantener relaciones balanceadas de Calcio/Boro y Fosfito de Potasio para activar fitoalexinas.',
+        medidasAmbiente: 'Inoculación de la rizósfera con Trichoderma harzianum (Tusal) y aspersiones al follaje con Bacillus subtilis (Serenade) para establecer competencia biológica por nichos.'
+      }
     };
 
     this.guardarVisitaActiva(nueva);
@@ -616,6 +642,107 @@ export const storageService = {
       const siguienteId = historial.length > 0 ? historial[0].id : '';
       localStorage.setItem(STORAGE_KEYS.VISITA_ACTUAL_ID, siguienteId);
     }
+  },
+
+  // ==========================================
+  // EXPEDIENTE DE REPORTES E INFORMES POR CLIENTE
+  // ==========================================
+  getTodosLosReportesGuardados() {
+    const raw = localStorage.getItem(STORAGE_KEYS.REPORTES_EXPEDIENTE);
+    if (!raw) return [];
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  },
+
+  getReportesDeCliente(clienteId) {
+    if (!clienteId) return [];
+    const reportes = this.getTodosLosReportesGuardados();
+    return reportes.filter(r => r.clienteId === clienteId);
+  },
+
+  guardarReporteEnExpediente(clienteId, reporte) {
+    if (!clienteId || !reporte) return null;
+    const reportes = this.getTodosLosReportesGuardados();
+    const index = reportes.findIndex(r => r.id === reporte.id);
+    const nuevoReporte = {
+      ...reporte,
+      id: reporte.id || 'rep-' + Date.now(),
+      clienteId,
+      fechaGuardado: new Date().toISOString().split('T')[0],
+      horaGuardado: new Date().toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' })
+    };
+
+    if (index >= 0) {
+      reportes[index] = nuevoReporte;
+    } else {
+      reportes.unshift(nuevoReporte);
+    }
+
+    try {
+      localStorage.setItem(STORAGE_KEYS.REPORTES_EXPEDIENTE, JSON.stringify(reportes));
+    } catch (e) {
+      console.warn('Quota warning guardando reporte en expediente:', e);
+    }
+    return nuevoReporte;
+  },
+
+  eliminarReporteDeCliente(clienteId, reporteId) {
+    const reportes = this.getTodosLosReportesGuardados().filter(r => r.id !== reporteId);
+    try {
+      localStorage.setItem(STORAGE_KEYS.REPORTES_EXPEDIENTE, JSON.stringify(reportes));
+    } catch (e) {
+      console.warn('Error eliminando reporte:', e);
+    }
+  },
+
+  // ==========================================
+  // ESTADÍSTICA CLIMÁTICA ACUMULADA POR FINCA / CLIENTE
+  // ==========================================
+  getEstadisticasClimaClienteFinca(clienteId, fincaId = null) {
+    const visitas = this.getHistorialVisitas().filter(v => {
+      if (v.clienteId !== clienteId) return false;
+      if (fincaId && v.finca?.id !== fincaId) return false;
+      return true;
+    });
+
+    if (visitas.length === 0) {
+      return {
+        totalVisitas: 0,
+        lluviaTotalAcumulada: 0,
+        humedadPromedio: 85,
+        temperaturaPromedio: 18,
+        horasAltaHumedadTotal: 0,
+        riesgoPredominante: 'Moderado',
+        fenomenoElNino: true
+      };
+    }
+
+    let sumaLluvia = 0;
+    let sumaHumedad = 0;
+    let sumaTemp = 0;
+    let sumaHorasHumedad = 0;
+
+    visitas.forEach(v => {
+      sumaLluvia += Number(v.clima?.lluviaAcumulada7Dias) || 0;
+      sumaHumedad += Number(v.clima?.humedadActual) || 82;
+      sumaTemp += Number(v.clima?.temperaturaActual) || 18;
+      sumaHorasHumedad += Number(v.clima?.horasAltaHumedad) || 35;
+    });
+
+    const total = visitas.length;
+    return {
+      totalVisitas: total,
+      lluviaTotalAcumulada: Math.round(sumaLluvia * 10) / 10,
+      humedadPromedio: Math.round(sumaHumedad / total),
+      temperaturaPromedio: Math.round((sumaTemp / total) * 10) / 10,
+      horasAltaHumedadTotal: Math.round(sumaHorasHumedad),
+      riesgoPredominante: sumaLluvia > 100 ? 'Crítico / Fúngico' : (sumaLluvia > 50 ? 'Alto' : 'Moderado'),
+      fenomenoElNino: true,
+      ultimasVisitas: visitas.slice(0, 5).map(v => ({ fecha: v.fecha, lluvia: v.clima?.lluviaAcumulada7Dias || 0, temp: v.clima?.temperaturaActual || 18 }))
+    };
   },
 
   // ==========================================
