@@ -17,7 +17,7 @@ import { crAgroDatabase } from './data/crAgroDatabase';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('visitas'); // 'visitas', 'hallazgos', 'fertirriego', 'plaguicidas', 'reporte'
-  const [visita, setVisita] = useState(storageService.getVisitaActiva());
+  const [visita, setVisita] = useState(() => storageService.getVisitaActiva() || { id: 'v-temp', productor: { nombre: 'Productor' }, finca: { nombre: 'Finca' }, lote: { nombre: 'Lote 1', cultivoId: 'fresa', cultivoNombre: 'Fresa' }, hallazgos: [], recomendacionesFertirriego: [], recomendacionesPlaguicidas: [] });
   const [climaCargando, setClimaCargando] = useState(false);
   const [showAiModal, setShowAiModal] = useState(false);
   const [aiModuleContext, setAiModuleContext] = useState('general');
@@ -175,16 +175,16 @@ export default function App() {
           <div className="flex items-center gap-2.5 shrink-0">
             <span className="flex items-center gap-1 text-emerald-300 font-semibold">
               <MapPin className="w-3.5 h-3.5" />
-              {visita.finca?.gps?.lat ? `${visita.finca.gps.lat}, ${visita.finca.gps.lon}` : 'GPS: Coronado'}
+              {visita?.finca?.gps?.lat ? `${visita?.finca?.gps?.lat}, ${visita?.finca?.gps?.lon}` : 'GPS: Coronado'}
             </span>
             <span className="text-emerald-400/60">•</span>
             <span className="flex items-center gap-1">
               <CloudSun className="w-3.5 h-3.5 text-amber-400" />
-              {visita.clima?.temperaturaActual || 18}°C (HR: {visita.clima?.humedadActual || 85}%)
+              {visita?.clima?.temperaturaActual || 18}°C (HR: {visita?.clima?.humedadActual || 85}%)
             </span>
             <span className="text-emerald-400/60">•</span>
             <span className="font-bold text-blue-300 bg-blue-950/80 px-2 py-0.5 rounded border border-blue-800/60">
-              🌧️ Lluvia 7 días: {visita.clima?.lluviaAcumulada7Dias || 0} mm
+              🌧️ Lluvia 7 días: {visita?.clima?.lluviaAcumulada7Dias || 0} mm
             </span>
           </div>
 
@@ -210,7 +210,7 @@ export default function App() {
           >
             <span className="font-bold text-slate-500">Visita activa:</span>
             <span className="font-extrabold text-slate-900 group-hover:text-emerald-700 underline decoration-emerald-500 underline-offset-2">
-              {visita.productor?.nombre?.split(' ')[0] || 'Cliente'} — {visita.finca?.nombre || 'Finca'}
+              {visita?.productor?.nombre?.split(' ')[0] || 'Cliente'} — {visita?.finca?.nombre || 'Finca'}
             </span>
             <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-700" />
           </button>
@@ -218,7 +218,7 @@ export default function App() {
           <div className="flex items-center gap-2 text-xs shrink-0">
             <span className="text-xs font-bold text-slate-500">Cultivo:</span>
             <select
-              value={visita.lote?.cultivoId || 'fresa'}
+              value={visita?.lote?.cultivoId || 'fresa'}
               onChange={(e) => handleCropChange(e.target.value)}
               className="bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg px-2 py-0.5 text-xs font-bold text-emerald-800 outline-none"
             >
@@ -227,7 +227,7 @@ export default function App() {
               ))}
             </select>
             <span className="text-slate-300">/</span>
-            <span className="text-slate-600 font-semibold">{visita.lote?.nombre || 'Lote 1'}</span>
+            <span className="text-slate-600 font-semibold">{visita?.lote?.nombre || 'Lote 1'}</span>
           </div>
 
         </div>
@@ -365,11 +365,11 @@ export default function App() {
         onClose={() => setShowAiModal(false)}
         modulo={aiModuleContext}
         contexto={{
-          cultivoId: visita.lote?.cultivoId,
+          cultivoId: visita?.lote?.cultivoId,
           cultivoNombre: visita.lote?.cultivoNombre,
           variedad: visita.lote?.variedad,
-          finca: visita.finca?.nombre,
-          lote: visita.lote?.nombre,
+          finca: visita?.finca?.nombre,
+          lote: visita?.lote?.nombre,
           clima: visita.clima,
           totalHallazgos: (visita.hallazgos || []).length
         }}

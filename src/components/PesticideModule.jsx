@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { crAgroDatabase } from '../data/crAgroDatabase';
 import { storageService } from '../services/storageService';
+import { geminiService } from '../services/geminiService';
 
 export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
   const [semanaActiva, setSemanaActiva] = useState(1);
@@ -23,6 +24,8 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
 
   // Filas dinámicas limpias
   const [lineasMezcla, setLineasMezcla] = useState([]);
+  const [filtroCategoriaInsumo, setFiltroCategoriaInsumo] = useState('todos');
+  const [investigandoIdx, setInvestigandoIdx] = useState(null);
 
   const recomendaciones = visita.recomendacionesPlaguicidas || [];
   const recomendacionSemana = recomendaciones.find(r => r.semana === semanaActiva) || {
@@ -36,24 +39,56 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
 
   const todosPlaguicidas = storageService.getTodosLosPlaguicidas();
 
-  // Filtrar productos según el tipo de mezcla para mantener la regla de segregación agronómica
+  // Filtrar productos según tipo de mezcla y filtros por categoría (Fungicidas, Insecticidas, Foliares, Coadyuvantes, Todos)
   const productosFiltradosMezcla = todosPlaguicidas.filter(p => {
     const cat = (p.categoria || '').toLowerCase();
     const nombre = (p.nombreComercial || '').toLowerCase();
-    
-    // Insumos universales de tanque
-    if (cat.includes('acondicionador') || cat.includes('coadyuvante') || nombre.includes('carrier') || nombre.includes('break-thru')) {
-      return true;
+
+    // Filtros activos por pestaña/botón de categoría
+    if (filtroCategoriaInsumo === 'fungicida') {
+      return cat.includes('fungicida') || (!cat.includes('insecticida') && !cat.includes('acaricida') && (cat.includes('biol') || p.esPersonalizado));
+    }
+    if (filtroCategoriaInsumo === 'insecticida') {
+      return cat.includes('insecticida') || cat.includes('acaricida');
+    }
+    if (filtroCategoriaInsumo === 'foliar') {
+      return cat.includes('foliar') || cat.includes('nutricional') || nombre.includes('metalosato') || nombre.includes('cosmoquel') || nombre.includes('quel') || cat.includes('boro') || cat.includes('zinc');
+    }
+    if (filtroCategoriaInsumo === 'coadyuvante') {
+      return cat.includes('acondicionador') || cat.includes('coadyuvante') || nombre.includes('carrier') || nombre.includes('break') || nombre.includes('silwet');
     }
 
+    // Modo 'todos': aplicar segregación según tipo de mezcla
     if (tipoMezcla === 'fungicida_foliar') {
       return cat.includes('fungicida') || cat.includes('foliar') || cat.includes('nutricional') || 
-             cat.includes('biológico') || nombre.includes('metalosato') || nombre.includes('cosmoquel') || p.esPersonalizado;
+             cat.includes('biológico') || cat.includes('acondicionador') || cat.includes('coadyuvante') ||
+             nombre.includes('carrier') || nombre.includes('break-thru') || p.esPersonalizado;
     } else {
-      // insecticida_acaricida
-      return cat.includes('insecticida') || cat.includes('acaricida') || cat.includes('biológico') || p.esPersonalizado;
+      return cat.includes('insecticida') || cat.includes('acaricida') || cat.includes('biológico') || 
+             cat.includes('acondicionador') || cat.includes('coadyuvante') || p.esPersonalizado;
     }
   });
+
+  // Auto-investigar insumo nuevo digitado manualmente con Asistente IA
+  const handleAutoInvestigarConIA = async (idx, nombre) => {
+    if (!nombre || !nombre.trim()) return;
+    setInvestigandoIdx(idx);
+    try {
+      const res = await geminiService.investigarInsumo(nombre.trim());
+      if (res) {
+        const nuevas = [...lineasMezcla];
+        nuevas[idx].tipo = res.categoria || nuevas[idx].tipo;
+        nuevas[idx].fracIrac = res.codigoFracIrac || nuevas[idx].fracIrac;
+        nuevas[idx].dosis = res.dosisEstandar || nuevas[idx].dosis;
+        nuevas[idx].funcion = res.blancoBiologico || res.ingredienteActivo || nuevas[idx].funcion;
+        setLineasMezcla(nuevas);
+      }
+    } catch (err) {
+      console.warn('Error investigando insumo con IA:', err);
+    } finally {
+      setInvestigandoIdx(null);
+    }
+  };
 
   // Obtener lista de lotes de la finca actual para el selector de alcance
   const clientes = storageService.getClientes();
@@ -622,6 +657,36 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
 
               {/* TABLA DE PRODUCTOS CON LISTAS DESPLEGABLES NATIVAS */}
               <div className="border border-slate-200 rounded-2xl p-3.5 bg-slate-50/50 space-y-2.5">
+                {/* FILTROS POR TIPO DE INSUMO */}
+                <div className="bg-white p-2 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1">
+                    <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mr-1">Filtrar Insumos:</span>
+                    {[
+                      { id: 'todos', label: 'Todos' },
+                      { id: 'fungicida', label: '🍄 Solo Fungicidas' },
+                      { id: 'insecticida', label: '🐛 Solo Insecticidas/Acaricidas' },
+                      { id: 'foliar', label: '🍃 Solo Foliares' },
+                      { id: 'coadyuvante', label: '💧 Coadyuvantes' }
+                    ].map(f => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setFiltroCategoriaInsumo(f.id)}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-bold transition ${
+                          filtroCategoriaInsumo === f.id
+                            ? 'bg-purple-700 text-white shadow-xs'
+                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded">
+                    {productosFiltradosMezcla.length} insumos listados
+                  </span>
+                </div>
+
                 <div className="flex items-center justify-between">
                   <div>
                     <span className="font-extrabold text-xs text-slate-900 block">
@@ -650,7 +715,7 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                         {idx + 1}
                       </span>
                       
-                      {/* CELDA DE PRODUCTO: LISTA DESPLEGABLE NATIVA */}
+                      {/* CELDA DE PRODUCTO: LISTA DESPLEGABLE CON DIGITAR DE PRIMERO */}
                       {!l.esManual ? (
                         <div className="flex-1 min-w-[200px] flex items-center gap-1">
                           <select
@@ -658,14 +723,31 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                             onChange={(e) => handleSeleccionarPlaguicida(e.target.value, idx)}
                             className="w-full text-xs font-bold text-slate-900 border border-slate-300 rounded-lg p-2 bg-purple-50/40 outline-none focus:ring-2 focus:ring-purple-500"
                           >
+                            {/* REQUISITO: La opción de digitar producto debe estar DE PRIMERO en la lista */}
+                            <option value="__manual__">✏️ [+ DIGITAR PRODUCTO MANUAL / NO ESTÁ EN LISTA...]</option>
                             <option value="">-- Toque para desplegar catálogo ({productosFiltradosMezcla.length} insumos) --</option>
                             {productosFiltradosMezcla.map((p, i) => (
                               <option key={i} value={p.nombreComercial}>
                                 {p.nombreComercial} ({p.categoria || ''} {p.codigoFracIrac ? `• ${p.codigoFracIrac}` : ''})
                               </option>
                             ))}
-                            <option value="__manual__">✏️ [+ Digitar otro producto manual...]</option>
                           </select>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nuevo = [...lineasMezcla];
+                              nuevo[idx].esManual = true;
+                              nuevo[idx].producto = '';
+                              nuevo[idx].fracIrac = '';
+                              nuevo[idx].dosis = '';
+                              nuevo[idx].funcion = '';
+                              setLineasMezcla(nuevo);
+                            }}
+                            className="p-2 text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg border border-purple-200"
+                            title="Escribir producto manual"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       ) : (
                         <div className="flex-1 min-w-[200px] flex items-center gap-1">
@@ -677,9 +759,24 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                               nuevo[idx].producto = e.target.value;
                               setLineasMezcla(nuevo);
                             }}
-                            placeholder="Escriba nombre comercial del producto"
-                            className="w-full text-xs font-semibold border border-purple-300 rounded-lg p-2 outline-none"
+                            onBlur={() => {
+                              if (l.producto && !l.fracIrac) {
+                                handleAutoInvestigarConIA(idx, l.producto);
+                              }
+                            }}
+                            placeholder="Escriba nombre comercial del producto..."
+                            className="w-full text-xs font-semibold border border-purple-400 rounded-lg p-2 outline-none focus:ring-2 focus:ring-purple-500 bg-white"
                           />
+                          <button
+                            type="button"
+                            onClick={() => handleAutoInvestigarConIA(idx, l.producto)}
+                            disabled={!l.producto || investigandoIdx === idx}
+                            className="px-2 py-1.5 text-[11px] font-bold text-purple-700 bg-purple-100 hover:bg-purple-200 rounded-lg border border-purple-300 flex items-center gap-1 shrink-0 disabled:opacity-50"
+                            title="Investigar grupo FRAC/IRAC y dosis con IA"
+                          >
+                            <Sparkles className={`w-3.5 h-3.5 ${investigandoIdx === idx ? 'animate-spin text-purple-700' : 'text-purple-600'}`} />
+                            <span className="hidden sm:inline">{investigandoIdx === idx ? 'Buscando...' : 'IA Ficha'}</span>
+                          </button>
                           <button
                             type="button"
                             onClick={() => {

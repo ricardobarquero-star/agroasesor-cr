@@ -331,6 +331,17 @@ export const storageService = {
     localStorage.setItem(STORAGE_KEYS.CLIENTES, JSON.stringify(clientes));
   },
 
+  editarCliente(clienteId, datosActualizados) {
+    const clientes = this.getClientes();
+    const index = clientes.findIndex(c => c.id === clienteId);
+    if (index >= 0) {
+      clientes[index] = { ...clientes[index], ...datosActualizados };
+      localStorage.setItem(STORAGE_KEYS.CLIENTES, JSON.stringify(clientes));
+      return clientes[index];
+    }
+    return null;
+  },
+
   // Gestión de Fincas
   agregarFincaACliente(clienteId, nuevaFinca) {
     const clientes = this.getClientes();
@@ -500,8 +511,42 @@ export const storageService = {
     } else {
       historial.unshift(visita);
     }
-    localStorage.setItem(STORAGE_KEYS.VISITAS, JSON.stringify(historial));
-    localStorage.setItem(STORAGE_KEYS.VISITA_ACTUAL_ID, visita.id);
+
+    try {
+      localStorage.setItem(STORAGE_KEYS.VISITAS, JSON.stringify(historial));
+      localStorage.setItem(STORAGE_KEYS.VISITA_ACTUAL_ID, visita.id);
+    } catch (err) {
+      console.warn('QuotaExceeded al guardar historial en localStorage, protegiendo visita activa:', err);
+      // Aliviar cuota de 5MB en Safari: remover fotos en base64 de visitas históricas anteriores
+      const historialAligerado = historial.map(v => {
+        if (v.id === visita.id) return v;
+        return {
+          ...v,
+          hallazgos: (v.hallazgos || []).map(h => ({
+            ...h,
+            fotoAnotada: h.fotoAnotada ? 'cached_in_indexeddb' : null
+          }))
+        };
+      });
+
+      try {
+        localStorage.setItem(STORAGE_KEYS.VISITAS, JSON.stringify(historialAligerado));
+        localStorage.setItem(STORAGE_KEYS.VISITA_ACTUAL_ID, visita.id);
+      } catch (err2) {
+        console.error('Almacenamiento crítico, persistiendo visita activa prioritaria:', err2);
+        try {
+          localStorage.setItem(STORAGE_KEYS.VISITAS, JSON.stringify([visita]));
+          localStorage.setItem(STORAGE_KEYS.VISITA_ACTUAL_ID, visita.id);
+        } catch (err3) {
+          console.error('Fallo final de cuota localStorage:', err3);
+        }
+      }
+    }
+
+    // Asegurar persistencia de fotos en IndexedDB
+    if (typeof window !== 'undefined' && visita.hallazgos && visita.hallazgos.length > 0) {
+      photoStorageService.sincronizarFotosVisita(visita).catch(() => {});
+    }
   },
 
   setVisitaActivaId(visitaId) {
@@ -561,7 +606,16 @@ export const storageService = {
 
   eliminarVisita(visitaId) {
     const historial = this.getHistorialVisitas().filter(v => v.id !== visitaId);
-    localStorage.setItem(STORAGE_KEYS.VISITAS, JSON.stringify(historial));
+    try {
+      localStorage.setItem(STORAGE_KEYS.VISITAS, JSON.stringify(historial));
+    } catch (e) {
+      console.warn('Error guardando visitas tras eliminar:', e);
+    }
+    const activaId = localStorage.getItem(STORAGE_KEYS.VISITA_ACTUAL_ID);
+    if (activaId === visitaId) {
+      const siguienteId = historial.length > 0 ? historial[0].id : '';
+      localStorage.setItem(STORAGE_KEYS.VISITA_ACTUAL_ID, siguienteId);
+    }
   },
 
   // ==========================================

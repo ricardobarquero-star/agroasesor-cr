@@ -1,3 +1,4 @@
+import { photoStorageService } from '../services/photoStorageService';
 import React, { useRef, useState, useEffect } from 'react';
 import { 
   Camera, Upload, Edit3, Circle, ArrowUpRight, Type, 
@@ -53,7 +54,7 @@ export default function PhotoAnnotator({ onSavePhoto, onCancel, initialImage = n
   const saveState = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
     const newHistory = history.slice(0, currentStep + 1);
     newHistory.push(dataUrl);
     setHistory(newHistory);
@@ -246,23 +247,33 @@ export default function PhotoAnnotator({ onSavePhoto, onCancel, initialImage = n
     saveState();
   };
 
-  const handleImageUpload = (e) => {
+  const handleImageUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      setBaseImage(evt.target.result);
+    try {
+      // Compresión inmediata en el cliente para evitar agotar memoria y localStorage
+      const compressed = await photoStorageService.comprimirImagen(file, 1200, 0.72);
+      setBaseImage(compressed);
       setHistory([]);
       setCurrentStep(-1);
       setNextNumber(1);
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.warn('Compresión fallback:', err);
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        setBaseImage(evt.target.result);
+        setHistory([]);
+        setCurrentStep(-1);
+        setNextNumber(1);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleSave = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const finalDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    const finalDataUrl = canvas.toDataURL('image/jpeg', 0.75);
     onSavePhoto(finalDataUrl);
   };
 

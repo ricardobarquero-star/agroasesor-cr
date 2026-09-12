@@ -22,6 +22,29 @@ export default function ClientVisitModule({
   const [showModalNuevaVisita, setShowModalNuevaVisita] = useState(false);
   const [showModalNuevoCliente, setShowModalNuevoCliente] = useState(false);
   const [clienteExpediente, setClienteExpediente] = useState(null); // Cliente abierto en expediente
+  const [showModalEditarCliente, setShowModalEditarCliente] = useState(false);
+  const [clienteEditando, setClienteEditando] = useState(null);
+  const [editNombre, setEditNombre] = useState('');
+  const [editTelefono, setEditTelefono] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editCedula, setEditCedula] = useState('');
+  const [editUbicacion, setEditUbicacion] = useState('');
+
+  // Modales edición de Finca y Lote
+  const [fincaEditando, setFincaEditando] = useState(null);
+  const [showModalEditarFinca, setShowModalEditarFinca] = useState(false);
+  const [editFincaNombre, setEditFincaNombre] = useState('');
+  const [editFincaUbicacion, setEditFincaUbicacion] = useState('');
+  const [editFincaAltitud, setEditFincaAltitud] = useState('1600');
+
+  const [loteEditando, setLoteEditando] = useState(null);
+  const [fincaIdLoteEditando, setFincaIdLoteEditando] = useState(null);
+  const [showModalEditarLote, setShowModalEditarLote] = useState(false);
+  const [editLoteNombre, setEditLoteNombre] = useState('');
+  const [editLoteCultivoId, setEditLoteCultivoId] = useState('fresa');
+  const [editLoteVariedad, setEditLoteVariedad] = useState('');
+  const [editLoteArea, setEditLoteArea] = useState('');
+  const [editLoteSustrato, setEditLoteSustrato] = useState('Suelo');
   
   // Modales dentro del expediente
   const [showModalNuevaFinca, setShowModalNuevaFinca] = useState(false);
@@ -250,9 +273,107 @@ export default function ClientVisitModule({
   };
 
   const handleEliminarVisita = (id, e) => {
-    e.stopPropagation();
-    if (!confirm('¿Desea eliminar esta visita del historial?')) return;
+    if (e) e.stopPropagation();
+    if (!confirm('¿Desea eliminar esta visita del historial de campo? Esta acción no se puede deshacer.')) return;
     storageService.eliminarVisita(id);
+    const nuevas = storageService.getHistorialVisitas();
+    setVisitas(nuevas);
+    if (visitaActiva?.id === id && nuevas.length > 0) {
+      onSelectVisita(nuevas[0]);
+    }
+    refrescarDatos();
+  };
+
+  // Gestión de edición y borrado de Productores
+  const handleAbrirEditarCliente = (cli, e) => {
+    if (e) e.stopPropagation();
+    setClienteEditando(cli);
+    setEditNombre(cli.nombre || '');
+    setEditTelefono(cli.telefono || '');
+    setEditEmail(cli.email || '');
+    setEditCedula(cli.cedula || '');
+    setEditUbicacion(cli.ubicacion || '');
+    setShowModalEditarCliente(true);
+  };
+
+  const handleGuardarEdicionCliente = (e) => {
+    e.preventDefault();
+    if (!clienteEditando || !editNombre.trim()) return;
+    storageService.editarCliente(clienteEditando.id, {
+      nombre: editNombre.trim(),
+      telefono: editTelefono.trim(),
+      email: editEmail.trim(),
+      cedula: editCedula.trim(),
+      ubicacion: editUbicacion.trim()
+    });
+    setShowModalEditarCliente(false);
+    setClienteEditando(null);
+    refrescarDatos();
+  };
+
+  const handleEliminarCliente = (cliId, e) => {
+    if (e) e.stopPropagation();
+    const cli = clientes.find(c => c.id === cliId);
+    const nombre = cli ? cli.nombre : 'este productor';
+    if (!confirm(`¿Está seguro de eliminar a "${nombre}" y todo su expediente agrícola (fincas y lotes)? Esta acción es permanente.`)) return;
+    storageService.eliminarCliente(cliId);
+    if (clienteExpediente?.id === cliId) {
+      setClienteExpediente(null);
+    }
+    refrescarDatos();
+  };
+
+  // Edición de Finca
+  const handleAbrirEditarFinca = (finca) => {
+    setFincaEditando(finca);
+    setEditFincaNombre(finca.nombre || '');
+    setEditFincaUbicacion(finca.ubicacion || '');
+    setEditFincaAltitud(finca.gps?.altitud?.toString() || '1600');
+    setShowModalEditarFinca(true);
+  };
+
+  const handleGuardarEdicionFinca = (e) => {
+    e.preventDefault();
+    if (!clienteExpediente || !fincaEditando || !editFincaNombre.trim()) return;
+    storageService.editarFinca(clienteExpediente.id, fincaEditando.id, {
+      nombre: editFincaNombre.trim(),
+      ubicacion: editFincaUbicacion.trim(),
+      gps: {
+        ...fincaEditando.gps,
+        altitud: parseInt(editFincaAltitud) || 1600
+      }
+    });
+    setShowModalEditarFinca(false);
+    setFincaEditando(null);
+    refrescarDatos();
+  };
+
+  // Edición de Lote
+  const handleAbrirEditarLote = (fincaId, lote) => {
+    setFincaIdLoteEditando(fincaId);
+    setLoteEditando(lote);
+    setEditLoteNombre(lote.nombre || '');
+    setEditLoteCultivoId(lote.cultivoId || 'fresa');
+    setEditLoteVariedad(lote.variedad || '');
+    setEditLoteArea(lote.area || '');
+    setEditLoteSustrato(lote.sustrato || 'Suelo');
+    setShowModalEditarLote(true);
+  };
+
+  const handleGuardarEdicionLote = (e) => {
+    e.preventDefault();
+    if (!clienteExpediente || !fincaIdLoteEditando || !loteEditando || !editLoteNombre.trim()) return;
+    const cultivoObj = crAgroDatabase.cultivos.find(c => c.id === editLoteCultivoId) || crAgroDatabase.cultivos[0];
+    storageService.editarLote(clienteExpediente.id, fincaIdLoteEditando, loteEditando.id, {
+      nombre: editLoteNombre.trim(),
+      cultivoId: cultivoObj.id,
+      cultivoNombre: cultivoObj.nombre,
+      variedad: editLoteVariedad.trim() || loteEditando.variedad,
+      area: editLoteArea.trim() || loteEditando.area,
+      sustrato: editLoteSustrato.trim() || loteEditando.sustrato
+    });
+    setShowModalEditarLote(false);
+    setLoteEditando(null);
     refrescarDatos();
   };
 
@@ -492,21 +613,35 @@ export default function ClientVisitModule({
                     </div>
                   </div>
 
-                  <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
+                  <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
                     <button
                       onClick={() => setClienteExpediente(cli)}
-                      className="flex-1 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs rounded-xl border border-emerald-200 flex items-center justify-center gap-1.5 transition"
+                      className="flex-1 py-2 px-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs rounded-xl border border-emerald-200 flex items-center justify-center gap-1.5 transition"
                     >
                       <FolderOpen className="w-3.5 h-3.5 text-emerald-700" />
-                      <span>Ver / Editar Expediente</span>
+                      <span>Expediente ({cli.fincas?.length || 0} Fincas)</span>
+                    </button>
+                    <button
+                      onClick={(e) => handleAbrirEditarCliente(cli, e)}
+                      className="p-2 text-slate-500 hover:text-emerald-700 bg-slate-100 hover:bg-emerald-50 rounded-xl transition"
+                      title="Editar datos del productor"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={(e) => handleEliminarCliente(cli.id, e)}
+                      className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition"
+                      title="Eliminar este productor"
+                    >
+                      <Trash2 className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => {
                         setSelClienteId(cli.id);
                         setShowModalNuevaVisita(true);
                       }}
-                      className="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow flex items-center gap-1 transition"
-                      title="Iniciar visita"
+                      className="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow flex items-center gap-1 transition shrink-0"
+                      title="Iniciar visita en este cliente"
                     >
                       <Play className="w-3 h-3 fill-white" />
                       <span className="hidden sm:inline">Visita</span>
@@ -541,12 +676,30 @@ export default function ClientVisitModule({
                   </p>
                 </div>
               </div>
-              <button 
-                onClick={() => setClienteExpediente(null)}
-                className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 transition text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => handleAbrirEditarCliente(clienteExpediente)}
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-1 transition"
+                  title="Editar datos del productor"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Editar</span>
+                </button>
+                <button
+                  onClick={() => handleEliminarCliente(clienteExpediente.id)}
+                  className="p-2 rounded-xl bg-red-500/30 hover:bg-red-500/50 text-red-200 text-xs font-bold flex items-center gap-1 transition"
+                  title="Eliminar este productor"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Eliminar</span>
+                </button>
+                <button 
+                  onClick={() => setClienteExpediente(null)}
+                  className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 transition text-white ml-1"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Contenido scrolleable del expediente */}
@@ -597,6 +750,13 @@ export default function ClientVisitModule({
                             <span>+ Lote</span>
                           </button>
                           <button
+                            onClick={() => handleAbrirEditarFinca(finca)}
+                            className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
+                            title="Editar finca"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
                             onClick={() => handleEliminarFinca(finca.id)}
                             className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
                             title="Eliminar finca"
@@ -619,13 +779,22 @@ export default function ClientVisitModule({
                                 <div>
                                   <div className="flex items-center justify-between">
                                     <strong className="text-slate-900 font-bold text-xs">{lote.nombre}</strong>
-                                    <button
-                                      onClick={() => handleEliminarLote(finca.id, lote.id)}
-                                      className="text-slate-400 hover:text-red-500"
-                                      title="Eliminar lote"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                    </button>
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        onClick={() => handleAbrirEditarLote(finca.id, lote)}
+                                        className="text-slate-500 hover:text-emerald-700 p-0.5"
+                                        title="Editar este lote"
+                                      >
+                                        <Edit2 className="w-3 h-3" />
+                                      </button>
+                                      <button
+                                        onClick={() => handleEliminarLote(finca.id, lote.id)}
+                                        className="text-slate-400 hover:text-red-500 p-0.5"
+                                        title="Eliminar lote"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </div>
                                   </div>
                                   <div className="mt-1 space-y-0.5 text-[11px]">
                                     <p className="text-emerald-800 font-bold">🌱 {lote.cultivoNombre} — <span className="font-normal text-slate-600">{lote.variedad}</span></p>
@@ -1109,6 +1278,266 @@ export default function ClientVisitModule({
               </div>
             </form>
 
+          </div>
+        </div>
+      )}
+
+
+      {/* ========================================================
+          MODAL: EDITAR CLIENTE / PRODUCTOR
+         ======================================================== */}
+      {showModalEditarCliente && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-3 overflow-y-auto">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl border border-slate-200 overflow-hidden animate-slideUp">
+            <div className="bg-emerald-800 p-4 text-white flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-widest">Expediente Agrícola</span>
+                <h3 className="font-bold text-base">Editar Datos del Productor</h3>
+              </div>
+              <button 
+                onClick={() => setShowModalEditarCliente(false)}
+                className="text-emerald-200 hover:text-white font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleGuardarEdicionCliente} className="p-4 space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Nombre Completo del Productor / Empresa</label>
+                <input
+                  type="text"
+                  required
+                  value={editNombre}
+                  onChange={(e) => setEditNombre(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Teléfono / WhatsApp</label>
+                  <input
+                    type="text"
+                    value={editTelefono}
+                    onChange={(e) => setEditTelefono(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Cédula / Identificación</label>
+                  <input
+                    type="text"
+                    value={editCedula}
+                    onChange={(e) => setEditCedula(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Correo Electrónico</label>
+                <input
+                  type="email"
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Ubicación / Cantón (CR)</label>
+                <input
+                  type="text"
+                  value={editUbicacion}
+                  onChange={(e) => setEditUbicacion(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowModalEditarCliente(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs shadow"
+                >
+                  Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL: EDITAR FINCA
+         ======================================================== */}
+      {showModalEditarFinca && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-3 overflow-y-auto">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl border border-slate-200 overflow-hidden animate-slideUp">
+            <div className="bg-emerald-800 p-4 text-white flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-widest">Propiedad Agrícola</span>
+                <h3 className="font-bold text-base">Editar Finca</h3>
+              </div>
+              <button 
+                onClick={() => setShowModalEditarFinca(false)}
+                className="text-emerald-200 hover:text-white font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleGuardarEdicionFinca} className="p-4 space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Nombre de la Finca</label>
+                <input
+                  type="text"
+                  required
+                  value={editFincaNombre}
+                  onChange={(e) => setEditFincaNombre(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Ubicación / Dirección</label>
+                <input
+                  type="text"
+                  value={editFincaUbicacion}
+                  onChange={(e) => setEditFincaUbicacion(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Altitud Aproximada (msnm)</label>
+                <input
+                  type="number"
+                  value={editFincaAltitud}
+                  onChange={(e) => setEditFincaAltitud(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowModalEditarFinca(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs shadow"
+                >
+                  Actualizar Finca
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL: EDITAR LOTE
+         ======================================================== */}
+      {showModalEditarLote && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-3 overflow-y-auto">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl border border-slate-200 overflow-hidden animate-slideUp">
+            <div className="bg-emerald-800 p-4 text-white flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-widest">Sector Productivo</span>
+                <h3 className="font-bold text-base">Editar Lote</h3>
+              </div>
+              <button 
+                onClick={() => setShowModalEditarLote(false)}
+                className="text-emerald-200 hover:text-white font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleGuardarEdicionLote} className="p-4 space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Nombre o Número de Lote</label>
+                <input
+                  type="text"
+                  required
+                  value={editLoteNombre}
+                  onChange={(e) => setEditLoteNombre(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Cultivo</label>
+                  <select
+                    value={editLoteCultivoId}
+                    onChange={(e) => setEditLoteCultivoId(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 outline-none"
+                  >
+                    {crAgroDatabase.cultivos.map(c => (
+                      <option key={c.id} value={c.id}>{c.icono} {c.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Variedad</label>
+                  <input
+                    type="text"
+                    value={editLoteVariedad}
+                    onChange={(e) => setEditLoteVariedad(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-900 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Área</label>
+                  <input
+                    type="text"
+                    value={editLoteArea}
+                    onChange={(e) => setEditLoteArea(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Sustrato / Sistema</label>
+                  <input
+                    type="text"
+                    value={editLoteSustrato}
+                    onChange={(e) => setEditLoteSustrato(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowModalEditarLote(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs shadow"
+                >
+                  Actualizar Lote
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

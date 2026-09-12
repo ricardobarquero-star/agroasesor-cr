@@ -2,22 +2,29 @@
  * Servicio de Asistente Virtual Agronómico con Google Gemini API
  * Contextualizado para el Ing. Agr. Ricardo Manuel Barquero Chacón (Colegiado Ord. 5896).
  * Compatible con nuevas claves de autenticación de Google AI Studio (prefijo AQ.Ab...) y estándar (AIzaSy...)
- * Modelos soportados: gemini-3.6-flash, gemini-3.6, gemini-2.0-flash, gemini-1.5-flash.
+ * Modelos soportados en cascada: gemini-2.0-flash, gemini-2.0-flash-lite, gemini-1.5-flash.
  * "LA ÚLTIMA DECISIÓN LA TOMA EL INGENIERO AGRÓNOMO"
  */
 
-// Modelos ordenados por prioridad de nueva generación
+import { storageService } from './storageService';
+
+// Modelos ordenados por estabilidad y cuota
 const MODELOS_DISPONIBLES = [
-  'gemini-3.6-flash',
-  'gemini-3.6',
   'gemini-2.0-flash',
+  'gemini-2.0-flash-lite',
   'gemini-1.5-flash'
 ];
+
+/**
+ * Esperar milisegundos para retroceso exponencial en caso de 429 / 503
+ */
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function llamarApiGeminiConCascada({ key, requestBody }) {
   let ultimoError = null;
 
-  for (const modelo of MODELOS_DISPONIBLES) {
+  for (let i = 0; i < MODELOS_DISPONIBLES.length; i++) {
+    const modelo = MODELOS_DISPONIBLES[i];
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${encodeURIComponent(key)}`;
       
@@ -25,7 +32,7 @@ async function llamarApiGeminiConCascada({ key, requestBody }) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-goog-api-key': key // Obligatorio para las nuevas claves que inician con AQ.
+          'x-goog-api-key': key // Imprescindible para las nuevas claves que inician con AQ.
         },
         body: JSON.stringify(requestBody)
       });
@@ -44,9 +51,13 @@ async function llamarApiGeminiConCascada({ key, requestBody }) {
       const msg = errData.error?.message || `HTTP ${response.status}`;
       ultimoError = msg;
 
-      // Si el modelo específico no está disponible en este tier o clave, probar siguiente modelo
-      if (response.status === 404 || msg.toLowerCase().includes('not found')) {
-        console.warn(`Modelo ${modelo} no encontrado para esta clave, intentando siguiente...`);
+      // Manejo de modelo saturado (HTTP 429 / 503) o no encontrado (404)
+      if (response.status === 429 || response.status === 503) {
+        console.warn(`Modelo ${modelo} saturado (${response.status}), aplicando backoff y probando siguiente...`);
+        await delay(1000); // 1 segundo de amortiguación
+        continue;
+      } else if (response.status === 404 || msg.toLowerCase().includes('not found')) {
+        console.warn(`Modelo ${modelo} no disponible para esta clave, probando siguiente...`);
         continue;
       } else {
         // Error de credenciales u otro problema
@@ -54,6 +65,7 @@ async function llamarApiGeminiConCascada({ key, requestBody }) {
       }
     } catch (e) {
       ultimoError = e.message;
+      await delay(600);
     }
   }
 
@@ -77,7 +89,7 @@ export const geminiService = {
   },
 
   /**
-   * Probar conectividad real con la clave API de Gemini (acepta claves AQ.Ab... y AIzaSy...)
+   * Probar conectividad real con la clave API de Gemini
    */
   async probarConexion(claveAProbar) {
     const key = (claveAProbar || this.getApiKey() || '').trim();
@@ -93,7 +105,7 @@ export const geminiService = {
     if (res.exito) {
       return {
         exito: true,
-        mensaje: `¡Conexión exitosa con Google Gemini (${res.modeloUsado})! Clave nueva ${key.startsWith('AQ.') ? 'AQ' : 'estándar'} verificada y activa en el teléfono.`,
+        mensaje: `¡Conexión exitosa con Google Gemini (${res.modeloUsado})! Clave ${key.startsWith('AQ.') ? 'AQ' : 'estándar'} verificada y activa.`,
         respuesta: res.texto.trim(),
         modelo: res.modeloUsado
       };
@@ -106,13 +118,164 @@ export const geminiService = {
   },
 
   /**
+   * Auto-investigar un insumo nuevo digitado por el agrónomo:
+   * Determina tipo, grupo FRAC/IRAC y dosis recomendada por fabricante en Costa Rica
+   */
+  async investigarInsumo(nombreProducto) {
+    if (!nombreProducto || !nombreProducto.trim()) return null;
+    const nombreLimpio = nombreProducto.trim();
+
+    // Heurística local agronómica inmediata (para respuesta instantánea u offline)
+    const heuristica = this.obtenerHeuristicaInsumo(nombreLimpio);
+
+    const apiKey = this.getApiKey();
+    if (!apiKey || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+      // Guardar con heurística offline
+      storageService.registrarInsumoSiNoExiste({
+        nombreComercial: nombreLimpio,
+        categoria: heuristica.categoria,
+        codigoFracIrac: heuristica.codigoFracIrac,
+        dosis: heuristica.dosisEstandar,
+        ingredienteActivo: heuristica.ingredienteActivo,
+        esFertilizante: heuristica.esFertilizante
+      });
+      return { ...heuristica, origen: 'Heurística Agronómica Offline' };
+    }
+
+    // Consulta en vivo a Gemini para precisión oficial
+    const prompt = `Actúa como base de datos fitosanitaria y agronómica de Costa Rica para el Ing. Ricardo Barquero. Identifica el insumo agrícola: "${nombreLimpio}". Responde únicamente con un objeto JSON con las propiedades: { "nombreComercial": "${nombreLimpio}", "categoria": "Fungicida" | "Insecticida" | "Acaricida" | "Foliar" | "Acondicionador" | "Coadyuvante" | "Fertilizante Soluble", "codigoFracIrac": "código FRAC o IRAC", "dosisEstandar": "dosis típica recomendada", "ingredienteActivo": "ingrediente activo", "blancoBiologico": "blanco o función", "esFertilizante": false }`;
+
+    try {
+      const requestBody = { contents: [{ parts: [{ text: prompt }] }] };
+      const res = await llamarApiGeminiConCascada({ key: apiKey, requestBody });
+      if (res.exito && res.texto) {
+        const jsonMatch = res.texto.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          storageService.registrarInsumoSiNoExiste({
+            nombreComercial: nombreLimpio,
+            categoria: parsed.categoria || heuristica.categoria,
+            codigoFracIrac: parsed.codigoFracIrac || heuristica.codigoFracIrac,
+            dosis: parsed.dosisEstandar || heuristica.dosisEstandar,
+            ingredienteActivo: parsed.ingredienteActivo || heuristica.ingredienteActivo,
+            casaComercial: 'Investigado por IA',
+            esFertilizante: parsed.esFertilizante || false
+          });
+          return { ...parsed, origen: `Investigado con Gemini (${res.modeloUsado})` };
+        }
+      }
+    } catch (e) {
+      console.warn('Error en auto-investigación con IA, usando heurística:', e);
+    }
+
+    storageService.registrarInsumoSiNoExiste({
+      nombreComercial: nombreLimpio,
+      categoria: heuristica.categoria,
+      codigoFracIrac: heuristica.codigoFracIrac,
+      dosis: heuristica.dosisEstandar,
+      ingredienteActivo: heuristica.ingredienteActivo,
+      esFertilizante: heuristica.esFertilizante
+    });
+    return { ...heuristica, origen: 'Heurística Agronómica' };
+  },
+
+  /**
+   * Reglas heurísticas agronómicas costarricenses para clasificar productos instantáneamente
+   */
+  obtenerHeuristicaInsumo(nombre) {
+    const n = nombre.toLowerCase();
+
+    // Acondicionadores y Coadyuvantes
+    if (n.includes('carrier') || n.includes('break') || n.includes('silwet') || n.includes('adherente') || n.includes('acid') || n.includes('surf')) {
+      return {
+        categoria: 'Acondicionador',
+        codigoFracIrac: 'Coadyuvante',
+        dosisEstandar: '100 - 150 cc / 200 L',
+        ingredienteActivo: 'Regulador de pH / Tensioactivo organosiliconado',
+        blancoBiologico: 'Regulación de caldo y penetración',
+        esFertilizante: false
+      };
+    }
+
+    // Nutrición foliar / Quelatos
+    if (n.includes('metalosato') || n.includes('cosmoquel') || n.includes('foliar') || n.includes('boro') || n.includes('zinc') || n.includes('calcio') || n.includes('kelpak') || n.includes('stimplex') || n.includes('alga')) {
+      return {
+        categoria: 'Foliar',
+        codigoFracIrac: 'Nutricional',
+        dosisEstandar: '200 - 400 cc / 200 L',
+        ingredienteActivo: 'Quelatos de aminoácidos / Bioestimulante',
+        blancoBiologico: 'Nutrición celular y cuaje de fruto',
+        esFertilizante: true
+      };
+    }
+
+    // Fertilizantes solubles (Tanque A / Tanque B)
+    if (n.includes('nitrato') || n.includes('calcinit') || n.includes('sulfato') || n.includes('fosfato') || n.includes('mkp') || n.includes('map') || n.includes('yaramila')) {
+      return {
+        categoria: 'Fertilizante Soluble',
+        codigoFracIrac: 'Fertilizante',
+        dosisEstandar: '10 - 25 kg / 1000 L',
+        ingredienteActivo: 'Sales solubles de grado fertirriego',
+        blancoBiologico: 'Nutrición radical / fertirriego',
+        esFertilizante: true
+      };
+    }
+
+    // Insecticidas y Acaricidas comunes en CR
+    if (n.includes('abamect') || n.includes('vertimec') || n.includes('oberon') || n.includes('proclaim') || n.includes('danitol') || n.includes('envidor') || n.includes('spiro') || n.includes('acari') || n.includes('ciper') || n.includes('methomyl') || n.includes('lannate') || n.includes('confidor') || n.includes('imidacloprid')) {
+      let irac = 'IRAC 6';
+      if (n.includes('oberon') || n.includes('spiro')) irac = 'IRAC 23';
+      if (n.includes('proclaim')) irac = 'IRAC 6';
+      if (n.includes('danitol') || n.includes('ciper')) irac = 'IRAC 3A';
+      if (n.includes('imidacloprid') || n.includes('confidor')) irac = 'IRAC 4A';
+
+      return {
+        categoria: n.includes('acari') || n.includes('vertimec') || n.includes('oberon') ? 'Acaricida' : 'Insecticida',
+        codigoFracIrac: irac,
+        dosisEstandar: '100 - 200 cc / 200 L',
+        ingredienteActivo: 'Insecticida / Acaricida específico',
+        blancoBiologico: 'Ácaros, trips o larvas masticadoras',
+        esFertilizante: false
+      };
+    }
+
+    // Fungicidas comunes en CR
+    if (n.includes('switch') || n.includes('bellis') || n.includes('amistar') || n.includes('serenade') || n.includes('captan') || n.includes('mancozeb') || n.includes('nativo') || n.includes('score') || n.includes('mertect') || n.includes('curzate') || n.includes('strobina') || n.includes('conazol')) {
+      let frac = 'FRAC 11';
+      if (n.includes('conazol') || n.includes('score') || n.includes('nativo')) frac = 'FRAC 3';
+      if (n.includes('switch')) frac = 'FRAC 9 + 12';
+      if (n.includes('bellis')) frac = 'FRAC 7 + 11';
+      if (n.includes('captan') || n.includes('mancozeb')) frac = 'FRAC M (Multi-sitio)';
+
+      return {
+        categoria: 'Fungicida',
+        codigoFracIrac: frac,
+        dosisEstandar: '150 - 250 g o cc / 200 L',
+        ingredienteActivo: 'Fungicida curativo o preventivo',
+        blancoBiologico: 'Botrytis, Oídio o Manchas foliares',
+        esFertilizante: false
+      };
+    }
+
+    // Genérico por defecto
+    return {
+      categoria: 'Fitosanitario',
+      codigoFracIrac: 'Grupo Pendiente',
+      dosisEstandar: '200 cc / 200 L',
+      ingredienteActivo: 'Insumo agrícola comercial',
+      blancoBiologico: 'Control fitosanitario / nutricional',
+      esFertilizante: false
+    };
+  },
+
+  /**
    * Consulta multimodal o de texto a la API de Gemini
    */
   async consultarAsistente({ modulo, contexto, imagenBase64 = null, promptUsuario = '' }) {
     const apiKey = this.getApiKey();
     if (!apiKey) {
       return {
-        error: 'No se ha configurado la API Key de Gemini. Ingrésela en Ajustes ⚙️ para activar el asistente en tiempo real.',
+        error: 'No se ha configurado la API Key de Gemini. Ingrésela en Ajustes para activar el asistente en tiempo real.',
         sugerencias: this.generarRespuestaOffline({ modulo, contexto, promptUsuario })
       };
     }
@@ -142,7 +305,7 @@ REGLAS DE ORO OBLIGATORIAS:
 6. INSUMOS Y DISTRIBUIDORAS DE COSTA RICA:
    Manejar productos y marcas registrados en Costa Rica (Syngenta, Disagro, Fertica, Casagri, Colono Agropecuario, Agrotico, El Surco, Cosmocel, Eurofertil, Bioeco, Tecnologías Agroambientales, etc.).
 7. REDACCIÓN Y ESTILO:
-   Respuesta ejecutiva, clara, estructurada con viñetas concisas y legible de inmediato en la pantalla de un iPhone 17.
+   Respuesta ejecutiva, clara, estructurada con viñetas concisas y legible de inmediato en la pantalla de un teléfono móvil.
 `;
 
     const contenidoPrompt = `
@@ -195,7 +358,7 @@ ${promptUsuario || 'Revisar la información de este módulo, verificar compatibi
       return `
 🔍 **Auditoría Agronómica Offline (Ing. Barquero - Criterio Directo):**
 
-• **Umbral de Intervención:** Recuerde que si el monitoreo de campo no supera el umbral de daño económico, **no es necesario aplicar plaguicidas esta semana**. Se puede marcar la semana como "Sin aplicación sanitaria requerida".
+• **Umbral de Intervención:** Si el monitoreo de campo no supera el umbral de daño económico, **no es necesario aplicar plaguicidas esta semana**. Se puede marcar la semana como "Sin aplicación sanitaria requerida".
 • **Regla de Segregación de Mezclas:**
   - **Mezcla 1 (Fungicida + Nutrición Foliar):** Aplique fungicidas (ej: Bellis, Switch, Serenade) junto con Metalosato Calcio o elementos menores y regulador de pH (Carrier).
   - **Mezcla 2 (Insecticida + Acaricida):** Aplique en tanque separado (ej: Oberon para ácaros, Proclaim o Vertimec) con coadyuvante adherente. **No mezclar con la nutrición foliar de choque.**

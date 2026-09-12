@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { crAgroDatabase } from '../data/crAgroDatabase';
 import { storageService } from '../services/storageService';
+import { geminiService } from '../services/geminiService';
 
 // Modalidades oficiales solicitadas por el Ing. Agr. Ricardo Barquero
 const MODALIDADES = [
@@ -57,6 +58,8 @@ const MODALIDADES = [
 export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) {
   const [semanaActiva, setSemanaActiva] = useState(1);
   const [mostrarModalEvento, setMostrarModalEvento] = useState(false);
+  const [filtroCategoriaFert, setFiltroCategoriaFert] = useState('todos');
+  const [investigandoFertIdx, setInvestigandoFertIdx] = useState(null);
   const [eventoEditandoId, setEventoEditandoId] = useState(null); // null = nuevo, string = editando
   const [modalidadSeleccionada, setModalidadSeleccionada] = useState('dosatron');
   
@@ -626,14 +629,28 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                                 onChange={(e) => handleSeleccionarProductoEnLinea(e.target.value, lineasTanqueA, setLineasTanqueA, idx, productosTanqueA)}
                                 className="w-full text-xs font-bold text-slate-900 border border-blue-200 rounded-lg p-2 bg-blue-50/50 outline-none focus:ring-2 focus:ring-blue-500"
                               >
-                                <option value="">-- Toque para desplegar productos Tanque A ({productosTanqueA.length}) --</option>
+                                <option value="__manual__">✏️ [+ DIGITAR PRODUCTO MANUAL / NO ESTÁ EN LISTA...]</option>
+                                <option value="">-- Toque para desplegar catálogo Tanque A ({productosTanqueA.length}) --</option>
                                 {productosTanqueA.map((p, i) => (
                                   <option key={i} value={p.nombreComercial}>
                                     {p.nombreComercial} ({p.categoria || 'Soluble'})
                                   </option>
                                 ))}
-                                <option value="__manual__">✏️ [+ Escribir otro producto manual...]</option>
                               </select>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nuevo = [...lineasTanqueA];
+                                  nuevo[idx].esManual = true;
+                                  nuevo[idx].producto = '';
+                                  nuevo[idx].dosis = '';
+                                  setLineasTanqueA(nuevo);
+                                }}
+                                className="p-2 text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200"
+                                title="Digitar producto manualmente"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                           ) : (
                             <div className="flex-1 min-w-[180px] flex items-center gap-1">
@@ -727,14 +744,28 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                                 onChange={(e) => handleSeleccionarProductoEnLinea(e.target.value, lineasTanqueB, setLineasTanqueB, idx, productosTanqueB)}
                                 className="w-full text-xs font-bold text-slate-900 border border-amber-200 rounded-lg p-2 bg-amber-50/50 outline-none focus:ring-2 focus:ring-amber-500"
                               >
-                                <option value="">-- Toque para desplegar productos Tanque B ({productosTanqueB.length}) --</option>
+                                <option value="__manual__">✏️ [+ DIGITAR PRODUCTO MANUAL / NO ESTÁ EN LISTA...]</option>
+                                <option value="">-- Toque para desplegar catálogo Tanque B ({productosTanqueB.length}) --</option>
                                 {productosTanqueB.map((p, i) => (
                                   <option key={i} value={p.nombreComercial}>
                                     {p.nombreComercial} ({p.categoria || 'Soluble'})
                                   </option>
                                 ))}
-                                <option value="__manual__">✏️ [+ Escribir otro producto manual...]</option>
                               </select>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nuevo = [...lineasTanqueB];
+                                  nuevo[idx].esManual = true;
+                                  nuevo[idx].producto = '';
+                                  nuevo[idx].dosis = '';
+                                  setLineasTanqueB(nuevo);
+                                }}
+                                className="p-2 text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200"
+                                title="Digitar producto manualmente"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                           ) : (
                             <div className="flex-1 min-w-[180px] flex items-center gap-1">

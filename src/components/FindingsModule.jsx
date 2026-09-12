@@ -1,3 +1,4 @@
+import { photoStorageService } from '../services/photoStorageService';
 import React, { useState } from 'react';
 import { 
   AlertTriangle, Camera, Plus, Trash2, Edit2, Sparkles, 
@@ -39,29 +40,68 @@ export default function FindingsModule({ visita, onUpdateVisita, onOpenAi }) {
     setShowAnnotator(false);
   };
 
-  const handleAddFinding = (e) => {
+  const handleAddFinding = async (e) => {
     e.preventDefault();
     if (!titulo.trim()) return;
 
-    const nuevoHallazgo = {
-      id: 'h-' + Date.now(),
-      categoria,
-      titulo: titulo.trim(),
-      descripcion: descripcion.trim(),
-      severidad,
-      organoAfectado,
-      fotoAnotada: tempPhoto,
-      fecha: new Date().toLocaleDateString('es-CR')
-    };
+    let actualizados = [];
+    if (editingFindingId) {
+      // Editando hallazgo existente
+      actualizados = (visita.hallazgos || []).map(h => {
+        if (h.id === editingFindingId) {
+          return {
+            ...h,
+            categoria,
+            titulo: titulo.trim(),
+            descripcion: descripcion.trim(),
+            severidad,
+            organoAfectado,
+            fotoAnotada: tempPhoto || h.fotoAnotada
+          };
+        }
+        return h;
+      });
+      if (tempPhoto) {
+        await photoStorageService.guardarFoto(editingFindingId, tempPhoto);
+      }
+    } else {
+      // Nuevo hallazgo
+      const nuevoId = 'h-' + Date.now();
+      const nuevoHallazgo = {
+        id: nuevoId,
+        categoria,
+        titulo: titulo.trim(),
+        descripcion: descripcion.trim(),
+        severidad,
+        organoAfectado,
+        fotoAnotada: tempPhoto,
+        fecha: new Date().toLocaleDateString('es-CR')
+      };
+      actualizados = [...(visita.hallazgos || []), nuevoHallazgo];
+      if (tempPhoto) {
+        await photoStorageService.guardarFoto(nuevoId, tempPhoto);
+      }
+    }
 
-    const actualizados = [...(visita.hallazgos || []), nuevoHallazgo];
     onUpdateVisita({ ...visita, hallazgos: actualizados });
 
     // Reset
     setTitulo('');
     setDescripcion('');
     setTempPhoto(null);
+    setEditingFindingId(null);
     setMostrarForm(false);
+  };
+
+  const handleStartEdit = (h) => {
+    setEditingFindingId(h.id);
+    setCategoria(h.categoria || 'Enfermedades Fitosanitarias');
+    setTitulo(h.titulo || '');
+    setDescripcion(h.descripcion || '');
+    setSeveridad(h.severidad || 'Media');
+    setOrganoAfectado(h.organoAfectado || 'Hoja');
+    setTempPhoto(h.fotoAnotada || null);
+    setMostrarForm(true);
   };
 
   const handleDeleteFinding = (id) => {
@@ -109,7 +149,7 @@ export default function FindingsModule({ visita, onUpdateVisita, onOpenAi }) {
         <form onSubmit={handleAddFinding} className="bg-white p-4 rounded-2xl border-2 border-emerald-500 shadow-lg space-y-3.5 animate-fadeIn">
           <div className="flex items-center justify-between pb-2 border-b border-slate-100">
             <h3 className="font-bold text-sm text-slate-800 flex items-center gap-1.5">
-              <Camera className="w-4 h-4 text-emerald-600" /> Nuevo Hallazgo de Campo
+              <Camera className="w-4 h-4 text-emerald-600" /> {editingFindingId ? "Editar Hallazgo Diagnósticado" : "Nuevo Hallazgo de Campo"}
             </h3>
             <span className="text-[11px] text-slate-400">Paso obligatorio: Foto anotada</span>
           </div>
@@ -200,7 +240,7 @@ export default function FindingsModule({ visita, onUpdateVisita, onOpenAi }) {
               type="submit"
               className="px-5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs shadow"
             >
-              Guardar Hallazgo
+              {editingFindingId ? "Actualizar Hallazgo" : "Guardar Hallazgo"}
             </button>
           </div>
         </form>
@@ -254,13 +294,23 @@ export default function FindingsModule({ visita, onUpdateVisita, onOpenAi }) {
 
                 <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
                   <span>{h.fecha || 'Fecha de visita'}</span>
-                  <button
-                    onClick={() => handleDeleteFinding(h.id)}
-                    className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 transition"
-                    title="Eliminar hallazgo"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => handleStartEdit(h)}
+                      className="text-emerald-700 hover:text-emerald-900 p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 transition flex items-center gap-1 font-bold text-[11px]"
+                      title="Editar hallazgo y marcas de foto"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                      <span>Editar</span>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteFinding(h.id)}
+                      className="text-red-500 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50 transition"
+                      title="Eliminar hallazgo"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

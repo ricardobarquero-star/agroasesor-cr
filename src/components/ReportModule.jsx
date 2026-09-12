@@ -16,6 +16,8 @@ export default function ReportModule({ visita, onOpenAi }) {
   
   // Filtro de alcance para el reporte (Toda la Finca o Lote Específico)
   const [filtroLote, setFiltroLote] = useState('todos');
+  const [vistaModo, setVistaModo] = useState('digital'); // 'digital' (Móvil/WhatsApp) o 'documento' (A4 Oficial)
+  const [copiadoWhatsapp, setCopiadoWhatsapp] = useState(false);
   const perfilIngeniero = storageService.getPerfilIngeniero();
 
   const productor = visita.productor || {};
@@ -107,20 +109,88 @@ export default function ReportModule({ visita, onOpenAi }) {
     }
   };
 
+  // Generar texto completo y estructurado para WhatsApp
+  const generarTextoCompletoWhatsApp = () => {
+    const loteTexto = filtroLote === 'todos' ? 'Toda la Finca' : `Lote: ${filtroLote}`;
+    let msg = `🌱 *AGROASESOR PRO CR - INFORME TÉCNICO OFICIAL*\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `👨‍🌾 *Productor:* ${productor.nombre || 'Cliente'}\n`;
+    msg += `🏡 *Finca:* ${finca.nombre || 'Finca'} (${loteTexto})\n`;
+    msg += `📅 *Fecha:* ${visita.fecha || 'Hoy'} • ${visita.hora || ''}\n`;
+    msg += `🌱 *Cultivo:* ${lote.cultivoNombre || 'Cultivo'} (Var: ${lote.variedad || 'Estándar'})\n`;
+    msg += `🌧️ *Lluvia 7 días:* ${clima.lluviaAcumulada7Dias || 0} mm • *HR:* ${clima.humedadActual || 85}%\n`;
+    msg += `👨‍💼 *Asesor:* ${perfilIngeniero.nombre} (${perfilIngeniero.colegiado})\n\n`;
+
+    // Hallazgos
+    if (hallazgosFiltrados.length > 0) {
+      msg += `🔍 *DIAGNÓSTICO Y HALLAZGOS (${hallazgosFiltrados.length}):*\n`;
+      hallazgosFiltrados.forEach((h, i) => {
+        msg += `• [${h.severidad}] *${h.titulo}* (${h.categoria})\n  _${h.descripcion || 'Sin observaciones adicionales'}_\n`;
+      });
+      msg += `\n`;
+    }
+
+    // Fertirriego / Nutrición
+    if (recFertirriegoFiltradas.length > 0) {
+      msg += `💧 *NUTRICIÓN Y FERTIRRIEGO:*\n`;
+      recFertirriegoFiltradas.forEach(s => {
+        msg += `*Semana ${s.semana}:*\n`;
+        (s.eventos || []).forEach(ev => {
+          msg += `▸ _${ev.nombre}_ (${ev.alcance || 'Finca'})\n`;
+          if (ev.lineasTanqueA?.length > 0) {
+            msg += `  🔵 *Tanque A:* ` + ev.lineasTanqueA.map(l => `${l.producto} (${l.dosis} ${l.unidad})`).join(', ') + `\n`;
+          }
+          if (ev.lineasTanqueB?.length > 0) {
+            msg += `  🟡 *Tanque B:* ` + ev.lineasTanqueB.map(l => `${l.producto} (${l.dosis} ${l.unidad})`).join(', ') + `\n`;
+          }
+          if (ev.productos?.length > 0) {
+            msg += `  • *Insumos:* ` + ev.productos.map(l => `${l.producto} (${l.dosis} ${l.unidad})`).join(', ') + `\n`;
+          }
+        });
+      });
+      msg += `\n`;
+    }
+
+    // Fitosanitarios
+    if (recPlaguicidasFiltradas.length > 0) {
+      msg += `🛡️ *MANEJO FITOSANITARIO:*\n`;
+      recPlaguicidasFiltradas.forEach(s => {
+        msg += `*Semana ${s.semana}:*\n`;
+        if (s.sinAplicacion) {
+          msg += `  ✅ *Semana sin aplicación fitosanitaria:* Monitoreo preventivo.\n`;
+        } else {
+          (s.aplicaciones || []).forEach(app => {
+            msg += `▸ *${app.nombre}* [${app.volumenTanque}]:\n`;
+            (app.ordenMezcla || []).forEach(l => {
+              msg += `  ${l.orden}. ${l.producto} - *${l.dosis}* (${l.fracIrac || l.tipo})\n`;
+            });
+          });
+        }
+      });
+      msg += `\n`;
+    }
+
+    msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `_Emitido bajo criterio agronómico profesional del Ing. Ricardo Manuel Barquero Chacón._`;
+    return msg;
+  };
+
+  // Copiar formato completo para WhatsApp
+  const handleCopiarTextoWhatsApp = async () => {
+    const texto = generarTextoCompletoWhatsApp();
+    try {
+      await navigator.clipboard.writeText(texto);
+      setCopiadoWhatsapp(true);
+      setTimeout(() => setCopiadoWhatsapp(false), 3000);
+    } catch (e) {
+      alert('Texto generado para WhatsApp:\n\n' + texto);
+    }
+  };
+
   // Compartir por WhatsApp al Productor
   const handleCompartirWhatsApp = () => {
     const telefonoLimpio = (productor.telefono || '').replace(/[^0-9]/g, '');
-    const loteTexto = filtroLote === 'todos' ? 'Toda la Finca' : `Lote: ${filtroLote}`;
-    const texto = encodeURIComponent(
-      `Estimado(a) ${productor.nombre || 'Productor'}:\n\n` +
-      `Le adjunto el resumen del INFORME TÉCNICO AGRONÓMICO de la visita a ${finca.nombre || 'su finca'} (${loteTexto}).\n\n` +
-      `📋 ASESOR: Ing. Agr. Ricardo Manuel Barquero Chacón (Colegiado Ord. 5896)\n` +
-      `🌧️ Lluvia acumulada 7 días: ${clima.lluviaAcumulada7Dias || 0} mm\n` +
-      `🔍 Hallazgos en campo: ${hallazgosFiltrados.length} diagnosticados.\n` +
-      `💧 Cuadros de Fertirriego: ${recFertirriegoFiltradas.length} programados.\n` +
-      `🛡️ Aplicaciones Fitosanitarias: ${recPlaguicidasFiltradas.length} estructuradas.\n\n` +
-      `Consulte el documento oficial para iniciar labores según lo prescrito.`
-    );
+    const texto = encodeURIComponent(generarTextoCompletoWhatsApp());
     const url = telefonoLimpio 
       ? `https://api.whatsapp.com/send?phone=${telefonoLimpio}&text=${texto}`
       : `https://api.whatsapp.com/send?text=${texto}`;
@@ -146,15 +216,39 @@ export default function ReportModule({ visita, onOpenAi }) {
   return (
     <div className="space-y-4">
       
+      {/* SELECTOR DE FORMATO DE VISTA (MÓVIL DIGITAL VS DOCUMENTO A4) */}
+      <div className="bg-white p-1.5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-1 no-print">
+        <button
+          onClick={() => setVistaModo('digital')}
+          className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
+            vistaModo === 'digital'
+              ? 'bg-emerald-700 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <span>📱 Vista Digital para Teléfono (WhatsApp)</span>
+        </button>
+        <button
+          onClick={() => setVistaModo('documento')}
+          className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
+            vistaModo === 'documento'
+              ? 'bg-emerald-700 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <span>📄 Vista Documento Oficial (A4 / PDF)</span>
+        </button>
+      </div>
+
       {/* BARRA DE ACCIONES Y FILTRO SUPERIOR */}
       <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 no-print">
         <div>
           <h2 className="font-bold text-base sm:text-lg text-slate-900 flex items-center gap-2">
             <FileText className="w-5 h-5 text-emerald-700" />
-            <span>Informe Técnico Oficial de la Finca</span>
+            <span>{vistaModo === 'digital' ? 'Informe Digital para el Productor' : 'Informe Oficial de Finca (A4)'}</span>
           </h2>
           <p className="text-xs text-slate-500">
-            Formato editorial homologado para el productor, WhatsApp y exportación directa a PDF.
+            {vistaModo === 'digital' ? 'Diseñado para lectura ágil en teléfono celular y envío directo por WhatsApp.' : 'Formato de página completa homologado para exportar a PDF e imprimir.'}
           </p>
         </div>
 
@@ -196,9 +290,18 @@ export default function ReportModule({ visita, onOpenAi }) {
           </button>
 
           <button
+            onClick={handleCopiarTextoWhatsApp}
+            className="px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold transition flex items-center gap-1 shadow-xs active:scale-95"
+            title="Copiar reporte completo para pegar en WhatsApp"
+          >
+            <Check className={`w-4 h-4 ${copiadoWhatsapp ? 'text-emerald-700' : 'hidden'}`} />
+            <span>{copiadoWhatsapp ? '¡Copiado!' : '📋 Copiar p/ WhatsApp'}</span>
+          </button>
+
+          <button
             onClick={handleCompartirWhatsApp}
             className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1 shadow-xs active:scale-95"
-            title="Compartir por WhatsApp"
+            title="Abrir WhatsApp y enviar reporte"
           >
             <Share2 className="w-4 h-4" />
             <span>WhatsApp</span>
@@ -215,11 +318,165 @@ export default function ReportModule({ visita, onOpenAi }) {
       </div>
 
       {/* ========================================================= */}
-      {/* HOJA DE REPORTE EDITORIAL (HOMOLOGADA PANTALLA Y PDF) */}
+      {/* VISTA 1: DIGITAL MÓVIL PARA TELÉFONO Y WHATSAPP */}
+      {/* ========================================================= */}
+      {vistaModo === 'digital' && (
+        <div className="space-y-4 max-w-2xl mx-auto">
+          {/* Tarjeta Resumen Productor */}
+          <div className="bg-gradient-to-r from-emerald-800 to-teal-800 text-white p-4 sm:p-5 rounded-3xl shadow-lg space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider bg-white/20 px-2 py-0.5 rounded-full">
+                Informe Digital para Móvil
+              </span>
+              <span className="text-xs font-bold text-emerald-200">{visita.fecha}</span>
+            </div>
+            <h3 className="text-lg sm:text-xl font-black">{productor.nombre || 'Productor'}</h3>
+            <p className="text-xs text-emerald-100">
+              Finca: <strong>{finca.nombre}</strong> • {lote.cultivoNombre} ({lote.variedad || 'Estándar'})
+            </p>
+            <div className="pt-2 border-t border-white/20 flex items-center justify-between text-xs">
+              <span>🌧️ Lluvia: <strong>{clima.lluviaAcumulada7Dias || 0} mm</strong></span>
+              <span>Asesor: <strong>Ing. Ricardo Barquero</strong></span>
+            </div>
+          </div>
+
+          {/* Botón Destacado de Copiar/Enviar por WhatsApp */}
+          <div className="bg-white p-3 rounded-2xl border border-emerald-200 shadow-sm flex items-center justify-between gap-2">
+            <button
+              onClick={handleCopiarTextoWhatsApp}
+              className="flex-1 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 border border-emerald-300 transition"
+            >
+              <span>{copiadoWhatsapp ? '✅ ¡Reporte Copiado!' : '📋 Copiar Resumen WhatsApp'}</span>
+            </button>
+            <button
+              onClick={handleCompartirWhatsApp}
+              className="flex-1 py-2.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow transition"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Enviar por WhatsApp</span>
+            </button>
+          </div>
+
+          {/* Hallazgos Fotográficos en Tarjetas Verticales */}
+          <div className="space-y-3">
+            <h4 className="font-extrabold text-xs uppercase tracking-wider text-slate-500">
+              Hallazgos de Campo con Fotos Anotadas ({hallazgosFiltrados.length})
+            </h4>
+            {hallazgosFiltrados.map((h, idx) => (
+              <div key={h.id || idx} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                {h.fotoAnotada ? (
+                  <div className="w-full bg-slate-100 flex items-center justify-center overflow-hidden border-b border-slate-200">
+                    <img src={h.fotoAnotada} alt={h.titulo} className="w-full h-56 object-cover" />
+                  </div>
+                ) : null}
+                <div className="p-3.5 space-y-1 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded">
+                      {h.categoria}
+                    </span>
+                    <span className="text-[10px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded">
+                      Severidad: {h.severidad}
+                    </span>
+                  </div>
+                  <h5 className="font-bold text-slate-900 text-sm">{h.titulo}</h5>
+                  <p className="text-slate-600 leading-relaxed">{h.descripcion}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Cuadros de Fertirriego en Tarjetas */}
+          {recFertirriegoFiltradas.length > 0 && (
+            <div className="space-y-3">
+              <h4 className="font-extrabold text-xs uppercase tracking-wider text-slate-500">
+                Nutrición y Fertirriego Prescrito
+              </h4>
+              {recFertirriegoFiltradas.map(s => (
+                <div key={s.semana} className="bg-white p-4 rounded-2xl border border-blue-200 shadow-xs space-y-2 text-xs">
+                  <span className="font-extrabold text-blue-900 block">Semana {s.semana}</span>
+                  {(s.eventos || []).map((ev, i) => (
+                    <div key={i} className="bg-blue-50/50 p-2.5 rounded-xl border border-blue-100 space-y-1.5">
+                      <div className="flex justify-between font-bold text-slate-800">
+                        <span>{ev.nombre}</span>
+                        <span className="text-blue-700 font-semibold">{ev.alcance || 'Finca'}</span>
+                      </div>
+                      {ev.lineasTanqueA?.length > 0 && (
+                        <div>
+                          <strong className="text-blue-900 block text-[11px]">🔵 Tanque A:</strong>
+                          <ul className="list-disc pl-4 space-y-0.5 text-slate-700">
+                            {ev.lineasTanqueA.map((l, li) => (
+                              <li key={li}>{l.producto}: <strong>{l.dosis} {l.unidad}</strong></li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {ev.lineasTanqueB?.length > 0 && (
+                        <div>
+                          <strong className="text-amber-900 block text-[11px]">🟡 Tanque B:</strong>
+                          <ul className="list-disc pl-4 space-y-0.5 text-slate-700">
+                            {ev.lineasTanqueB.map((l, li) => (
+                              <li key={li}>{l.producto}: <strong>{l.dosis} {l.unidad}</strong></li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {ev.productos?.length > 0 && (
+                        <ul className="list-disc pl-4 space-y-0.5 text-slate-700">
+                          {ev.productos.map((l, li) => (
+                            <li key={li}>{l.producto}: <strong>{l.dosis} {l.unidad}</strong></li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Aplicaciones Fitosanitarias en Tarjetas */}
+          {recPlaguicidasFiltradas.length > 0 && (
+            <div className="space-y-3">
+              <h4 className="font-extrabold text-xs uppercase tracking-wider text-slate-500">
+                Manejo Fitosanitario Segregado
+              </h4>
+              {recPlaguicidasFiltradas.map(s => (
+                <div key={s.semana} className="bg-white p-4 rounded-2xl border border-purple-200 shadow-xs space-y-2 text-xs">
+                  <span className="font-extrabold text-purple-900 block">Semana {s.semana}</span>
+                  {s.sinAplicacion ? (
+                    <p className="text-emerald-800 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200 font-semibold">
+                      ✅ No requiere aplicaciones químicas esta semana. Mantener monitoreo preventivo.
+                    </p>
+                  ) : (
+                    (s.aplicaciones || []).map((app, i) => (
+                      <div key={i} className="bg-purple-50/50 p-2.5 rounded-xl border border-purple-100 space-y-1.5">
+                        <div className="flex justify-between font-bold text-slate-800">
+                          <span>{app.nombre}</span>
+                          <span className="text-purple-700 font-semibold">{app.volumenTanque}</span>
+                        </div>
+                        <ol className="list-decimal pl-4 space-y-0.5 text-slate-700">
+                          {(app.ordenMezcla || []).map((l, li) => (
+                            <li key={li}>
+                              <strong>{l.producto}</strong> — {l.dosis} ({l.fracIrac || l.tipo})
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    ))
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* VISTA 2: HOJA DE REPORTE EDITORIAL (HOMOLOGADA PANTALLA Y PDF) */}
       {/* ========================================================= */}
       <div 
         ref={reportRef} 
-        className="report-sheet bg-white p-5 sm:p-8 rounded-3xl border border-slate-300 shadow-xl max-w-4xl mx-auto text-slate-900 font-sans"
+        className={`report-sheet bg-white p-5 sm:p-8 rounded-3xl border border-slate-300 shadow-xl max-w-4xl mx-auto text-slate-900 font-sans ${vistaModo === 'documento' ? 'block' : 'hidden print:block'}`}
       >
         {/* ENCABEZADO INSTITUCIONAL OFICIAL */}
         <div className="border-b-2 border-emerald-800 pb-5 mb-6 print-avoid-break">
@@ -352,14 +609,13 @@ export default function ReportModule({ visita, onOpenAi }) {
                 <div key={h.id || idx} className="finding-card print-avoid-break border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 flex flex-col shadow-xs">
                   {h.fotoAnotada ? (
                     <div 
-                      className="w-full bg-slate-950 flex items-center justify-center p-1 overflow-hidden" 
-                      style={{ minHeight: '190px', maxHeight: '230px' }}
+                      className="w-full bg-slate-100 flex items-center justify-center overflow-hidden border-b border-slate-200" 
+                      style={{ minHeight: '190px', maxHeight: '240px' }}
                     >
                       <img 
                         src={h.fotoAnotada} 
                         alt={h.titulo} 
-                        className="max-h-52 max-w-full w-auto h-auto object-contain block mx-auto rounded-lg"
-                        style={{ maxHeight: '210px', maxWidth: '100%', objectFit: 'contain' }}
+                        className="w-full h-56 object-cover block"
                       />
                     </div>
                   ) : (
