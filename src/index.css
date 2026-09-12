@@ -31,11 +31,11 @@
   background: #94a3b8;
 }
 
-/* Print optimizations for editorial report */
+/* Print optimizations for editorial report - PROHIBIDO CORTAR INFORMACIÓN ENTRE PÁGINAS */
 @media print {
   @page {
-    size: A4 portrait;
-    margin: 10mm 10mm 10mm 10mm;
+    size: letter portrait;
+    margin: 8mm 8mm 8mm 8mm;
   }
   
   html, body {
@@ -43,16 +43,22 @@
     color: #0f172a !important;
     padding: 0 !important;
     margin: 0 !important;
-    font-size: 11pt !important;
+    font-size: 10pt !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
 
-  .no-print, header, nav, button, .no-print * {
+  .no-print, 
+  .no-print *,
+  header, 
+  nav, 
+  button, 
+  .mobile-view-container {
     display: none !important;
   }
 
   .report-sheet {
+    display: block !important;
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
@@ -62,15 +68,56 @@
     background: transparent !important;
   }
 
+  /* Prohibición estricta de cortes de tablas, filas, tarjetas y secciones */
   .print-avoid-break, 
+  .report-section,
   .finding-card, 
   .event-card, 
   .app-card, 
   .signature-block,
-  tr, 
-  table {
+  .cuadro-recomendacion,
+  .clima-card,
+  table,
+  tbody,
+  tr {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
+  }
+
+  /* Los encabezados nunca deben quedar huérfanos al fondo de una página */
+  h1, h2, h3, h4, h5, .section-header {
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+
+  /* Tablas: asegurar cabeceras repetibles y filas unificadas */
+  table {
+    border-collapse: collapse !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Ajuste inteligente de fotografías para que nunca desborden la página */
+  .finding-photo-container {
+    height: 140px !important;
+    max-height: 140px !important;
+  }
+
+  .finding-photo, 
+  img.finding-photo {
+    height: 140px !important;
+    max-height: 140px !important;
+    width: 100% !important;
+    object-fit: cover !important;
   }
 
   img {
@@ -78,3 +125,4 @@
     object-fit: contain !important;
   }
 }
+

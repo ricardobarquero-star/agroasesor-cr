@@ -713,7 +713,9 @@ export const storageService = {
         totalVisitas: 0,
         lluviaTotalAcumulada: 0,
         humedadPromedio: 85,
+        promedioHumedadRelativa: 85,
         temperaturaPromedio: 18,
+        promedioTemperatura: 18,
         horasAltaHumedadTotal: 0,
         riesgoPredominante: 'Moderado',
         fenomenoElNino: true
@@ -733,11 +735,15 @@ export const storageService = {
     });
 
     const total = visitas.length;
+    const humProm = Math.round(sumaHumedad / total);
+    const tempProm = Math.round((sumaTemp / total) * 10) / 10;
     return {
       totalVisitas: total,
       lluviaTotalAcumulada: Math.round(sumaLluvia * 10) / 10,
-      humedadPromedio: Math.round(sumaHumedad / total),
-      temperaturaPromedio: Math.round((sumaTemp / total) * 10) / 10,
+      humedadPromedio: humProm,
+      promedioHumedadRelativa: humProm,
+      temperaturaPromedio: tempProm,
+      promedioTemperatura: tempProm,
       horasAltaHumedadTotal: Math.round(sumaHorasHumedad),
       riesgoPredominante: sumaLluvia > 100 ? 'Crítico / Fúngico' : (sumaLluvia > 50 ? 'Alto' : 'Moderado'),
       fenomenoElNino: true,

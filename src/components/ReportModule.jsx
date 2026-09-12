@@ -11,6 +11,7 @@ import jsPDF from 'jspdf';
 import { crAgroDatabase } from '../data/crAgroDatabase';
 import { storageService } from '../services/storageService';
 import { calcularDosisDual } from '../utils/doseCalculator';
+import { agroEpidemiologyService } from '../services/agroEpidemiologyService';
 
 export default function ReportModule({ visita, onOpenAi }) {
   const reportRef = useRef(null);
@@ -29,6 +30,34 @@ export default function ReportModule({ visita, onOpenAi }) {
   const finca = visita.finca || {};
   const lote = visita.lote || {};
   const clima = visita.clima || {};
+
+  // Variables climáticas normalizadas (garantiza valores numéricos sin omisiones)
+  const altitudFinca = finca.gps?.altitud || clima.altitud || 1680;
+  const tempFinca = (clima.temperaturaActual !== undefined && clima.temperaturaActual !== null) 
+    ? clima.temperaturaActual 
+    : (estadisticasClima?.temperaturaPromedio ?? estadisticasClima?.promedioTemperatura ?? 19);
+  const humedadFinca = (clima.humedadActual !== undefined && clima.humedadActual !== null) 
+    ? clima.humedadActual 
+    : (estadisticasClima?.humedadPromedio ?? estadisticasClima?.promedioHumedadRelativa ?? 82);
+  const lluvia7d = clima.lluviaAcumulada7Dias !== undefined ? clima.lluviaAcumulada7Dias : 0;
+  const lluviaAcumuladaFinca = estadisticasClima?.lluviaTotalAcumulada ?? lluvia7d;
+
+  // Análisis de I.A. sobre Factores Climáticos y Riesgos Fitosanitarios (enfermedades y plagas propensas)
+  const analisisClimaIa = React.useMemo(() => {
+    if (visita.analisisEpidemiologico?.impactoFisiologico && visita.analisisEpidemiologico?.enfermedadesPropensas?.length > 0) {
+      return visita.analisisEpidemiologico;
+    }
+    return agroEpidemiologyService.generarAnalisisClimaticoIa({
+      cultivoNombre: lote.cultivoNombre || 'Fresa',
+      variedad: lote.variedad || '',
+      temp: tempFinca,
+      humedad: humedadFinca,
+      lluvia7d: lluvia7d,
+      altitud: altitudFinca,
+      loteNombre: filtroLote === 'todos' ? 'Toda la Finca' : filtroLote,
+      hallazgos: (visita.hallazgos || [])
+    });
+  }, [visita.analisisEpidemiologico, lote.cultivoNombre, lote.variedad, tempFinca, humedadFinca, lluvia7d, altitudFinca, filtroLote, visita.hallazgos]);
   
   // Obtener todos los lotes de la finca para el selector de filtro
   const clientes = storageService.getClientes();
@@ -72,7 +101,7 @@ export default function ReportModule({ visita, onOpenAi }) {
     return { ...semana, aplicaciones: appsFiltradas };
   }).filter(semana => semana.sinAplicacion || (semana.aplicaciones && semana.aplicaciones.length > 0));
 
-  // Generar Blob y File del PDF asegurando captura completa aún si está en vista digital
+  // Generar Blob y File del PDF asegurando captura sin cortes entre páginas
   const generarPdfBlobYArchivo = async () => {
     if (!reportRef.current) return null;
     const element = reportRef.current;
@@ -83,41 +112,66 @@ export default function ReportModule({ visita, onOpenAi }) {
       element.style.position = 'fixed';
       element.style.left = '-9999px';
       element.style.top = '0';
-      element.style.width = '1024px';
+      element.style.width = '1000px';
       element.style.display = 'block';
     }
 
     try {
-      // Esperar brevemente para layout y render de fuentes/imágenes
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 150));
 
-      const canvas = await html2canvas(element, {
-        scale: 2, // 2x DPI para nitidez editorial y legibilidad de tablas
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        windowWidth: 1024
-      });
+      const pdf = new jsPDF('p', 'mm', 'letter');
+      const pageWidth = pdf.internal.pageSize.getWidth();   // ~215.9 mm
+      const pageHeight = pdf.internal.pageSize.getHeight(); // ~279.4 mm
+      const margin = 8;
+      const contentWidth = pageWidth - (margin * 2);        // ~199.9 mm
+      const maxPageY = pageHeight - margin;                 // ~271.4 mm
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      const blocks = Array.from(element.querySelectorAll('.report-page-block'));
 
-      let heightLeft = pdfHeight;
-      let position = 0;
-      const pageHeight = pdf.internal.pageSize.getHeight();
+      if (blocks.length === 0) {
+        const canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        const pdfHeight = (canvas.height * contentWidth) / canvas.width;
+        pdf.addImage(imgData, 'JPEG', margin, margin, contentWidth, Math.min(pdfHeight, maxPageY - margin));
+      } else {
+        let currentY = margin;
+        for (let i = 0; i < blocks.length; i++) {
+          const block = blocks[i];
+          const canvas = await html2canvas(block, {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            backgroundColor: '#ffffff'
+          });
 
-      // Página 1
-      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
-      heightLeft -= pageHeight;
+          const imgData = canvas.toDataURL('image/jpeg', 0.95);
+          const blockHeightMm = (canvas.height * contentWidth) / canvas.width;
 
-      // Páginas adicionales si el informe es extenso
-      while (heightLeft > 0) {
-        position = heightLeft - pdfHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
-        heightLeft -= pageHeight;
+          // Si el cuadro o sección no cabe completo en el resto de la página, pasa a la siguiente
+          if (currentY > margin && (currentY + blockHeightMm > maxPageY)) {
+            pdf.addPage();
+            currentY = margin;
+          }
+
+          if (blockHeightMm > (maxPageY - margin)) {
+            let hRestante = blockHeightMm;
+            let offsetImg = 0;
+            while (hRestante > 0) {
+              if (offsetImg > 0) {
+                pdf.addPage();
+                currentY = margin;
+              }
+              const chunkHeight = Math.min(hRestante, maxPageY - currentY);
+              pdf.addImage(imgData, 'JPEG', margin, currentY - offsetImg, contentWidth, blockHeightMm);
+              hRestante -= chunkHeight;
+              offsetImg += chunkHeight;
+              currentY += chunkHeight;
+            }
+          } else {
+            pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, blockHeightMm);
+            currentY += blockHeightMm + 3.5;
+          }
+        }
       }
 
       const nombreLoteStr = filtroLote === 'todos' ? 'Consolidado' : filtroLote.replace(/\s+/g, '_');
@@ -321,12 +375,11 @@ export default function ReportModule({ visita, onOpenAi }) {
     msg += `👨‍🌾 *Productor:* ${productor.nombre || 'Cliente'}\n`;
     msg += `🏡 *Finca:* ${finca.nombre || 'Finca'} (${loteTexto})\n`;
     msg += `📅 *Fecha:* ${visita.fecha || 'Hoy'} • ${visita.hora || ''}\n`;
-    const altitudFinca = finca.gps?.altitud || clima.altitud || 1680;
     msg += `🌱 *Cultivo:* ${lote.cultivoNombre || 'Cultivo'} (Var: ${lote.variedad || 'Estándar'})
 `;
-    msg += `🏔️ *Altitud Finca:* ${altitudFinca} msnm • 🌧️ *Lluvia 7 días:* ${clima.lluviaAcumulada7Dias || 0} mm
+    msg += `🏔️ *Altitud Finca:* ${altitudFinca} msnm • 🌧️ *Lluvia 7 días:* ${lluvia7d} mm
 `;
-    msg += `🌡️ *Temp:* ${clima.temperaturaActual || 18}°C • *HR:* ${clima.humedadActual || 85}%
+    msg += `🌡️ *Temp Finca:* ${tempFinca}°C • *Humedad HR:* ${humedadFinca}%
 `;
     msg += `👨‍💼 *Asesor:* Ing. Agr. Ricardo M. Barquero Chacón (Col. 5896)\n\n`;
 
@@ -357,6 +410,24 @@ export default function ReportModule({ visita, onOpenAi }) {
       msg += `• Impacto: ${analisisEpidemiologico.elNinoImpacto}\n`;
       msg += `• Prevención suelo: ${analisisEpidemiologico.hongosSuelo || 'Monitoreo Phytophthora/Pythium'}\n`;
       msg += `• Prevención foliar: ${analisisEpidemiologico.hongosFoliares || 'Control preventivo Botrytis/Oídio'}\n\n`;
+    }
+
+    // Observaciones de la I.A. sobre Factores Climáticos y Riesgos Fitosanitarios
+    if (analisisClimaIa) {
+      msg += `🤖 *OBSERVACIONES I.A. CLIMA & RIESGOS FITOSANITARIOS:*
+`;
+      msg += `• *Diagnóstico Climático (${tempFinca}°C / ${humedadFinca}% HR):* ${analisisClimaIa.resumenEjecutivo || 'Monitoreo preventivo'}
+`;
+      if (analisisClimaIa.enfermedadesPropensas?.length > 0) {
+        msg += `• 🍄 *Enfermedades Propensas:* ` + analisisClimaIa.enfermedadesPropensas.slice(0, 3).map(e => `${e.patogeno} [${e.riesgo}]`).join(', ') + `
+`;
+      }
+      if (analisisClimaIa.insectosAcarosPropensos?.length > 0) {
+        msg += `• 🐛 *Insectos/Ácaros Propensos:* ` + analisisClimaIa.insectosAcarosPropensos.slice(0, 2).map(p => `${p.plaga} [${p.riesgo}]`).join(', ') + `
+`;
+      }
+      msg += `
+`;
     }
 
     // Hallazgos
@@ -542,10 +613,11 @@ export default function ReportModule({ visita, onOpenAi }) {
           {/* Botón Imprimir */}
           <button
             onClick={handleImprimirNativo}
-            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition flex items-center gap-1 shadow-xs active:scale-95"
-            title="Imprimir o Guardar en PDF de forma nativa"
+            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs active:scale-95"
+            title="Imprimir o Guardar como PDF de forma nativa sin cortes de página"
           >
             <Printer className="w-4 h-4" />
+            <span className="hidden sm:inline">Imprimir / PDF</span>
           </button>
         </div>
       </div>
@@ -554,7 +626,7 @@ export default function ReportModule({ visita, onOpenAi }) {
       {/* VISTA 1: DIGITAL MÓVIL PARA TELÉFONO Y WHATSAPP */}
       {/* ========================================================= */}
       {vistaModo === 'digital' && (
-        <div className="space-y-4 max-w-2xl mx-auto">
+        <div className="space-y-4 max-w-2xl mx-auto mobile-view-container no-print">
           {/* Tarjeta Resumen Productor */}
           <div className="bg-gradient-to-r from-emerald-800 to-teal-800 text-white p-4 sm:p-5 rounded-3xl shadow-lg space-y-2">
             <div className="flex items-center justify-between">
@@ -629,27 +701,69 @@ export default function ReportModule({ visita, onOpenAi }) {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
               <div className="bg-amber-50/80 p-2 rounded-xl border border-amber-200">
                 <span className="text-[10px] text-amber-800 block font-semibold">🏔️ Altitud Finca</span>
-                <strong className="text-amber-950 font-black text-sm">{finca.gps?.altitud || clima.altitud || 1680} msnm</strong>
+                <strong className="text-amber-950 font-black text-sm">{altitudFinca} msnm</strong>
               </div>
               <div className="bg-blue-50 p-2 rounded-xl">
                 <span className="text-[10px] text-blue-700 block font-semibold">🌧️ Lluvia Semanal</span>
-                <strong className="text-blue-950 font-black text-sm">{clima.lluviaAcumulada7Dias || 0} mm</strong>
+                <strong className="text-blue-950 font-black text-sm">{lluvia7d} mm</strong>
               </div>
               <div className="bg-blue-50 p-2 rounded-xl">
                 <span className="text-[10px] text-blue-700 block font-semibold">💧 Humedad HR</span>
-                <strong className="text-blue-950 font-black text-sm">{estadisticasClima ? estadisticasClima.promedioHumedadRelativa : (clima.humedadActual || 85)}%</strong>
+                <strong className="text-blue-950 font-black text-sm">{humedadFinca}%</strong>
               </div>
               <div className="bg-blue-50 p-2 rounded-xl">
                 <span className="text-[10px] text-blue-700 block font-semibold">🌡️ Temp Finca</span>
-                <strong className="text-blue-950 font-black text-sm">{estadisticasClima ? estadisticasClima.promedioTemperatura : (clima.temperaturaActual || 18)}°C</strong>
+                <strong className="text-blue-950 font-black text-sm">{tempFinca}°C</strong>
               </div>
             </div>
-              {analisisEpidemiologico.elNinoImpacto && (
-                <div className="bg-amber-50/80 p-2.5 rounded-xl border border-amber-200 text-xs text-amber-950 space-y-1">
-                  <span className="font-bold block text-[11px]">🌦️ Impacto Fenómeno de El Niño:</span>
-                  <p className="text-[11px] leading-relaxed">{analisisEpidemiologico.elNinoImpacto}</p>
+
+            {/* Observaciones de la I.A. Agroclimática en Vista Móvil */}
+            <div className="bg-gradient-to-br from-indigo-50/90 via-blue-50/60 to-emerald-50/50 p-3 rounded-xl border border-indigo-200/80 text-xs space-y-2">
+              <div className="flex items-center justify-between border-b border-indigo-200/60 pb-1">
+                <span className="font-bold text-indigo-950 flex items-center gap-1.5 text-[11px]">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                  Observaciones I.A.: Factores Climáticos y Riesgos
+                </span>
+                <span className="text-[9px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
+                  Validado por Agrónomo
+                </span>
+              </div>
+              <p className="text-slate-700 text-[11px] leading-relaxed">
+                {analisisClimaIa.impactoFisiologico}
+              </p>
+
+              {/* Enfermedades Propensas Móvil */}
+              {analisisClimaIa.enfermedadesPropensas?.length > 0 && (
+                <div className="space-y-1 pt-1 border-t border-indigo-100">
+                  <span className="text-[10px] font-extrabold uppercase text-amber-900 block">
+                    🍄 Enfermedades Propensas a Activarse:
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {analisisClimaIa.enfermedadesPropensas.map((enf, eIdx) => (
+                      <span key={eIdx} className="text-[10px] bg-white px-2 py-0.5 rounded-md border border-amber-200 text-amber-950 font-medium">
+                        <strong>{enf.patogeno}</strong> <span className="text-[9px] font-bold text-red-600">({enf.riesgo})</span>
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
+
+              {/* Plagas Propensas Móvil */}
+              {analisisClimaIa.insectosAcarosPropensos?.length > 0 && (
+                <div className="space-y-1 pt-1 border-t border-indigo-100">
+                  <span className="text-[10px] font-extrabold uppercase text-purple-900 block">
+                    🐛 Insectos y Ácaros con Riesgo Poblacional:
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {analisisClimaIa.insectosAcarosPropensos.map((plaga, pIdx) => (
+                      <span key={pIdx} className="text-[10px] bg-white px-2 py-0.5 rounded-md border border-purple-200 text-purple-950 font-medium">
+                        <strong>{plaga.plaga}</strong> <span className="text-[9px] font-bold text-purple-700">({plaga.riesgo})</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
             </div>
 
           {/* Tarjeta de Mediciones de Suelo en Campo */}
@@ -829,8 +943,10 @@ export default function ReportModule({ visita, onOpenAi }) {
         ref={reportRef} 
         className={`report-sheet bg-white p-5 sm:p-8 rounded-3xl border border-slate-300 shadow-xl max-w-4xl mx-auto text-slate-900 font-sans ${vistaModo === 'documento' ? 'block' : 'hidden print:block'}`}
       >
-        {/* ENCABEZADO OFICIAL CON NOMBRE DEL PROFESIONAL (SIN ENCABEZADOS DEL COLEGIO) */}
-        <div className="border-b-2 border-emerald-800 pb-5 mb-6 print-avoid-break">
+        {/* BLOQUE 1: ENCABEZADO, GUÍA Y DATOS GENERALES */}
+        <div className="report-page-block print-avoid-break mb-5">
+          {/* ENCABEZADO OFICIAL CON NOMBRE DEL PROFESIONAL (SIN ENCABEZADOS DEL COLEGIO) */}
+          <div className="border-b-2 border-emerald-800 pb-4 mb-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="w-14 h-14 rounded-2xl bg-emerald-800 text-white flex items-center justify-center font-black text-2xl shadow-md shrink-0">
@@ -911,10 +1027,11 @@ export default function ReportModule({ visita, onOpenAi }) {
             </div>
           </div>
         </div>
+        </div>{/* FIN BLOQUE 1 */}
 
-        {/* 2. TABLA DE PARÁMETROS AUTOMÁTICOS Y CONDICIONES AGROCLIMÁTICAS DE LA FINCA */}
-        <div className="mb-6 print-avoid-break">
-          <div className="flex items-center justify-between border-b border-slate-200 mb-2.5 pb-1">
+        {/* BLOQUE 2: 2. TABLA DE PARÁMETROS AUTOMÁTICOS Y OBSERVACIONES I.A. DE CLIMA Y RIESGOS FITOSANITARIOS */}
+        <div className="report-page-block print-avoid-break mb-5">
+          <div className="flex items-center justify-between border-b border-slate-200 mb-2 pb-1">
             <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
               <span className="w-5 h-5 rounded-lg bg-blue-100 text-blue-800 flex items-center justify-center text-xs font-bold">2</span>
               Tabla de Parámetros Automáticos y Condiciones Agroclimáticas de la Finca
@@ -928,112 +1045,108 @@ export default function ReportModule({ visita, onOpenAi }) {
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
                 <tr>
-                  <th className="p-2.5">Parámetro Automático</th>
-                  <th className="p-2.5">Valor Registrado</th>
-                  <th className="p-2.5">Origen / Sistema</th>
-                  <th className="p-2.5">Interpretación Técnica / Piso Agronómico</th>
+                  <th className="p-2">Parámetro Automático</th>
+                  <th className="p-2">Valor Registrado</th>
+                  <th className="p-2">Origen / Sistema</th>
+                  <th className="p-2">Interpretación Técnica / Piso Agronómico</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
                 <tr className="hover:bg-blue-50/30">
-                  <td className="p-2.5 font-bold text-slate-800 flex items-center gap-1.5">
+                  <td className="p-2 font-bold text-slate-800 flex items-center gap-1.5">
                     <span className="text-amber-600 font-bold">🏔️</span> Altitud de la Finca
                   </td>
-                  <td className="p-2.5">
-                    <strong className="text-blue-900 font-black text-sm bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                      {finca.gps?.altitud || clima.altitud || 1680} m s.n.m.
+                  <td className="p-2">
+                    <strong className="text-blue-900 font-black text-xs bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                      {altitudFinca} m s.n.m.
                     </strong>
                   </td>
-                  <td className="p-2.5 text-slate-500 text-[11px]">
+                  <td className="p-2 text-slate-500 text-[10.5px]">
                     Satélite DEM / Open-Meteo Elevation
                   </td>
-                  <td className="p-2.5 text-slate-700 text-[11px]">
-                    {(finca.gps?.altitud || clima.altitud || 1680) >= 2000 
-                      ? 'Piso Alto (2000+ msnm): Clima templado frío de altura, niebla recurrente' 
-                      : (finca.gps?.altitud || clima.altitud || 1680) >= 1400 
-                        ? 'Piso Medio-Alto (1400-1999 msnm): Clima templado húmedo, óptimo hortícola/café'
-                        : 'Piso Basal / Bajura (<1400 msnm): Mayor evapotranspiración'}
+                  <td className="p-2 text-slate-700 text-[10.5px]">
+                    {analisisClimaIa.pisoAltitudinal}: {analisisClimaIa.descAltitud}
                   </td>
                 </tr>
                 <tr className="hover:bg-blue-50/30">
-                  <td className="p-2.5 font-bold text-slate-800 flex items-center gap-1.5">
+                  <td className="p-2 font-bold text-slate-800 flex items-center gap-1.5">
                     <span className="text-red-500 font-bold">📍</span> Geolocalización GPS
                   </td>
-                  <td className="p-2.5 font-mono text-slate-900 font-bold text-[11px]">
+                  <td className="p-2 font-mono text-slate-900 font-bold text-[10.5px]">
                     {finca.gps?.lat ? `${finca.gps.lat}, ${finca.gps.lon}` : '10.0215, -83.9482'}
                   </td>
-                  <td className="p-2.5 text-slate-500 text-[11px]">
+                  <td className="p-2 text-slate-500 text-[10.5px]">
                     WGS84 Satélite GPS Móvil
                   </td>
-                  <td className="p-2.5 text-slate-700 text-[11px]">
+                  <td className="p-2 text-slate-700 text-[10.5px]">
                     {finca.ubicacion || 'Ubicación georreferenciada de la finca'}
                   </td>
                 </tr>
                 <tr className="hover:bg-blue-50/30">
-                  <td className="p-2.5 font-bold text-slate-800 flex items-center gap-1.5">
+                  <td className="p-2 font-bold text-slate-800 flex items-center gap-1.5">
                     <span className="text-orange-500 font-bold">🌡️</span> Temperatura en Visita
                   </td>
-                  <td className="p-2.5">
-                    <strong className="text-slate-900 font-bold text-sm">
-                      {clima.temperaturaActual || 18} °C
+                  <td className="p-2">
+                    <strong className="text-slate-900 font-bold text-xs bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
+                      {tempFinca} °C
                     </strong>
                   </td>
-                  <td className="p-2.5 text-slate-500 text-[11px]">
+                  <td className="p-2 text-slate-500 text-[10.5px]">
                     Estación Meteorológica Virtual
                   </td>
-                  <td className="p-2.5 text-slate-700 text-[11px]">
+                  <td className="p-2 text-slate-700 text-[10.5px]">
                     Condición térmica en campo al momento del recorrido
                   </td>
                 </tr>
                 <tr className="hover:bg-blue-50/30">
-                  <td className="p-2.5 font-bold text-slate-800 flex items-center gap-1.5">
+                  <td className="p-2 font-bold text-slate-800 flex items-center gap-1.5">
                     <span className="text-cyan-600 font-bold">💧</span> Humedad Relativa & Rocío
                   </td>
-                  <td className="p-2.5">
-                    <strong className="text-cyan-950 font-bold text-sm">
-                      {clima.humedadActual || 85} %
+                  <td className="p-2">
+                    <strong className="text-cyan-950 font-bold text-xs bg-cyan-50 px-2 py-0.5 rounded border border-cyan-200">
+                      {humedadFinca} %
                     </strong>
                   </td>
-                  <td className="p-2.5 text-slate-500 text-[11px]">
+                  <td className="p-2 text-slate-500 text-[10.5px]">
                     Sensor Atmosférico Satelital
                   </td>
-                  <td className="p-2.5 text-slate-700 text-[11px]">
-                    {(clima.humedadActual || 85) >= 80 
-                      ? '⚠️ Alta humedad relativa: Conducente a libre de agua y esporulación fúngica' 
-                      : 'Humedad relativa en rango óptimo'}
+                  <td className="p-2 text-slate-700 text-[10.5px]">
+                    {humedadFinca >= 75 
+                      ? '⚠️ Alta humedad relativa: Conducente a libre de agua y germinación de esporas fúngicas' 
+                      : 'Humedad relativa en rango moderado'}
                   </td>
                 </tr>
                 <tr className="hover:bg-blue-50/30">
-                  <td className="p-2.5 font-bold text-slate-800 flex items-center gap-1.5">
+                  <td className="p-2 font-bold text-slate-800 flex items-center gap-1.5">
                     <span className="text-blue-600 font-bold">🌧️</span> Lluvia Acumulada (7 Días)
                   </td>
-                  <td className="p-2.5">
-                    <strong className="text-blue-900 font-black text-sm">
-                      {clima.lluviaAcumulada7Dias || 0} mm
+                  <td className="p-2">
+                    <strong className="text-blue-900 font-black text-xs bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                      {lluvia7d} mm
                     </strong>
                   </td>
-                  <td className="p-2.5 text-slate-500 text-[11px]">
+                  <td className="p-2 text-slate-500 text-[10.5px]">
                     Pluviometría Semanal Satelital
                   </td>
-                  <td className="p-2.5 text-slate-700 text-[11px]">
-                    {(clima.lluviaAcumulada7Dias || 0) > 40 
-                      ? '⚠️ Lluvias intensas recientes: Monitorear asfixia radicular y lavado' 
-                      : 'Régimen pluviométrico semanal estable'}
+                  <td className="p-2 text-slate-700 text-[10.5px]">
+                    {lluvia7d > 35 
+                      ? '⚠️ Lluvias intensas recientes: Monitorear asfixia radicular, Phytophthora y lavado' 
+                      : 'Régimen pluviométrico semanal moderado'}
                   </td>
                 </tr>
                 <tr className="hover:bg-blue-50/30">
-                  <td className="p-2.5 font-bold text-slate-800 flex items-center gap-1.5">
+                  <td className="p-2 font-bold text-slate-800 flex items-center gap-1.5">
                     <span className="text-indigo-600 font-bold">📊</span> Lluvia Histórica Expediente
                   </td>
-                  <td className="p-2.5">
-                    <strong className="text-indigo-950 font-black text-sm">
-                      {estadisticasClima ? `${estadisticasClima.lluviaTotalAcumulada} mm` : `${clima.lluviaAcumulada7Dias || 0} mm`}
+                  <td className="p-2">
+                    <strong className="text-indigo-950 font-black text-xs bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                      {lluviaAcumuladaFinca} mm
                     </strong>
                   </td>
-                  <td className="p-2.5 text-slate-500 text-[11px]">
-                    Historial de Visitas Finca ({estadisticasClima?.totalVisitas || 1} visitas)
+                  <td className="p-2 text-slate-500 text-[10.5px]">
+                    Historial Finca ({estadisticasClima?.totalVisitas || 1} visitas)
                   </td>
-                  <td className="p-2.5 text-slate-700 text-[11px]">
+                  <td className="p-2 text-slate-700 text-[10.5px]">
                     Acumulado pluviométrico continuo registrado en el expediente del cliente
                   </td>
                 </tr>
@@ -1041,41 +1154,101 @@ export default function ReportModule({ visita, onOpenAi }) {
             </table>
           </div>
 
-          {/* Panel de Análisis Epidemiológico (Fenómeno de El Niño) */}
-          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-xs space-y-2">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-1">
-              <span className="font-extrabold text-slate-800 flex items-center gap-1.5">
-                <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
-                Análisis Epidemiológico Clima + Plagas/Hongos (Fenómeno de El Niño)
+          {/* OBSERVACIONES DE LA I.A. SOBRE FACTORES AGROCLIMÁTICOS Y RIESGOS FITOSANITARIOS */}
+          <div className="bg-gradient-to-br from-indigo-50/70 via-blue-50/50 to-emerald-50/40 border border-indigo-200 rounded-2xl p-3.5 text-xs space-y-2.5 shadow-xs">
+            <div className="flex items-center justify-between border-b border-indigo-200 pb-1.5">
+              <span className="font-extrabold text-indigo-950 flex items-center gap-1.5 text-xs">
+                <Sparkles className="w-4 h-4 text-indigo-600" />
+                Observaciones y Valoración de la I.A. sobre Factores Agroclimáticos y Riesgos Fitosanitarios
               </span>
-              <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
+              <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3 text-emerald-700" />
                 Validado por el Agrónomo
               </span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
-              <div className="bg-white p-2 rounded-xl border border-slate-100 space-y-0.5">
-                <strong className="text-amber-900 block text-[10px] uppercase font-black">Hongos de Suelo</strong>
-                <p className="text-slate-700">{analisisEpidemiologico.hongosSuelo || 'Monitoreo de Phytophthora, Pythium y Rhizoctonia con aireación del suelo y enraizadores.'}</p>
+
+            {/* Impacto Fisiológico del Clima */}
+            <div className="bg-white/90 p-2.5 rounded-xl border border-indigo-100 text-[11px] leading-relaxed text-slate-800 space-y-1">
+              <strong className="text-indigo-950 block font-bold text-xs">
+                🌡️ Impacto Fisiológico de la Temperatura ({tempFinca}°C) y Humedad Relativa ({humedadFinca}%) en {lote.cultivoNombre || 'el cultivo'}:
+              </strong>
+              <p>{analisisClimaIa.impactoFisiologico}</p>
+            </div>
+
+            {/* Cuadros de Enfermedades y Plagas Propensas */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[10.5px]">
+              {/* Enfermedades Propensas */}
+              <div className="bg-white p-2.5 rounded-xl border border-amber-200 space-y-1.5">
+                <span className="font-extrabold text-amber-950 flex items-center justify-between border-b border-amber-100 pb-1 text-[11px]">
+                  <span>🍄 Enfermedades Propensas a Activarse:</span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.2 bg-amber-100 text-amber-900 rounded">Alerta Fúngica</span>
+                </span>
+                <div className="space-y-1.5">
+                  {(analisisClimaIa.enfermedadesPropensas || []).map((enf, eIdx) => (
+                    <div key={eIdx} className="bg-amber-50/60 p-1.5 rounded-lg border border-amber-100 space-y-0.5">
+                      <div className="flex items-center justify-between font-bold">
+                        <span className="text-amber-950 text-[11px]">{enf.patogeno}</span>
+                        <span className={`text-[9px] font-black px-1.5 py-0.2 rounded ${
+                          enf.riesgo.includes('Crítico') ? 'bg-red-600 text-white' : (enf.riesgo.includes('Alto') ? 'bg-orange-500 text-white' : 'bg-amber-200 text-amber-950')
+                        }`}>
+                          {enf.riesgo}
+                        </span>
+                      </div>
+                      <p className="text-slate-600 text-[10px] leading-tight">
+                        <strong>Condición:</strong> {enf.condicionPredisponente}
+                      </p>
+                      <p className="text-slate-700 text-[10px] leading-tight">
+                        <strong>Síntoma a vigilar:</strong> {enf.sintomaAlerta}
+                      </p>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="bg-white p-2 rounded-xl border border-slate-100 space-y-0.5">
-                <strong className="text-amber-900 block text-[10px] uppercase font-black">Hongos Foliares</strong>
-                <p className="text-slate-700">{analisisEpidemiologico.hongosFoliares || 'Control preventivo de Botrytis cinerea y Oídio ante alta humedad relativa o condensación.'}</p>
-              </div>
-              <div className="bg-white p-2 rounded-xl border border-slate-100 space-y-0.5">
-                <strong className="text-amber-900 block text-[10px] uppercase font-black">Insectos y Ácaros</strong>
-                <p className="text-slate-700">{analisisEpidemiologico.plagasInsectosAcaros || 'Monitoreo estricto de ácaros (Tetranychus) y trips favorecidos por microclima templado.'}</p>
+
+              {/* Insectos y Ácaros Propensos */}
+              <div className="bg-white p-2.5 rounded-xl border border-purple-200 space-y-1.5">
+                <span className="font-extrabold text-purple-950 flex items-center justify-between border-b border-purple-100 pb-1 text-[11px]">
+                  <span>🐛 Insectos y Ácaros con Riesgo Poblacional:</span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.2 bg-purple-100 text-purple-900 rounded">Dinámica Térmica</span>
+                </span>
+                <div className="space-y-1.5">
+                  {(analisisClimaIa.insectosAcarosPropensos || []).map((plaga, pIdx) => (
+                    <div key={pIdx} className="bg-purple-50/60 p-1.5 rounded-lg border border-purple-100 space-y-0.5">
+                      <div className="flex items-center justify-between font-bold">
+                        <span className="text-purple-950 text-[11px]">{plaga.plaga}</span>
+                        <span className={`text-[9px] font-black px-1.5 py-0.2 rounded ${
+                          plaga.riesgo.includes('Crítico') ? 'bg-red-600 text-white' : (plaga.riesgo.includes('Alto') ? 'bg-purple-600 text-white' : 'bg-purple-200 text-purple-950')
+                        }`}>
+                          {plaga.riesgo}
+                        </span>
+                      </div>
+                      <p className="text-slate-600 text-[10px] leading-tight">
+                        <strong>Dinámica a {tempFinca}°C:</strong> {plaga.dinamicaPoblacional}
+                      </p>
+                      <p className="text-slate-700 text-[10px] leading-tight">
+                        <strong>Alerta en campo:</strong> {plaga.sintomaAlerta}
+                      </p>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
-            <div className="bg-emerald-50/70 p-2 rounded-xl border border-emerald-200 text-[11px] text-emerald-950">
-              <strong>Estrategia de Control Preventivo: </strong> 
-              {analisisEpidemiologico.controlesNutricionales || 'Aplicación de Silicio y Fosfitos de Potasio para fortalecer la pared celular, balance de Calcio y Boro y deshoje sanitario.'}
+
+            {/* Medidas Preventivas Inmediatas Recomendadas */}
+            <div className="bg-emerald-50/90 p-2.5 rounded-xl border border-emerald-200 text-[11px] text-emerald-950 space-y-1">
+              <strong className="block font-bold text-xs text-emerald-950">
+                🛡️ Estrategia y Medidas Preventivas Inmediatas Recomendadas por la I.A.:
+              </strong>
+              <p className="whitespace-pre-line leading-relaxed text-slate-800">
+                {analisisClimaIa.medidasPreventivas}
+              </p>
             </div>
           </div>
-        </div>
+        </div>{/* FIN BLOQUE 2 */}
 
-        {/* 3. MEDICIONES DE CAMPO DE SUELO Y SUSTRATO */}
+        {/* BLOQUE 3: 3. MEDICIONES DE CAMPO DE SUELO Y SUSTRATO */}
         {medicionesSuelo.length > 0 && (
-          <div className="mb-6 print-avoid-break">
+          <div className="report-page-block print-avoid-break mb-5">
             <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 mb-2 pb-1 border-b border-slate-200 flex items-center gap-1.5">
               <span className="w-5 h-5 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center text-xs font-bold">3</span>
               Mediciones de Suelo y Sustrato en Campo
@@ -1149,47 +1322,47 @@ export default function ReportModule({ visita, onOpenAi }) {
           </div>
         )}
 
-        {/* 4. DIAGNÓSTICO VISUAL DE HALLAZGOS (FOTOS CON PROPORCIÓN NATURAL) */}
-        <div className="mb-6">
-          <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 mb-3 pb-1 border-b border-slate-200 flex items-center gap-1.5 print-avoid-break">
+        {/* BLOQUE 4: 4. DIAGNÓSTICO VISUAL DE HALLAZGOS (FOTOS CON PROPORCIÓN AJUSTADA) */}
+        <div className="report-page-block print-avoid-break mb-5">
+          <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 mb-2.5 pb-1 border-b border-slate-200 flex items-center gap-1.5">
             <span className="w-5 h-5 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center text-xs font-bold">4</span>
             Diagnóstico Visual de Hallazgos y Síntomas en Campo ({hallazgosFiltrados.length})
           </h3>
 
           {hallazgosFiltrados.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 gap-3">
               {hallazgosFiltrados.map((h, idx) => (
-                <div key={h.id || idx} className="finding-card print-avoid-break border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 flex flex-col shadow-xs">
+                <div key={h.id || idx} className="finding-card print-avoid-break border border-slate-200 rounded-xl overflow-hidden bg-slate-50 flex flex-col shadow-xs">
                   {h.fotoAnotada ? (
                     <div 
-                      className="w-full bg-slate-100 flex items-center justify-center overflow-hidden border-b border-slate-200" 
-                      style={{ minHeight: '190px', maxHeight: '240px' }}
+                      className="finding-photo-container w-full bg-slate-100 flex items-center justify-center overflow-hidden border-b border-slate-200" 
+                      style={{ maxHeight: '160px' }}
                     >
                       <img 
                         src={h.fotoAnotada} 
                         alt={h.titulo} 
-                        className="w-full h-56 object-cover block"
+                        className="finding-photo w-full h-36 print:h-32 object-cover block"
                       />
                     </div>
                   ) : (
-                    <div className="h-24 bg-slate-200 flex items-center justify-center text-xs text-slate-500 italic">
+                    <div className="h-20 bg-slate-200 flex items-center justify-center text-xs text-slate-500 italic">
                       Sin fotografía registrada
                     </div>
                   )}
-                  <div className="p-3 text-xs flex-1 flex flex-col justify-between">
+                  <div className="p-2.5 text-xs flex-1 flex flex-col justify-between">
                     <div>
                       <div className="flex items-center justify-between gap-1 mb-1">
-                        <span className="font-bold text-[10px] text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
+                        <span className="font-bold text-[9.5px] text-emerald-800 bg-emerald-100 px-2 py-0.2 rounded">
                           {h.categoria}
                         </span>
-                        <span className="font-bold text-[10px] text-red-700 bg-red-100 px-2 py-0.5 rounded">
+                        <span className="font-bold text-[9.5px] text-red-700 bg-red-100 px-2 py-0.2 rounded">
                           Severidad: {h.severidad}
                         </span>
                       </div>
                       <h4 className="font-bold text-slate-900 text-xs sm:text-sm">{h.titulo}</h4>
-                      <p className="text-slate-600 mt-1 leading-relaxed text-[11px]">{h.descripcion}</p>
+                      <p className="text-slate-600 mt-1 leading-tight text-[10.5px]">{h.descripcion}</p>
                     </div>
-                    <div className="flex items-center justify-between text-[10px] text-slate-400 mt-2 pt-1 border-t border-slate-200/60">
+                    <div className="flex items-center justify-between text-[9.5px] text-slate-400 mt-2 pt-1 border-t border-slate-200/60">
                       <span>Lote: {h.loteNombre || lote.nombre || 'Lote 1'}</span>
                       <span>{h.fecha}</span>
                     </div>
@@ -1198,11 +1371,11 @@ export default function ReportModule({ visita, onOpenAi }) {
               ))}
             </div>
           ) : (
-            <p className="text-xs text-slate-500 italic bg-slate-50 p-3 rounded-xl border print-avoid-break">
+            <p className="text-xs text-slate-500 italic bg-slate-50 p-3 rounded-xl border">
               No se registraron hallazgos fitosanitarios para el alcance seleccionado.
             </p>
           )}
-        </div>
+        </div>{/* FIN BLOQUE 4 */}
 
         {/* 5. PROGRAMA NUTRICIONAL Y FERTIRRIEGO */}
         <div className="mb-6">
@@ -1213,7 +1386,7 @@ export default function ReportModule({ visita, onOpenAi }) {
 
           {recFertirriegoFiltradas.length > 0 ? (
             recFertirriegoFiltradas.map((semana, sIdx) => (
-              <div key={sIdx} className="event-card print-avoid-break mb-4 bg-slate-50 rounded-2xl border border-slate-200 p-3.5 sm:p-4 space-y-3">
+              <div key={sIdx} className="report-page-block event-card print-avoid-break mb-4 bg-slate-50 rounded-2xl border border-slate-200 p-3.5 sm:p-4 space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
                   <h4 className="font-extrabold text-xs sm:text-sm text-blue-950">
                     {semana.titulo || `Semana ${semana.semana}`}
@@ -1319,7 +1492,7 @@ export default function ReportModule({ visita, onOpenAi }) {
 
           {recPlaguicidasFiltradas.length > 0 ? (
             recPlaguicidasFiltradas.map((semana, sIdx) => (
-              <div key={sIdx} className="app-card print-avoid-break mb-4 bg-slate-50 rounded-2xl border border-slate-200 p-3.5 sm:p-4 space-y-3">
+              <div key={sIdx} className="report-page-block app-card print-avoid-break mb-4 bg-slate-50 rounded-2xl border border-slate-200 p-3.5 sm:p-4 space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
                   <h4 className="font-extrabold text-xs sm:text-sm text-purple-950">
                     {semana.titulo || `Semana ${semana.semana}`}
@@ -1426,7 +1599,7 @@ export default function ReportModule({ visita, onOpenAi }) {
         </div>
 
         {/* 7. FIRMA OFICIAL DEL INGENIERO AGRÓNOMO */}
-        <div className="signature-block print-avoid-break border-t-2 border-slate-300 pt-6 mt-8">
+        <div className="report-page-block signature-block print-avoid-break border-t-2 border-slate-300 pt-5 mt-6">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
             <div className="text-center sm:text-left space-y-1">
               <div className="text-xl text-emerald-900 font-bold italic tracking-wide">
