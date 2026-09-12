@@ -63,7 +63,10 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
       return cat.includes('bactericida') || cat.includes('antibiótico') || nombre.includes('kasumin') || nombre.includes('phyton') || nombre.includes('terramicina') || nombre.includes('agry-genta') || nombre.includes('cobre');
     }
     if (filtroCategoriaInsumo === 'biologico') {
-      return cat.includes('biológico') || cat.includes('organico') || cat.includes('bio') || nombre.includes('serenade') || nombre.includes('botanigard') || nombre.includes('trichoderma') || nombre.includes('bioact') || nombre.includes('bassiana') || nombre.includes('kelpak') || nombre.includes('humiplex');
+      return cat.includes('biológico') || cat.includes('bioinsumo') || cat.includes('organico') || cat.includes('bio') || nombre.includes('serenade') || nombre.includes('botanigard') || nombre.includes('trichoderma') || nombre.includes('bioact') || nombre.includes('bassiana') || nombre.includes('kelpak') || nombre.includes('humiplex');
+    }
+    if (filtroCategoriaInsumo === 'nematicida') {
+      return cat.includes('nematicida') || (p.subcategoria || '').toLowerCase().includes('nematicida') || nombre.includes('basamid') || nombre.includes('mata 4') || nombre.includes('kill 4');
     }
     if (filtroCategoriaInsumo === 'foliar') {
       return cat.includes('foliar') || cat.includes('nutricional') || nombre.includes('metalosato') || nombre.includes('cosmoquel') || nombre.includes('quel') || cat.includes('boro') || cat.includes('zinc');
@@ -878,7 +881,8 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                       { id: 'fungicida', label: '🍄 Fungicidas' },
                       { id: 'insecticida', label: '🐛 Insecticidas/Ácaros' },
                       { id: 'bactericida', label: '🧫 Bactericidas' },
-                      { id: 'biologico', label: '🌿 Biológicos/Orgánicos' },
+                      { id: 'biologico', label: '🌿 Biológicos/Bioinsumos' },
+                      { id: 'nematicida', label: '🪱 Nematicidas' },
                       { id: 'foliar', label: '🍃 Foliares' },
                       { id: 'coadyuvante', label: '💧 Coadyuvantes' }
                     ].map(f => (

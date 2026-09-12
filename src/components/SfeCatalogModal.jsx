@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { 
   ShieldCheck, Search, Filter, X, Check, Copy, ExternalLink, 
   Sparkles, Layers, AlertCircle, Info, ChevronRight, BookmarkCheck,
-  CheckCircle2
+  CheckCircle2, FileText
 } from 'lucide-react';
 import { storageService } from '../services/storageService';
 
@@ -21,7 +21,8 @@ export default function SfeCatalogModal({ isOpen, onClose, onSelectProduct, tipo
     { id: 'fungicida', label: 'Fungicidas', icon: '🍄' },
     { id: 'insecticida', label: 'Insecticidas / Acaricidas', icon: '🐛' },
     { id: 'bactericida', label: 'Bactericidas', icon: '🧫' },
-    { id: 'biologico', label: 'Biológicos / Microbianos', icon: '🌿' },
+    { id: 'biologico', label: 'Biológicos / Bioinsumos', icon: '🌿' },
+    { id: 'nematicida', label: 'Nematicidas', icon: '🪱' },
     { id: 'coadyuvante', label: 'Coadyuvantes', icon: '💧' },
     { id: 'foliar', label: 'Foliares / Nutrición', icon: '🍃' }
   ];
@@ -58,7 +59,8 @@ export default function SfeCatalogModal({ isOpen, onClose, onSelectProduct, tipo
       if (categoriaActiva === 'fungicida') return cat.includes('fungicida');
       if (categoriaActiva === 'insecticida') return cat.includes('insecticida') || cat.includes('acaricida');
       if (categoriaActiva === 'bactericida') return cat.includes('bactericida');
-      if (categoriaActiva === 'biologico') return cat.includes('biológico') || cat.includes('organico') || cat.includes('bio');
+      if (categoriaActiva === 'biologico') return cat.includes('biológico') || cat.includes('bioinsumo') || cat.includes('organico') || cat.includes('bio');
+      if (categoriaActiva === 'nematicida') return cat.includes('nematicida') || sub.includes('nematicida');
       if (categoriaActiva === 'coadyuvante') return cat.includes('coadyuvante') || cat.includes('acondicionador');
       if (categoriaActiva === 'foliar') return cat.includes('foliar') || cat.includes('nutrición') || cat.includes('bioestimulante') || cat.includes('enmienda');
 
@@ -306,6 +308,18 @@ export default function SfeCatalogModal({ isOpen, onClose, onSelectProduct, tipo
                       )}
                     </div>
 
+                    {/* Presentaciones y Notas de Distribuidor */}
+                    {(p.presentaciones || p.notas) && (
+                      <div className="text-[11px] text-slate-600 bg-slate-50 p-2 rounded-xl border border-slate-150 space-y-0.5">
+                        {p.presentaciones && (
+                          <div>📦 <strong className="text-slate-800 font-semibold">Presentaciones:</strong> {p.presentaciones}</div>
+                        )}
+                        {p.notas && (
+                          <div className="text-amber-900 font-medium">💡 <span className="font-semibold">Nota:</span> {p.notas}</div>
+                        )}
+                      </div>
+                    )}
+
                     {/* Intervalos de seguridad */}
                     {(p.periodoCarencia || p.periodoReingreso) && (
                       <div className="flex items-center gap-3 text-[10px] text-slate-500 pt-1 border-t border-slate-100">
@@ -319,26 +333,54 @@ export default function SfeCatalogModal({ isOpen, onClose, onSelectProduct, tipo
                     )}
                   </div>
 
-                  {/* Acciones */}
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleCopiarFicha(p)}
-                      className="px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-[11px] font-bold flex items-center gap-1 transition active:scale-95"
-                      title="Copiar datos del producto"
-                    >
-                      {productoCopiadoId === p.id ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-emerald-600" />
-                          <span className="text-emerald-700">¡Copiado!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5 text-slate-500" />
-                          <span>Copiar Ficha</span>
-                        </>
+                  {/* Acciones y Enlaces Oficiales */}
+                  <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleCopiarFicha(p)}
+                        className="px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-[11px] font-bold flex items-center gap-1 transition active:scale-95"
+                        title="Copiar datos del producto"
+                      >
+                        {productoCopiadoId === p.id ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            <span className="text-emerald-700">¡Copiado!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Copiar</span>
+                          </>
+                        )}
+                      </button>
+
+                      {p.fuenteTecnica && (
+                        <a
+                          href={p.fuenteTecnica}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-2.5 py-1.5 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-800 text-[11px] font-black flex items-center gap-1 transition"
+                          title="Abrir Panfleto / Ficha Técnica Oficial en PDF"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-red-600" />
+                          <span>PDF</span>
+                        </a>
                       )}
-                    </button>
+
+                      {p.fuenteComercial && (
+                        <a
+                          href={p.fuenteComercial}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-2.5 py-1.5 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-800 text-[11px] font-bold flex items-center gap-1 transition"
+                          title="Visitar ficha web del distribuidor en Costa Rica"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
+                          <span>Web</span>
+                        </a>
+                      )}
+                    </div>
 
                     {onSelectProduct && (
                       <button
