@@ -156,7 +156,7 @@ export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
       element.style.position = 'fixed';
       element.style.left = '-9999px';
       element.style.top = '0';
-      element.style.width = '1000px';
+      element.style.width = '800px';
       element.style.display = 'block';
     }
 
@@ -182,13 +182,13 @@ export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
         for (let i = 0; i < blocks.length; i++) {
           const block = blocks[i];
           const canvas = await html2canvas(block, {
-            scale: 2,
+            scale: 3,
             useCORS: true,
             logging: false,
             backgroundColor: '#ffffff'
           });
 
-          const imgData = canvas.toDataURL('image/jpeg', 0.95);
+          const imgData = canvas.toDataURL('image/jpeg', 0.98);
           const blockHeightMm = (canvas.height * contentWidth) / canvas.width;
 
           // Si el cuadro o sección no cabe completo en el resto de la página, pasa a la siguiente
@@ -691,22 +691,38 @@ export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
       {/* ========================================================= */}
       {vistaModo === 'digital' && (
         <div className="space-y-4 max-w-2xl mx-auto mobile-view-container no-print">
-          {/* Tarjeta Resumen Productor */}
-          <div className="bg-gradient-to-r from-emerald-800 to-teal-800 text-white p-4 sm:p-5 rounded-3xl shadow-lg space-y-2">
+          {/* Tarjeta Resumen Productor Editorial */}
+          <div className="bg-gradient-to-br from-emerald-900 via-emerald-800 to-teal-900 text-white p-5 rounded-3xl shadow-xl space-y-3 border border-emerald-700/50">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider bg-white/20 px-2 py-0.5 rounded-full">
-                Informe Digital para Móvil
+              <span className="text-[10px] font-black uppercase tracking-wider bg-white/15 px-3 py-1 rounded-full border border-white/20">
+                🌱 Dossier Agronómico Oficial
               </span>
-              <span className="text-xs font-bold text-emerald-200">{visita?.fecha}</span>
+              <span className="text-xs font-bold text-emerald-300 bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-500/30">
+                {visita?.fecha}
+              </span>
             </div>
-            <h3 className="text-lg sm:text-xl font-black">{productor.nombre || 'Productor'}</h3>
-            <p className="text-xs text-emerald-100">
-              Finca: <strong>{finca.nombre}</strong> • {lote.cultivoNombre} ({lote.variedad || 'Estándar'})
-            </p>
-            <div className="pt-2 border-t border-white/20 flex flex-wrap items-center justify-between gap-1 text-xs">
-              <span>🏔️ Altitud: <strong>{finca.gps?.altitud || clima.altitud || 1680} msnm</strong></span>
-              <span>🌧️ Lluvia 7d: <strong>{clima.lluviaAcumulada7Dias || 0} mm</strong></span>
-              <span>Asesor: <strong>Ing. Ricardo Barquero (Col. 5896)</strong></span>
+            <div>
+              <span className="text-[10px] font-bold text-emerald-200 uppercase tracking-widest block mb-0.5">
+                Productor / Finca Evaluada
+              </span>
+              <h3 className="text-xl sm:text-2xl font-black tracking-tight">{productor.nombre || 'Productor'}</h3>
+              <p className="text-xs text-emerald-100/90 mt-1 font-medium">
+                🏡 Finca: <strong>{finca.nombre || 'Finca'}</strong> • Cultivo: <strong>{lote.cultivoNombre || 'Cultivo'}</strong> (Var: {lote.variedad || 'Estándar'})
+              </p>
+            </div>
+            <div className="pt-2.5 border-t border-white/15 grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="bg-white/10 rounded-xl p-1.5 backdrop-blur-xs">
+                <span className="text-[10px] text-emerald-200 block">🏔️ Altitud</span>
+                <strong className="text-xs">{altitudFinca} msnm</strong>
+              </div>
+              <div className="bg-white/10 rounded-xl p-1.5 backdrop-blur-xs">
+                <span className="text-[10px] text-emerald-200 block">🌧️ Lluvia 7d</span>
+                <strong className="text-xs">{lluvia7d} mm</strong>
+              </div>
+              <div className="bg-white/10 rounded-xl p-1.5 backdrop-blur-xs">
+                <span className="text-[10px] text-emerald-200 block">👨‍🌾 Asesor</span>
+                <strong className="text-xs">Col. 5896</strong>
+              </div>
             </div>
           </div>
 
@@ -1066,7 +1082,7 @@ export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
             <span className="w-5 h-5 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center text-xs font-bold">1</span>
             Datos Generales de la Asesoría
           </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 print:grid-cols-4 print-grid-4 gap-2.5 text-xs">
             <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
               <span className="text-slate-500 block text-[10px]">Productor / Cliente:</span>
               <strong className="text-slate-900 font-bold">{productor.nombre || 'N/A'}</strong>
@@ -1093,19 +1109,19 @@ export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
         </div>
         </div>{/* FIN BLOQUE 1 */}
 
-        {/* BLOQUE 2: 2. TABLA DE PARÁMETROS AUTOMÁTICOS Y OBSERVACIONES I.A. DE CLIMA Y RIESGOS FITOSANITARIOS */}
-        <div className="report-page-block print-avoid-break mb-5">
+        {/* BLOQUE 2A: TABLA DE PARÁMETROS AUTOMÁTICOS Y CONDICIONES AGROCLIMÁTICAS */}
+        <div className="report-page-block print-avoid-break mb-4">
           <div className="flex items-center justify-between border-b border-slate-200 mb-2 pb-1">
             <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
               <span className="w-5 h-5 rounded-lg bg-blue-100 text-blue-800 flex items-center justify-center text-xs font-bold">2</span>
-              Tabla de Parámetros Automáticos y Condiciones Agroclimáticas de la Finca
+              2. Tabla de Parámetros Automáticos y Condiciones Agroclimáticas de la Finca
             </h3>
             <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md">
               ⚡ Parámetros Satelitales y GPS Automáticos
             </span>
           </div>
 
-          <div className="overflow-hidden border border-slate-200 rounded-xl mb-3 shadow-xs">
+          <div className="overflow-hidden border border-slate-200 rounded-xl shadow-xs">
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
                 <tr>
@@ -1217,9 +1233,11 @@ export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
               </tbody>
             </table>
           </div>
+        </div>{/* FIN BLOQUE 2A */}
 
-          {/* OBSERVACIONES DE LA I.A. SOBRE FACTORES AGROCLIMÁTICOS Y RIESGOS FITOSANITARIOS */}
-          <div className="bg-gradient-to-br from-indigo-50/70 via-blue-50/50 to-emerald-50/40 border border-indigo-200 rounded-2xl p-3.5 text-xs space-y-2.5 shadow-xs">
+        {/* BLOQUE 2B: OBSERVACIONES Y VALORACIÓN I.A. SOBRE FACTORES AGROCLIMÁTICOS Y RIESGOS */}
+        <div className="report-page-block print-avoid-break mb-4">
+          <div className="bg-gradient-to-br from-indigo-50/70 via-blue-50/50 to-emerald-50/40 border border-indigo-200 rounded-2xl p-3 text-xs space-y-2.5 shadow-xs">
             <div className="flex items-center justify-between border-b border-indigo-200 pb-1.5">
               <span className="font-extrabold text-indigo-950 flex items-center gap-1.5 text-xs">
                 <Sparkles className="w-4 h-4 text-indigo-600" />
@@ -1394,7 +1412,7 @@ export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
           </h3>
 
           {hallazgosFiltrados.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 print-grid-2 gap-3">
               {hallazgosFiltrados.map((h, idx) => (
                 <div key={h.id || idx} className="finding-card print-avoid-break border border-slate-200 rounded-xl overflow-hidden bg-slate-50 flex flex-col shadow-xs">
                   {h.fotoAnotada ? (
