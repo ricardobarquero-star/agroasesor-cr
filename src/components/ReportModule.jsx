@@ -769,6 +769,11 @@ export default function ReportModule({ visita, onOpenAi }) {
                           {(app.ordenMezcla || []).map((l, li) => (
                             <li key={li}>
                               <strong>{l.producto}</strong> — {l.dosis} ({l.fracIrac || l.tipo})
+                              {l.registroSfe && (
+                                <span className="text-[10px] text-emerald-800 font-bold ml-1">
+                                  • {l.registroSfe}
+                                </span>
+                              )}
                             </li>
                           ))}
                         </ol>
@@ -1244,7 +1249,14 @@ export default function ReportModule({ visita, onOpenAi }) {
                                   {idx + 1}
                                 </td>
                                 <td className="py-1 px-2 font-bold text-slate-900">
-                                  {l.producto}
+                                  <div>
+                                    <span>{l.producto}</span>
+                                    {l.registroSfe && (
+                                      <span className="block text-[9px] font-bold text-emerald-800">
+                                        🏛️ {l.registroSfe}
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="py-1 px-2 font-bold text-indigo-700 text-[11px]">
                                   {l.fracIrac || 'N/A'}

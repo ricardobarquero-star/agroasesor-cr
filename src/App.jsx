@@ -11,6 +11,7 @@ import ReportModule from './components/ReportModule';
 import AiAssistantModal from './components/AiAssistantModal';
 import SettingsModal from './components/SettingsModal';
 import SettingsView from './components/SettingsView';
+import SfeCatalogModal from './components/SfeCatalogModal';
 import { weatherService } from './services/weatherService';
 import { storageService } from './services/storageService';
 import { crAgroDatabase } from './data/crAgroDatabase';
@@ -22,6 +23,7 @@ export default function App() {
   const [showAiModal, setShowAiModal] = useState(false);
   const [aiModuleContext, setAiModuleContext] = useState('general');
   const [showSettings, setShowSettings] = useState(false);
+  const [showSfeModal, setShowSfeModal] = useState(false);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
   // Escuchar estado de conexión de red para modo 100% offline
@@ -145,6 +147,15 @@ export default function App() {
             >
               <Plus className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Nueva Visita</span>
+            </button>
+
+            <button
+              onClick={() => setShowSfeModal(true)}
+              className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 text-emerald-100"
+              title="Consultar Registro y Listas Oficiales SFE - MAG"
+            >
+              <span className="text-amber-300">🏛️</span>
+              <span className="hidden sm:inline font-bold">Listas SFE</span>
             </button>
 
             <button
@@ -379,6 +390,15 @@ export default function App() {
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
         onDataReload={() => setVisita(storageService.getVisitaActiva())}
+      />
+
+      <SfeCatalogModal
+        isOpen={showSfeModal}
+        onClose={() => setShowSfeModal(false)}
+        onSelectProduct={(p) => {
+          setActiveTab('plaguicidas');
+          setShowSfeModal(false);
+        }}
       />
 
     </div>

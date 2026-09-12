@@ -8,6 +8,7 @@ import {
 import { crAgroDatabase } from '../data/crAgroDatabase';
 import { storageService } from '../services/storageService';
 import { geminiService } from '../services/geminiService';
+import SfeCatalogModal from './SfeCatalogModal';
 
 export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
   const [semanaActiva, setSemanaActiva] = useState(1);
@@ -28,6 +29,8 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
   const [investigandoIdx, setInvestigandoIdx] = useState(null);
   const [auditandoMezcla, setAuditandoMezcla] = useState(false);
   const [resultadoAuditoria, setResultadoAuditoria] = useState(null);
+  const [mostrarCatalogoSfe, setMostrarCatalogoSfe] = useState(false);
+  const [filaSeleccionandoIdx, setFilaSeleccionandoIdx] = useState(null);
 
   const recomendaciones = visita.recomendacionesPlaguicidas || [];
   const recomendacionSemana = recomendaciones.find(r => r.semana === semanaActiva) || {
@@ -47,6 +50,9 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
     const nombre = (p.nombreComercial || '').toLowerCase();
 
     // Filtros activos por pestaña/botón de categoría
+    if (filtroCategoriaInsumo === 'sfe_oficial') {
+      return Boolean(p.registroSfe || p.registroSFE);
+    }
     if (filtroCategoriaInsumo === 'fungicida') {
       return cat.includes('fungicida') || (!cat.includes('insecticida') && !cat.includes('acaricida') && (cat.includes('biol') || p.esPersonalizado));
     }
@@ -184,6 +190,37 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
   };
 
   // Manejar selección de producto en el dropdown de plaguicidas (con limpieza estricta al digitar)
+  
+  // Seleccionar producto desde el Catálogo Oficial SFE
+  const handleSeleccionarDesdeCatalogoSfe = (p) => {
+    if (filaSeleccionandoIdx !== null && lineasMezcla[filaSeleccionandoIdx]) {
+      const nuevas = [...lineasMezcla];
+      nuevas[filaSeleccionandoIdx].esManual = false;
+      nuevas[filaSeleccionandoIdx].producto = p.nombreComercial;
+      nuevas[filaSeleccionandoIdx].tipo = p.categoria || nuevas[filaSeleccionandoIdx].tipo;
+      nuevas[filaSeleccionandoIdx].fracIrac = p.codigoFracIrac || '';
+      nuevas[filaSeleccionandoIdx].dosis = p.dosisEstandar || nuevas[filaSeleccionandoIdx].dosis;
+      nuevas[filaSeleccionandoIdx].funcion = p.blancoBiologico || p.ingredienteActivo || nuevas[filaSeleccionandoIdx].funcion;
+      nuevas[filaSeleccionandoIdx].registroSfe = p.registroSfe || p.registroSFE || '';
+      setLineasMezcla(nuevas);
+      setFilaSeleccionandoIdx(null);
+    } else {
+      const esInsecticida = (p.categoria || '').toLowerCase().includes('insecticida') || (p.categoria || '').toLowerCase().includes('acaricida');
+      const tipo = esInsecticida ? 'insecticida_acaricida' : 'fungicida_foliar';
+      setTipoMezcla(tipo);
+      setAppEditandoId(null);
+      setAlcanceApp('Toda la Finca');
+      setVolumenTanque('Estañón de 200 L');
+      setBoquilla('Cono hueco TX-4 (45 PSI)');
+      setNombreApp(tipo === 'fungicida_foliar' ? 'Mezcla Foliar: Fungicida + Nutrición' : 'Mezcla Foliar: Insecticida + Acaricida');
+      setLineasMezcla([
+        { orden: 1, tipo: 'Acondicionador', producto: 'Carrier', dosis: '100 - 150 cc / 200 L', fracIrac: 'Acondicionador', funcion: 'Regulación de pH 5.0 y dureza', esManual: false, registroSfe: 'Reg. SFE No. AC-102' },
+        { orden: 2, tipo: p.categoria || (esInsecticida ? 'Insecticida' : 'Fungicida'), producto: p.nombreComercial, dosis: p.dosisEstandar || '', fracIrac: p.codigoFracIrac || '', funcion: p.blancoBiologico || p.ingredienteActivo || '', esManual: false, registroSfe: p.registroSfe || p.registroSFE || '' }
+      ]);
+      setMostrarModalApp(true);
+    }
+  };
+
   const handleSeleccionarPlaguicida = (valor, idx) => {
     const nuevas = [...lineasMezcla];
     if (valor === '__manual__') {
@@ -205,6 +242,7 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
         nuevas[idx].fracIrac = encontrado.codigoFracIrac || '';
         nuevas[idx].dosis = encontrado.dosisEstandar || nuevas[idx].dosis;
         nuevas[idx].funcion = encontrado.blancoBiologico || encontrado.ingredienteActivo || nuevas[idx].funcion;
+        nuevas[idx].registroSfe = encontrado.registroSfe || encontrado.registroSFE || '';
       }
     }
     setLineasMezcla(nuevas);
@@ -367,6 +405,38 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
             <span>Nueva Semana</span>
           </button>
         </div>
+      </div>
+
+      
+      {/* BANNER DESTACADO: CATÁLOGO Y LISTAS OFICIALES SFE - MAG */}
+      <div className="bg-gradient-to-r from-emerald-900 via-teal-950 to-slate-900 text-white p-4 rounded-2xl shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border border-emerald-700/50">
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="px-2 py-0.5 rounded-md bg-amber-400 text-slate-950 font-black text-[10px] tracking-wider uppercase shadow-xs">
+              OFICIAL MAG COSTA RICA
+            </span>
+            <h3 className="font-extrabold text-sm sm:text-base flex items-center gap-1.5">
+              🏛️ Catálogo Oficial Fitosanitario SFE (Costa Rica)
+            </h3>
+            <span className="px-2 py-0.5 rounded-full bg-emerald-500/30 text-emerald-200 border border-emerald-400/30 text-[10px] font-bold">
+              {todosPlaguicidas.length} Registros Oficiales
+            </span>
+          </div>
+          <p className="text-xs text-emerald-100/90 max-w-xl leading-relaxed">
+            Consulte las listas oficiales del Servicio Fitosanitario del Estado (SFE): Fungicidas, Insecticidas, Acaricidas, Bactericidas, Biológicos, Coadyuvantes y Foliares con números de registro, grupos FRAC/IRAC, dosis autorizadas y períodos de carencia.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setFilaSeleccionandoIdx(null);
+            setMostrarCatalogoSfe(true);
+          }}
+          className="px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs flex items-center gap-2 shadow-md transition active:scale-95 shrink-0"
+        >
+          <span>🏛️ Consultar Listas del SFE</span>
+          <span className="bg-slate-950/20 px-2 py-0.5 rounded-md text-[10px]">{todosPlaguicidas.length}</span>
+        </button>
       </div>
 
       {/* Selector de Semanas */}
@@ -630,7 +700,14 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                           </span>
                         </td>
                         <td className="py-2 px-2 font-extrabold text-slate-900">
-                          {l.producto}
+                          <div className="flex flex-col">
+                            <span>{l.producto}</span>
+                            {l.registroSfe && (
+                              <span className="text-[9px] font-black text-emerald-800 bg-emerald-50 px-1 py-0.2 rounded w-fit border border-emerald-200">
+                                🏛️ {l.registroSfe}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-2 px-2 text-slate-500">
                           <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
@@ -678,6 +755,17 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
       </div>
 
       {/* ========================================================= */}
+      {/* MODAL VISOR DEL CATÁLOGO OFICIAL SFE */}
+      <SfeCatalogModal
+        isOpen={mostrarCatalogoSfe}
+        onClose={() => {
+          setMostrarCatalogoSfe(false);
+          setFilaSeleccionandoIdx(null);
+        }}
+        onSelectProduct={handleSeleccionarDesdeCatalogoSfe}
+        tipoMezclaContexto={tipoMezcla}
+      />
+
       {/* MODAL PARA AGREGAR APLICACIÓN FITOSANITARIA */}
       {/* ========================================================= */}
       {mostrarModalApp && (
@@ -786,6 +874,7 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                     <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mr-1">Filtrar Insumos:</span>
                     {[
                       { id: 'todos', label: 'Todos' },
+                      { id: 'sfe_oficial', label: '🏛️ Registro SFE' },
                       { id: 'fungicida', label: '🍄 Fungicidas' },
                       { id: 'insecticida', label: '🐛 Insecticidas/Ácaros' },
                       { id: 'bactericida', label: '🧫 Bactericidas' },
@@ -853,10 +942,21 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                             <option value="">-- Toque para desplegar catálogo ({productosFiltradosMezcla.length} insumos) --</option>
                             {productosFiltradosMezcla.map((p, i) => (
                               <option key={i} value={p.nombreComercial}>
-                                {p.nombreComercial} ({p.categoria || ''} {p.codigoFracIrac ? `• ${p.codigoFracIrac}` : ''})
+                                {p.registroSfe ? `[${p.registroSfe.replace(' - MAG', '')}] ` : ''}{p.nombreComercial} ({p.categoria || ''} {p.codigoFracIrac ? `• ${p.codigoFracIrac}` : ''})
                               </option>
                             ))}
                           </select>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFilaSeleccionandoIdx(idx);
+                              setMostrarCatalogoSfe(true);
+                            }}
+                            className="p-2 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-300 transition shrink-0"
+                            title="Explorar en Catálogo SFE"
+                          >
+                            <span className="text-[11px] font-black">🏛️ SFE</span>
+                          </button>
                           <button
                             type="button"
                             onClick={() => {
