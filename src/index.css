@@ -54,6 +54,27 @@
   overflow: hidden;
 }
 
+/* Modo de captura de alta fidelidad para generación de PDF */
+.pdf-capture-active {
+  background-color: #ffffff !important;
+}
+
+.pdf-capture-active .report-editorial-page {
+  width: 816px !important;
+  max-width: 816px !important;
+  min-width: 816px !important;
+  min-height: 1056px !important;
+  max-height: 1056px !important;
+  box-shadow: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  padding: 28px 36px 24px 36px !important;
+  box-sizing: border-box !important;
+  background-color: #ffffff !important;
+  overflow: hidden !important;
+}
+
 /* Contenedores de fotografías científicas en HD (Formato Revista) */
 .scientific-photo-container {
   width: 100%;

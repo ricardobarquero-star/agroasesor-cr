@@ -187,17 +187,31 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
     const container = reportRef.current;
 
     const estabaOculto = container.classList.contains('hidden');
-    if (estabaOculto) {
-      container.classList.remove('hidden');
-      container.style.position = 'fixed';
-      container.style.left = '-9999px';
-      container.style.top = '0';
-      container.style.width = '816px';
-      container.style.display = 'block';
-    }
+    const originalStyles = {
+      position: container.style.position,
+      left: container.style.left,
+      top: container.style.top,
+      width: container.style.width,
+      maxWidth: container.style.maxWidth,
+      minWidth: container.style.minWidth,
+      display: container.style.display,
+      zIndex: container.style.zIndex
+    };
+
+    // Activar contenedor a ancho estandarizado de 816px (8.5 pulgadas a 96 DPI)
+    container.classList.remove('hidden');
+    container.classList.add('pdf-capture-active');
+    container.style.position = 'fixed';
+    container.style.left = '-9999px';
+    container.style.top = '0';
+    container.style.width = '816px';
+    container.style.maxWidth = '816px';
+    container.style.minWidth = '816px';
+    container.style.display = 'block';
+    container.style.zIndex = '-9999';
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => setTimeout(resolve, 250));
 
       const pdf = new jsPDF('p', 'mm', 'letter');
       const pageWidth = pdf.internal.pageSize.getWidth();   // ~215.9 mm
@@ -214,7 +228,8 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
           logging: false
         });
         const imgData = canvas.toDataURL('image/jpeg', 0.98);
-        pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight, undefined, 'FAST');
+        const renderH = (canvas.height * pageWidth) / canvas.width;
+        pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, Math.min(renderH, pageHeight), undefined, 'FAST');
       } else {
         for (let i = 0; i < pageElements.length; i++) {
           if (i > 0) {
@@ -229,8 +244,22 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
           });
 
           const imgData = canvas.toDataURL('image/jpeg', 0.98);
-          // Cada página editorial entra 1-a-1 sin división de cuadros, tablas ni títulos
-          pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight, undefined, 'FAST');
+          const canvasW = canvas.width;
+          const canvasH = canvas.height;
+
+          // Cálculo proporcional para evitar cualquier distorsión o aplastamiento
+          let renderW = pageWidth;
+          let renderH = (canvasH * pageWidth) / canvasW;
+          let posX = 0;
+          let posY = 0;
+
+          if (renderH > pageHeight) {
+            renderH = pageHeight;
+            renderW = (canvasW * pageHeight) / canvasH;
+            posX = (pageWidth - renderW) / 2;
+          }
+
+          pdf.addImage(imgData, 'JPEG', posX, posY, renderW, renderH, undefined, 'FAST');
         }
       }
 
@@ -243,14 +272,18 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
 
       return { pdf, pdfBlob, pdfFile, fileName };
     } finally {
+      container.classList.remove('pdf-capture-active');
       if (estabaOculto) {
         container.classList.add('hidden');
-        container.style.position = '';
-        container.style.left = '';
-        container.style.top = '';
-        container.style.width = '';
-        container.style.display = '';
       }
+      container.style.position = originalStyles.position;
+      container.style.left = originalStyles.left;
+      container.style.top = originalStyles.top;
+      container.style.width = originalStyles.width;
+      container.style.maxWidth = originalStyles.maxWidth;
+      container.style.minWidth = originalStyles.minWidth;
+      container.style.display = originalStyles.display;
+      container.style.zIndex = originalStyles.zIndex;
     }
   };
 
