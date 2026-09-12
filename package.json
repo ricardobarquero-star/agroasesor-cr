@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "html2canvas": "^1.4.1",
+    "html2canvas-pro": "^2.4.2",
     "jspdf": "^4.2.1",
     "lucide-react": "^1.43.0",
     "react": "^19.2.8",
@@ -25,7 +26,7 @@
     "tailwindcss": "^4.3.3",
     "vite": "^8.2.2"
   },
-  "author": "Ing. Agr. Ricardo Manuel Barquero Chac\u00f3n <h7coordinador@gmail.com>",
-  "copyright": "Copyright \u00a9 2026 Ricardo Manuel Barquero Chac\u00f3n. Todos los derechos reservados.",
-  "license": "Proprietary - Propiedad Intelectual Exclusiva de Ricardo Manuel Barquero Chac\u00f3n"
+  "author": "Ing. Agr. Ricardo Manuel Barquero Chacón <h7coordinador@gmail.com>",
+  "copyright": "Copyright © 2026 Ricardo Manuel Barquero Chacón. Todos los derechos reservados.",
+  "license": "Proprietary - Propiedad Intelectual Exclusiva de Ricardo Manuel Barquero Chacón"
 }

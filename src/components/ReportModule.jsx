@@ -6,7 +6,7 @@ import {
   Building2, Layers, FolderOpen, Thermometer, Activity, Compass,
   Sliders, ShieldCheck, Sun, Info, Paperclip, X
 } from 'lucide-react';
-import html2canvas from 'html2canvas';
+import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
 import { crAgroDatabase } from '../data/crAgroDatabase';
 import { storageService } from '../services/storageService';
@@ -290,28 +290,30 @@ export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
     setMensajeEstado('Preparando archivo PDF para adjuntar...');
     try {
       const res = await generarPdfBlobYArchivo();
-      if (!res) return;
-      const { pdf, pdfFile, fileName } = res;
-
-      if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
-        await navigator.share({
-          files: [pdfFile],
-          title: `Informe Agronómico - ${finca.nombre || 'Finca'}`,
-          text: `Estimado(a) ${productor.nombre || 'Productor'}: Adjunto informe técnico oficial de la visita del ${visita?.fecha}.`
-        });
-      } else {
-        // Fallback para computadoras u otros navegadores
-        pdf.save(fileName);
-        setModalDescargaInfo({
-          abierto: true,
-          archivo: fileName,
-          destino: 'general'
-        });
+      if (res) {
+        const { pdf, pdfFile, fileName } = res;
+        if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+          await navigator.share({
+            files: [pdfFile],
+            title: `Informe Agronómico - ${finca.nombre || 'Finca'}`,
+            text: `Estimado(a) ${productor.nombre || 'Productor'}: Adjunto informe técnico oficial de la visita del ${visita?.fecha || ''}.`
+          });
+          return;
+        } else {
+          pdf.save(fileName);
+          setModalDescargaInfo({
+            abierto: true,
+            archivo: fileName,
+            destino: 'general'
+          });
+          return;
+        }
       }
+      window.print();
     } catch (err) {
       if (err.name !== 'AbortError') {
-        console.error('Error compartiendo PDF:', err);
-        alert('No se pudo abrir el selector para compartir: ' + err.message);
+        console.error('Error compartiendo PDF nativo:', err);
+        window.print();
       }
     } finally {
       setGenerandoPdf(false);
@@ -319,28 +321,34 @@ export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
     }
   };
 
-  // WHATSAPP CON PDF: Comparte el archivo PDF directamente por WhatsApp
+  // WHATSAPP CON PDF: Comparte el archivo PDF directamente por WhatsApp o abre chat oficial
   const handleCompartirWhatsAppConPDF = async () => {
     setGenerandoPdf(true);
-    setMensajeEstado('Preparando informe PDF para WhatsApp...');
+    setMensajeEstado('Preparando informe para WhatsApp...');
+    let res = null;
     try {
-      const res = await generarPdfBlobYArchivo();
-      if (!res) return;
-      const { pdf, pdfFile, fileName } = res;
+      res = await generarPdfBlobYArchivo();
+    } catch (pdfErr) {
+      console.warn('Aviso generando PDF para WhatsApp, continuando con mensaje oficial:', pdfErr);
+    }
 
+    try {
       const telefonoLimpio = (productor.telefono || '').replace(/[^0-9]/g, '');
       const textoMensaje = generarTextoCompletoWhatsApp();
 
       // En móviles que soportan compartir archivos nativamente (iOS / Android)
-      if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+      if (res?.pdfFile && navigator.canShare && navigator.canShare({ files: [res.pdfFile] })) {
         await navigator.share({
-          files: [pdfFile],
+          files: [res.pdfFile],
           title: `Informe Agronómico - ${finca.nombre || 'Finca'}`,
-          text: `🌱 *AGROASESOR PRO CR - INFORME OFICIAL*\nProductor: ${productor.nombre}\nFinca: ${finca.nombre} (${visita?.fecha})\n\nAdjunto el informe técnico completo en documento PDF.`
+          text: `🌱 *AGROASESOR PRO CR - INFORME OFICIAL*\nProductor: ${productor.nombre || 'Cliente'}\nFinca: ${finca.nombre || 'Finca'} (${visita?.fecha || ''})\n\nAdjunto informe técnico oficial en formato PDF.`
         });
       } else {
-        // En PC o navegador web: descargar el PDF y abrir la conversación de WhatsApp
-        pdf.save(fileName);
+        // En PC o navegador web: descargar el PDF si existe y abrir WhatsApp
+        const fileName = res?.fileName || `Informe_${(finca.nombre || 'Finca').replace(/\s+/g, '_')}_${visita?.fecha || '2026'}.pdf`;
+        if (res?.pdf) {
+          res.pdf.save(fileName);
+        }
         await navigator.clipboard.writeText(textoMensaje).catch(() => {});
 
         const url = telefonoLimpio 
@@ -357,6 +365,12 @@ export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
     } catch (err) {
       if (err.name !== 'AbortError') {
         console.error('Error enviando por WhatsApp:', err);
+        const textoMensaje = generarTextoCompletoWhatsApp();
+        const telefonoLimpio = (productor.telefono || '').replace(/[^0-9]/g, '');
+        const url = telefonoLimpio 
+          ? `https://api.whatsapp.com/send?phone=${telefonoLimpio}&text=${encodeURIComponent(textoMensaje)}`
+          : `https://api.whatsapp.com/send?text=${encodeURIComponent(textoMensaje)}`;
+        window.open(url, '_blank');
       }
     } finally {
       setGenerandoPdf(false);
@@ -364,35 +378,41 @@ export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
     }
   };
 
-  // CORREO CON PDF: Comparte el archivo PDF directamente por Correo
+  // CORREO CON PDF: Comparte el archivo PDF directamente por Correo o abre cliente oficial
   const handleEnviarCorreoConPDF = async () => {
     setGenerandoPdf(true);
-    setMensajeEstado('Preparando informe PDF para Correo...');
+    setMensajeEstado('Preparando informe para Correo...');
+    let res = null;
     try {
-      const res = await generarPdfBlobYArchivo();
-      if (!res) return;
-      const { pdf, pdfFile, fileName } = res;
+      res = await generarPdfBlobYArchivo();
+    } catch (pdfErr) {
+      console.warn('Aviso generando PDF para Correo:', pdfErr);
+    }
 
+    try {
       const destinatario = productor.email || 'h7coordinador@gmail.com';
       const cc = 'h7coordinador@gmail.com';
       const asunto = `Informe Agronómico Oficial - ${finca.nombre || 'Finca'} - Ing. Ricardo Barquero`;
       const cuerpo = `Estimado(a) ${productor.nombre || 'Productor'}:\n\n` +
-        `Adjunto el informe de asesoría agronómica correspondiente a la visita del ${visita?.fecha} en la finca ${finca.nombre || ''}.\n\n` +
+        `Adjunto el informe de asesoría agronómica correspondiente a la visita del ${visita?.fecha || ''} en la finca ${finca.nombre || ''}.\n\n` +
         `Atentamente,\n` +
         `Ing. Agr. Ricardo Manuel Barquero Chacón\n` +
         `Colegiado No. 5896 • Ingeniero Agrónomo\n` +
         `Tel: +506 8894-5662 | Coronado, San José, Costa Rica`;
 
       // En móviles con soporte de archivos nativos
-      if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+      if (res?.pdfFile && navigator.canShare && navigator.canShare({ files: [res.pdfFile] })) {
         await navigator.share({
-          files: [pdfFile],
+          files: [res.pdfFile],
           title: asunto,
           text: cuerpo
         });
       } else {
-        // En PC: descargar el archivo PDF y abrir el correo
-        pdf.save(fileName);
+        // En PC: descargar archivo PDF si existe y abrir cliente de correo
+        const fileName = res?.fileName || `Informe_${(finca.nombre || 'Finca').replace(/\s+/g, '_')}_${visita?.fecha || '2026'}.pdf`;
+        if (res?.pdf) {
+          res.pdf.save(fileName);
+        }
         window.location.href = `mailto:${destinatario}?cc=${cc}&subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
 
         setModalDescargaInfo({
@@ -1422,22 +1442,30 @@ export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
         </div>{/* FIN BLOQUE 4 */}
 
         {/* 5. PROGRAMA NUTRICIONAL Y FERTIRRIEGO */}
-        <div className="mb-6">
-          <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 mb-3 pb-1 border-b border-slate-200 flex items-center gap-1.5 print-avoid-break">
-            <span className="w-5 h-5 rounded-lg bg-blue-100 text-blue-800 flex items-center justify-center text-xs font-bold">5</span>
-            Programa Nutricional: Fertirriego y Enmiendas por Semanas
-          </h3>
-
+        <div className="mb-6 space-y-4">
           {recFertirriegoFiltradas.length > 0 ? (
             recFertirriegoFiltradas.map((semana, sIdx) => (
-              <div key={sIdx} className="report-page-block event-card print-avoid-break mb-4 bg-slate-50 rounded-2xl border border-slate-200 p-3.5 sm:p-4 space-y-3">
-                <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
-                  <h4 className="font-extrabold text-xs sm:text-sm text-blue-950">
-                    {semana.titulo || `Semana ${semana.semana}`}
-                  </h4>
-                  <span className="text-[11px] font-bold text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
-                    Semana {semana.semana}
-                  </span>
+              <div key={sIdx} className="report-page-block event-card print-avoid-break mb-5 bg-slate-50/70 rounded-2xl border-2 border-blue-200 p-4 sm:p-5 space-y-3 shadow-xs">
+                {/* ENCABEZADO INTEGRADO DE SECCIÓN: PROHIBIDO CORTAR TÍTULO DE CUADRO */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b-2 border-blue-600 pb-2 mb-2 gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-6 h-6 rounded-lg bg-blue-800 text-white flex items-center justify-center text-xs font-black shadow-xs shrink-0">
+                      5
+                    </span>
+                    <div>
+                      <h3 className="font-black text-xs sm:text-sm text-blue-950 uppercase tracking-wide">
+                        5. Programa Nutricional: Fertirriego y Enmiendas por Semanas
+                      </h3>
+                      <span className="text-[11px] font-bold text-blue-700 block">
+                        {semana.titulo || `Semana ${semana.semana}`} {sIdx > 0 ? '• (Continuación del Programa Nutricional)' : '• Prescripción Técnica'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 self-start sm:self-auto">
+                    <span className="text-xs font-black text-blue-900 bg-blue-100 px-3 py-1 rounded-xl border border-blue-300 shadow-2xs">
+                      Semana {semana.semana}
+                    </span>
+                  </div>
                 </div>
 
                 {(semana.eventos || []).map((ev, eIdx) => (
@@ -1521,29 +1549,43 @@ export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
               </div>
             ))
           ) : (
-            <p className="text-xs text-slate-500 italic bg-slate-50 p-3 rounded-xl border print-avoid-break">
-              No se han programado cuadros de fertirriego para el alcance seleccionado.
-            </p>
+            <div className="report-page-block print-avoid-break mb-5 bg-slate-50 rounded-2xl border border-slate-200 p-4">
+              <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 mb-2 pb-1 border-b border-slate-200 flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-lg bg-blue-100 text-blue-800 flex items-center justify-center text-xs font-bold">5</span>
+                5. Programa Nutricional: Fertirriego y Enmiendas por Semanas
+              </h3>
+              <p className="text-xs text-slate-500 italic">
+                No se han programado cuadros de fertirriego para el alcance seleccionado.
+              </p>
+            </div>
           )}
         </div>
 
         {/* 6. PROGRAMA FITOSANITARIO FOLIAR */}
-        <div className="mb-6">
-          <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 mb-3 pb-1 border-b border-slate-200 flex items-center gap-1.5 print-avoid-break">
-            <span className="w-5 h-5 rounded-lg bg-purple-100 text-purple-800 flex items-center justify-center text-xs font-bold">6</span>
-            Programa Fitosanitario Foliar y Estrategia FRAC / IRAC
-          </h3>
-
+        <div className="mb-6 space-y-4">
           {recPlaguicidasFiltradas.length > 0 ? (
             recPlaguicidasFiltradas.map((semana, sIdx) => (
-              <div key={sIdx} className="report-page-block app-card print-avoid-break mb-4 bg-slate-50 rounded-2xl border border-slate-200 p-3.5 sm:p-4 space-y-3">
-                <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
-                  <h4 className="font-extrabold text-xs sm:text-sm text-purple-950">
-                    {semana.titulo || `Semana ${semana.semana}`}
-                  </h4>
-                  <span className="text-[11px] font-bold text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
-                    Semana {semana.semana}
-                  </span>
+              <div key={sIdx} className="report-page-block app-card print-avoid-break mb-5 bg-slate-50/70 rounded-2xl border-2 border-purple-200 p-4 sm:p-5 space-y-3 shadow-xs">
+                {/* ENCABEZADO INTEGRADO DE SECCIÓN: PROHIBIDO CORTAR TÍTULO DE CUADRO */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b-2 border-purple-600 pb-2 mb-2 gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-6 h-6 rounded-lg bg-purple-800 text-white flex items-center justify-center text-xs font-black shadow-xs shrink-0">
+                      6
+                    </span>
+                    <div>
+                      <h3 className="font-black text-xs sm:text-sm text-purple-950 uppercase tracking-wide">
+                        6. Programa Fitosanitario Foliar y Estrategia FRAC / IRAC
+                      </h3>
+                      <span className="text-[11px] font-bold text-purple-700 block">
+                        {semana.titulo || `Semana ${semana.semana}`} {sIdx > 0 ? '• (Continuación del Programa Fitosanitario)' : '• Prescripción Técnica Segregada'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 self-start sm:self-auto">
+                    <span className="text-xs font-black text-purple-900 bg-purple-100 px-3 py-1 rounded-xl border border-purple-300 shadow-2xs">
+                      Semana {semana.semana}
+                    </span>
+                  </div>
                 </div>
 
                 {semana.sinAplicacion ? (
@@ -1636,9 +1678,15 @@ export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
               </div>
             ))
           ) : (
-            <p className="text-xs text-slate-500 italic bg-slate-50 p-3 rounded-xl border print-avoid-break">
-              No se han estructurado aplicaciones fitosanitarias para el alcance seleccionado.
-            </p>
+            <div className="report-page-block print-avoid-break mb-5 bg-slate-50 rounded-2xl border border-slate-200 p-4">
+              <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 mb-2 pb-1 border-b border-slate-200 flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-lg bg-purple-100 text-purple-800 flex items-center justify-center text-xs font-bold">6</span>
+                6. Programa Fitosanitario Foliar y Estrategia FRAC / IRAC
+              </h3>
+              <p className="text-xs text-slate-500 italic">
+                No se han estructurado aplicaciones fitosanitarias para el alcance seleccionado.
+              </p>
+            </div>
           )}
         </div>
 
