@@ -1,10 +1,8 @@
 import React, { useRef, useState } from 'react';
 import { 
-  FileText, Download, Share2, Mail, CheckCircle2, Phone, 
-  MapPin, Calendar, CloudRain, Droplet, ShieldAlert, Sparkles, 
-  Printer, ArrowRight, UserCheck, AlertTriangle, Check, Filter,
-  Building2, Layers, FolderOpen, Thermometer, Activity, Compass,
-  Sliders, ShieldCheck, Sun, Info, Paperclip, X
+  FileText, Download, Share2, Mail, CheckCircle2, 
+  CloudRain, Sparkles, Printer, Filter, FolderOpen, 
+  Activity, Paperclip, X, ZoomIn
 } from 'lucide-react';
 import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
@@ -13,41 +11,17 @@ import { storageService } from '../services/storageService';
 import { calcularDosisDual } from '../utils/doseCalculator';
 import { agroEpidemiologyService } from '../services/agroEpidemiologyService';
 
-export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
-  if (!visita || !visita?.id) {
-    return (
-      <div className="max-w-2xl mx-auto my-12 p-8 bg-white rounded-3xl border border-slate-200 shadow-sm text-center space-y-4">
-        <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center mx-auto text-3xl border border-emerald-200">
-          📋
-        </div>
-        <h3 className="text-xl font-extrabold text-slate-800">
-          No hay una visita activa seleccionada
-        </h3>
-        <p className="text-sm text-slate-600 max-w-md mx-auto">
-          Para visualizar y generar el informe agronómico oficial, seleccione una visita existente o cree una nueva en el módulo de Visitas.
-        </p>
-        {onNavegarTab && (
-          <button
-            type="button"
-            onClick={() => onNavegarTab('visitas')}
-            className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-2xl shadow-md active:scale-95 transition text-sm"
-          >
-            Ir al Módulo de Visitas
-          </button>
-        )}
-      </div>
-    );
-  }
+export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab }) {
   const reportRef = useRef(null);
   const [generandoPdf, setGenerandoPdf] = useState(false);
   const [mensajeEstado, setMensajeEstado] = useState('');
   const [guardadoEnExpediente, setGuardadoEnExpediente] = useState(false);
   const [modalDescargaInfo, setModalDescargaInfo] = useState({ abierto: false, archivo: '', destino: '' });
+  const [modalFotoHd, setModalFotoHd] = useState(null);
   
   // Filtro de alcance para el reporte (Toda la Finca o Lote Específico)
   const [filtroLote, setFiltroLote] = useState('todos');
   const [vistaModo, setVistaModo] = useState('digital'); // 'digital' (Móvil/WhatsApp) o 'documento' (A4 Oficial)
-  const [copiadoWhatsapp, setCopiadoWhatsapp] = useState(false);
   const perfilIngeniero = storageService.getPerfilIngeniero();
 
   const productor = visita?.productor || {};
@@ -77,6 +51,24 @@ export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
 
   // Análisis de I.A. sobre Factores Climáticos y Riesgos Fitosanitarios (enfermedades y plagas propensas)
   const analisisClimaIa = React.useMemo(() => {
+    if (!visita || !visita?.id) {
+      return {
+        cultivo: 'Cultivo',
+        variedad: 'Estándar',
+        temperatura: 19,
+        humedadRelativa: 80,
+        lluviaSemanal: 0,
+        altitud: 1680,
+        pisoAltitudinal: 'Piso Medio',
+        descAltitud: 'Condiciones templadas.',
+        impactoFisiologico: 'Condiciones climáticas bajo monitoreo agronómico continuo.',
+        enfermedadesPropensas: [],
+        insectosAcarosPropensos: [],
+        medidasPreventivas: 'Monitoreo preventivo semanal en campo.',
+        resumenEjecutivo: 'Monitoreo de parámetros climáticos activo.',
+        estadoAprobacion: 'aprobado'
+      };
+    }
     try {
       if (visita?.analisisEpidemiologico?.impactoFisiologico && visita?.analisisEpidemiologico?.enfermedadesPropensas?.length > 0) {
         return visita?.analisisEpidemiologico;
@@ -110,9 +102,35 @@ export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
         estadoAprobacion: 'aprobado'
       };
     }
-  }, [visita?.analisisEpidemiologico, lote?.cultivoNombre, lote?.variedad, tempFinca, humedadFinca, lluvia7d, altitudFinca, filtroLote, visita?.hallazgos]);
+  }, [visita, lote?.cultivoNombre, lote?.variedad, tempFinca, humedadFinca, lluvia7d, altitudFinca, filtroLote]);
 
-  // Mediciones de suelo en campo
+  // Guard de visita seleccionada (después de todos los React Hooks)
+  if (!visita || !visita?.id) {
+    return (
+      <div className="max-w-2xl mx-auto my-12 p-8 bg-white rounded-3xl border border-slate-200 shadow-sm text-center space-y-4">
+        <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center mx-auto text-3xl border border-emerald-200">
+          📋
+        </div>
+        <h3 className="text-xl font-extrabold text-slate-800">
+          No hay una visita activa seleccionada
+        </h3>
+        <p className="text-sm text-slate-600 max-w-md mx-auto">
+          Para visualizar y generar el informe agronómico oficial, seleccione una visita existente o cree una nueva en el módulo de Visitas.
+        </p>
+        {onNavegarTab && (
+          <button
+            type="button"
+            onClick={() => onNavegarTab('visitas')}
+            className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-2xl shadow-md active:scale-95 transition text-sm"
+          >
+            Ir al Módulo de Visitas
+          </button>
+        )}
+      </div>
+    );
+  }
+
+    // Mediciones de suelo en campo
   const medicionesSuelo = (visita?.medicionesSuelo || []).filter(m => m.estadoAprobacion !== 'eliminado');
   const cultivoDef = crAgroDatabase.cultivos.find(c => c.id === lote.cultivoId || c.nombre.toLowerCase() === (lote.cultivoNombre || '').toLowerCase()) || crAgroDatabase.cultivos[0];
 
@@ -145,76 +163,74 @@ export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
     return { ...semana, aplicaciones: appsFiltradas };
   }).filter(semana => semana.sinAplicacion || (semana.aplicaciones && semana.aplicaciones.length > 0));
 
-  // Generar Blob y File del PDF asegurando captura sin cortes entre páginas
+  // Agrupación y paginación inteligente de recomendaciones (Estrictamente 1 página por semana)
+  const semanasFert = recFertirriegoFiltradas.map(s => s.semana || 1);
+  const semanasPlag = recPlaguicidasFiltradas.map(s => s.semana || 1);
+  const todasSemanas = Array.from(new Set([...semanasFert, ...semanasPlag])).sort((a, b) => a - b);
+  const semanasParaReporte = todasSemanas.length > 0 ? todasSemanas : [1];
+
+  // Paginación inteligente de hallazgos para formato Revista Científica (proporción HD nativa sin recortes)
+  const chunkHallazgos = (items) => {
+    if (items.length <= 4) {
+      return [items];
+    }
+    return [items.slice(0, 2), items.slice(2, 6)];
+  };
+  const paginasHallazgos = chunkHallazgos(hallazgosFiltrados);
+
+  // Conteo total de páginas del informe oficial
+  const totalPaginas = 1 + paginasHallazgos.length + semanasParaReporte.length;
+
+  // Generar Blob y File del PDF asegurando captura página-por-página en 300 DPI (CERO CORTES)
   const generarPdfBlobYArchivo = async () => {
     if (!reportRef.current) return null;
-    const element = reportRef.current;
+    const container = reportRef.current;
 
-    const estabaOculto = element.classList.contains('hidden');
+    const estabaOculto = container.classList.contains('hidden');
     if (estabaOculto) {
-      element.classList.remove('hidden');
-      element.style.position = 'fixed';
-      element.style.left = '-9999px';
-      element.style.top = '0';
-      element.style.width = '800px';
-      element.style.display = 'block';
+      container.classList.remove('hidden');
+      container.style.position = 'fixed';
+      container.style.left = '-9999px';
+      container.style.top = '0';
+      container.style.width = '816px';
+      container.style.display = 'block';
     }
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await new Promise(resolve => setTimeout(resolve, 200));
 
       const pdf = new jsPDF('p', 'mm', 'letter');
       const pageWidth = pdf.internal.pageSize.getWidth();   // ~215.9 mm
       const pageHeight = pdf.internal.pageSize.getHeight(); // ~279.4 mm
-      const margin = 8;
-      const contentWidth = pageWidth - (margin * 2);        // ~199.9 mm
-      const maxPageY = pageHeight - margin;                 // ~271.4 mm
 
-      const blocks = Array.from(element.querySelectorAll('.report-page-block'));
+      // Seleccionar todas las páginas editoriales maquetadas individualmente
+      const pageElements = Array.from(container.querySelectorAll('.report-editorial-page'));
 
-      if (blocks.length === 0) {
-        const canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
-        const imgData = canvas.toDataURL('image/jpeg', 0.95);
-        const pdfHeight = (canvas.height * contentWidth) / canvas.width;
-        pdf.addImage(imgData, 'JPEG', margin, margin, contentWidth, Math.min(pdfHeight, maxPageY - margin));
+      if (pageElements.length === 0) {
+        const canvas = await html2canvas(container, {
+          scale: 2.8,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          logging: false
+        });
+        const imgData = canvas.toDataURL('image/jpeg', 0.98);
+        pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight, undefined, 'FAST');
       } else {
-        let currentY = margin;
-        for (let i = 0; i < blocks.length; i++) {
-          const block = blocks[i];
-          const canvas = await html2canvas(block, {
-            scale: 3,
+        for (let i = 0; i < pageElements.length; i++) {
+          if (i > 0) {
+            pdf.addPage('letter', 'p');
+          }
+          const pageEl = pageElements[i];
+          const canvas = await html2canvas(pageEl, {
+            scale: 2.8, // 300 DPI de definición vectorial para textos e imágenes nítidas
             useCORS: true,
             logging: false,
             backgroundColor: '#ffffff'
           });
 
           const imgData = canvas.toDataURL('image/jpeg', 0.98);
-          const blockHeightMm = (canvas.height * contentWidth) / canvas.width;
-
-          // Si el cuadro o sección no cabe completo en el resto de la página, pasa a la siguiente
-          if (currentY > margin && (currentY + blockHeightMm > maxPageY)) {
-            pdf.addPage();
-            currentY = margin;
-          }
-
-          if (blockHeightMm > (maxPageY - margin)) {
-            let hRestante = blockHeightMm;
-            let offsetImg = 0;
-            while (hRestante > 0) {
-              if (offsetImg > 0) {
-                pdf.addPage();
-                currentY = margin;
-              }
-              const chunkHeight = Math.min(hRestante, maxPageY - currentY);
-              pdf.addImage(imgData, 'JPEG', margin, currentY - offsetImg, contentWidth, blockHeightMm);
-              hRestante -= chunkHeight;
-              offsetImg += chunkHeight;
-              currentY += chunkHeight;
-            }
-          } else {
-            pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, blockHeightMm);
-            currentY += blockHeightMm + 3.5;
-          }
+          // Cada página editorial entra 1-a-1 sin división de cuadros, tablas ni títulos
+          pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight, undefined, 'FAST');
         }
       }
 
@@ -228,12 +244,12 @@ export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
       return { pdf, pdfBlob, pdfFile, fileName };
     } finally {
       if (estabaOculto) {
-        element.classList.add('hidden');
-        element.style.position = '';
-        element.style.left = '';
-        element.style.top = '';
-        element.style.width = '';
-        element.style.display = '';
+        container.classList.add('hidden');
+        container.style.position = '';
+        container.style.left = '';
+        container.style.top = '';
+        container.style.width = '';
+        container.style.display = '';
       }
     }
   };
@@ -549,18 +565,6 @@ export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
     msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
     msg += `_Emitido bajo criterio agronómico profesional del Ing. Ricardo Manuel Barquero Chacón._`;
     return msg;
-  };
-
-  // Copiar formato completo para WhatsApp
-  const handleCopiarTextoWhatsApp = async () => {
-    const texto = generarTextoCompletoWhatsApp();
-    try {
-      await navigator.clipboard.writeText(texto);
-      setCopiadoWhatsapp(true);
-      setTimeout(() => setCopiadoWhatsapp(false), 3000);
-    } catch (e) {
-      alert('Texto generado para WhatsApp:\n\n' + texto);
-    }
   };
 
   return (
@@ -1017,740 +1021,770 @@ export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
       )}
 
       {/* ========================================================= */}
-      {/* VISTA 2: HOJA DE REPORTE EDITORIAL (HOMOLOGADA PANTALLA Y PDF) */}
+      {/* VISTA 2: DOSSIER EDITORIAL DE REVISTA CIENTÍFICA (PANTALLA Y PDF) */}
       {/* ========================================================= */}
       <div 
         ref={reportRef} 
-        className={`report-sheet bg-white p-5 sm:p-8 rounded-3xl border border-slate-300 shadow-xl max-w-4xl mx-auto text-slate-900 font-sans ${vistaModo === 'documento' ? 'block' : 'hidden print:block'}`}
+        className={`report-sheet max-w-4xl mx-auto text-slate-900 font-sans ${vistaModo === 'documento' ? 'block' : 'hidden print:block'}`}
       >
-        {/* BLOQUE 1: ENCABEZADO, GUÍA Y DATOS GENERALES */}
-        <div className="report-page-block print-avoid-break mb-5">
-          {/* ENCABEZADO OFICIAL CON NOMBRE DEL PROFESIONAL (SIN ENCABEZADOS DEL COLEGIO) */}
-          <div className="border-b-2 border-emerald-800 pb-4 mb-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-14 h-14 rounded-2xl bg-emerald-800 text-white flex items-center justify-center font-black text-2xl shadow-md shrink-0">
-                🌱
-              </div>
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800 block">
-                  ASESORÍA TÉCNICA AGRONÓMICA PROFESIONAL
-                </span>
-                <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight leading-tight">
-                  Ing. Agr. Ricardo M. Barquero Chacón
-                </h1>
-                <p className="text-xs font-semibold text-slate-700">
-                  Ingeniero Agrónomo • Colegiado No. 5896
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  Tel: {perfilIngeniero.telefono || '+506 8894-5662'} • {perfilIngeniero.ubicacion || 'Coronado, San José, Costa Rica'} • {perfilIngeniero.email || 'h7coordinador@gmail.com'}
-                </p>
-              </div>
-            </div>
-
-            <div className="text-left sm:text-right border-t sm:border-t-0 pt-2 sm:pt-0 w-full sm:w-auto">
-              <span className="inline-block px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-900 border border-emerald-300">
-                INFORME TÉCNICO DE VISITA
-              </span>
-              <div className="mt-1 text-xs font-bold text-slate-700">
-                <span>Fecha: </span>
-                <span className="text-slate-900">{visita?.fecha || '2026-03-10'}</span>
-              </div>
-              <div className="text-[11px] text-slate-500">
-                Folio: AGRO-CR-{visita?.id?.slice(-5) || '001'}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* RESUMEN PARA EL PRODUCTOR */}
-        <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-4 mb-6 print-avoid-break">
-          <h3 className="font-extrabold text-xs uppercase tracking-wider text-emerald-900 mb-1 flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-            <span>Guía de Trabajo para el Productor:</span>
-          </h3>
-          <p className="text-xs text-emerald-950 leading-relaxed">
-            Estimado(a) <strong>{productor.nombre || 'Productor'}</strong>: Presento el informe agronómico correspondiente a la visita técnica en la finca <strong>{finca.nombre || 'la finca'}</strong>. 
-            {filtroLote !== 'todos' ? ` Este informe consolida la evaluación del lote ${filtroLote}.` : ' Este reporte consolida la valoración integral de la finca y sus lotes.'} 
-            Se documentaron <strong>{hallazgosFiltrados.length} hallazgos</strong> en campo y se detallan las mediciones analíticas de suelo, manejo hídrico y las prescripciones nutricionales y fitosanitarias requeridas.
-          </p>
-        </div>
-
-        {/* 1. DATOS GENERALES DE LA ASESORÍA */}
-        <div className="mb-6 print-avoid-break">
-          <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 mb-2 pb-1 border-b border-slate-200 flex items-center gap-1.5">
-            <span className="w-5 h-5 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center text-xs font-bold">1</span>
-            Datos Generales de la Asesoría
-          </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 print:grid-cols-4 print-grid-4 gap-2.5 text-xs">
-            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-              <span className="text-slate-500 block text-[10px]">Productor / Cliente:</span>
-              <strong className="text-slate-900 font-bold">{productor.nombre || 'N/A'}</strong>
-              <span className="text-slate-500 block text-[10px] mt-0.5">{productor.telefono || ''}</span>
-            </div>
-            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-              <span className="text-slate-500 block text-[10px]">Finca Evaluada:</span>
-              <strong className="text-slate-900 font-bold">{finca.nombre || 'N/A'}</strong>
-              <span className="text-slate-500 block text-[10px] mt-0.5 truncate">{finca.ubicacion || 'Costa Rica'}</span>
-            </div>
-            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-              <span className="text-slate-500 block text-[10px]">Alcance del Reporte:</span>
-              <strong className="text-slate-900 font-bold">
-                {filtroLote === 'todos' ? 'Toda la Finca' : filtroLote}
-              </strong>
-              <span className="text-slate-500 block text-[10px] mt-0.5">{lote.area || 'N/A'}</span>
-            </div>
-            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-              <span className="text-slate-500 block text-[10px]">Cultivo y Variedad:</span>
-              <strong className="text-emerald-900 font-bold">{lote.cultivoNombre || 'N/A'}</strong>
-              <span className="text-emerald-700 block text-[10px] mt-0.5 font-semibold">Var: {lote.variedad || 'Estándar'}</span>
-            </div>
-          </div>
-        </div>
-        </div>{/* FIN BLOQUE 1 */}
-
-        {/* BLOQUE 2A: TABLA DE PARÁMETROS AUTOMÁTICOS Y CONDICIONES AGROCLIMÁTICAS */}
-        <div className="report-page-block print-avoid-break mb-4">
-          <div className="flex items-center justify-between border-b border-slate-200 mb-2 pb-1">
-            <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-              <span className="w-5 h-5 rounded-lg bg-blue-100 text-blue-800 flex items-center justify-center text-xs font-bold">2</span>
-              2. Tabla de Parámetros Automáticos y Condiciones Agroclimáticas de la Finca
-            </h3>
-            <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md">
-              ⚡ Parámetros Satelitales y GPS Automáticos
-            </span>
-          </div>
-
-          <div className="overflow-hidden border border-slate-200 rounded-xl shadow-xs">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
-                <tr>
-                  <th className="p-2">Parámetro Automático</th>
-                  <th className="p-2">Valor Registrado</th>
-                  <th className="p-2">Origen / Sistema</th>
-                  <th className="p-2">Interpretación Técnica / Piso Agronómico</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                <tr className="hover:bg-blue-50/30">
-                  <td className="p-2 font-bold text-slate-800 flex items-center gap-1.5">
-                    <span className="text-amber-600 font-bold">🏔️</span> Altitud de la Finca
-                  </td>
-                  <td className="p-2">
-                    <strong className="text-blue-900 font-black text-xs bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                      {altitudFinca} m s.n.m.
-                    </strong>
-                  </td>
-                  <td className="p-2 text-slate-500 text-[10.5px]">
-                    Satélite DEM / Open-Meteo Elevation
-                  </td>
-                  <td className="p-2 text-slate-700 text-[10.5px]">
-                    {analisisClimaIa.pisoAltitudinal}: {analisisClimaIa.descAltitud}
-                  </td>
-                </tr>
-                <tr className="hover:bg-blue-50/30">
-                  <td className="p-2 font-bold text-slate-800 flex items-center gap-1.5">
-                    <span className="text-red-500 font-bold">📍</span> Geolocalización GPS
-                  </td>
-                  <td className="p-2 font-mono text-slate-900 font-bold text-[10.5px]">
-                    {finca.gps?.lat ? `${finca.gps.lat}, ${finca.gps.lon}` : '10.0215, -83.9482'}
-                  </td>
-                  <td className="p-2 text-slate-500 text-[10.5px]">
-                    WGS84 Satélite GPS Móvil
-                  </td>
-                  <td className="p-2 text-slate-700 text-[10.5px]">
-                    {finca.ubicacion || 'Ubicación georreferenciada de la finca'}
-                  </td>
-                </tr>
-                <tr className="hover:bg-blue-50/30">
-                  <td className="p-2 font-bold text-slate-800 flex items-center gap-1.5">
-                    <span className="text-orange-500 font-bold">🌡️</span> Temperatura en Visita
-                  </td>
-                  <td className="p-2">
-                    <strong className="text-slate-900 font-bold text-xs bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
-                      {tempFinca} °C
-                    </strong>
-                  </td>
-                  <td className="p-2 text-slate-500 text-[10.5px]">
-                    Estación Meteorológica Virtual
-                  </td>
-                  <td className="p-2 text-slate-700 text-[10.5px]">
-                    Condición térmica en campo al momento del recorrido
-                  </td>
-                </tr>
-                <tr className="hover:bg-blue-50/30">
-                  <td className="p-2 font-bold text-slate-800 flex items-center gap-1.5">
-                    <span className="text-cyan-600 font-bold">💧</span> Humedad Relativa & Rocío
-                  </td>
-                  <td className="p-2">
-                    <strong className="text-cyan-950 font-bold text-xs bg-cyan-50 px-2 py-0.5 rounded border border-cyan-200">
-                      {humedadFinca} %
-                    </strong>
-                  </td>
-                  <td className="p-2 text-slate-500 text-[10.5px]">
-                    Sensor Atmosférico Satelital
-                  </td>
-                  <td className="p-2 text-slate-700 text-[10.5px]">
-                    {humedadFinca >= 75 
-                      ? '⚠️ Alta humedad relativa: Conducente a libre de agua y germinación de esporas fúngicas' 
-                      : 'Humedad relativa en rango moderado'}
-                  </td>
-                </tr>
-                <tr className="hover:bg-blue-50/30">
-                  <td className="p-2 font-bold text-slate-800 flex items-center gap-1.5">
-                    <span className="text-blue-600 font-bold">🌧️</span> Lluvia Acumulada (7 Días)
-                  </td>
-                  <td className="p-2">
-                    <strong className="text-blue-900 font-black text-xs bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                      {lluvia7d} mm
-                    </strong>
-                  </td>
-                  <td className="p-2 text-slate-500 text-[10.5px]">
-                    Pluviometría Semanal Satelital
-                  </td>
-                  <td className="p-2 text-slate-700 text-[10.5px]">
-                    {lluvia7d > 35 
-                      ? '⚠️ Lluvias intensas recientes: Monitorear asfixia radicular, Phytophthora y lavado' 
-                      : 'Régimen pluviométrico semanal moderado'}
-                  </td>
-                </tr>
-                <tr className="hover:bg-blue-50/30">
-                  <td className="p-2 font-bold text-slate-800 flex items-center gap-1.5">
-                    <span className="text-indigo-600 font-bold">📊</span> Lluvia Histórica Expediente
-                  </td>
-                  <td className="p-2">
-                    <strong className="text-indigo-950 font-black text-xs bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-                      {lluviaAcumuladaFinca} mm
-                    </strong>
-                  </td>
-                  <td className="p-2 text-slate-500 text-[10.5px]">
-                    Historial Finca ({estadisticasClima?.totalVisitas || 1} visitas)
-                  </td>
-                  <td className="p-2 text-slate-700 text-[10.5px]">
-                    Acumulado pluviométrico continuo registrado en el expediente del cliente
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>{/* FIN BLOQUE 2A */}
-
-        {/* BLOQUE 2B: OBSERVACIONES Y VALORACIÓN I.A. SOBRE FACTORES AGROCLIMÁTICOS Y RIESGOS */}
-        <div className="report-page-block print-avoid-break mb-4">
-          <div className="bg-gradient-to-br from-indigo-50/70 via-blue-50/50 to-emerald-50/40 border border-indigo-200 rounded-2xl p-3 text-xs space-y-2.5 shadow-xs">
-            <div className="flex items-center justify-between border-b border-indigo-200 pb-1.5">
-              <span className="font-extrabold text-indigo-950 flex items-center gap-1.5 text-xs">
-                <Sparkles className="w-4 h-4 text-indigo-600" />
-                Observaciones y Valoración de la I.A. sobre Factores Agroclimáticos y Riesgos Fitosanitarios
-              </span>
-              <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3 text-emerald-700" />
-                Validado por el Agrónomo
-              </span>
-            </div>
-
-            {/* Impacto Fisiológico del Clima */}
-            <div className="bg-white/90 p-2.5 rounded-xl border border-indigo-100 text-[11px] leading-relaxed text-slate-800 space-y-1">
-              <strong className="text-indigo-950 block font-bold text-xs">
-                🌡️ Impacto Fisiológico de la Temperatura ({tempFinca}°C) y Humedad Relativa ({humedadFinca}%) en {lote.cultivoNombre || 'el cultivo'}:
-              </strong>
-              <p>{analisisClimaIa.impactoFisiologico}</p>
-            </div>
-
-            {/* Cuadros de Enfermedades y Plagas Propensas */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[10.5px]">
-              {/* Enfermedades Propensas */}
-              <div className="bg-white p-2.5 rounded-xl border border-amber-200 space-y-1.5">
-                <span className="font-extrabold text-amber-950 flex items-center justify-between border-b border-amber-100 pb-1 text-[11px]">
-                  <span>🍄 Enfermedades Propensas a Activarse:</span>
-                  <span className="text-[9px] font-bold px-1.5 py-0.2 bg-amber-100 text-amber-900 rounded">Alerta Fúngica</span>
-                </span>
-                <div className="space-y-1.5">
-                  {(analisisClimaIa.enfermedadesPropensas || []).map((enf, eIdx) => (
-                    <div key={eIdx} className="bg-amber-50/60 p-1.5 rounded-lg border border-amber-100 space-y-0.5">
-                      <div className="flex items-center justify-between font-bold">
-                        <span className="text-amber-950 text-[11px]">{enf.patogeno}</span>
-                        <span className={`text-[9px] font-black px-1.5 py-0.2 rounded ${
-                          enf.riesgo.includes('Crítico') ? 'bg-red-600 text-white' : (enf.riesgo.includes('Alto') ? 'bg-orange-500 text-white' : 'bg-amber-200 text-amber-950')
-                        }`}>
-                          {enf.riesgo}
-                        </span>
-                      </div>
-                      <p className="text-slate-600 text-[10px] leading-tight">
-                        <strong>Condición:</strong> {enf.condicionPredisponente}
-                      </p>
-                      <p className="text-slate-700 text-[10px] leading-tight">
-                        <strong>Síntoma a vigilar:</strong> {enf.sintomaAlerta}
-                      </p>
-                    </div>
-                  ))}
+        
+        {/* ========================================================= */}
+        {/* PÁGINA 1: PORTADA EJECUTIVA, AGROCLIMA Y DIAGNÓSTICO I.A. */}
+        {/* ========================================================= */}
+        <div className="report-editorial-page page-1">
+          <div className="space-y-2.5">
+            {/* ENCABEZADO OFICIAL DE ALTA GAMA DEL PROFESIONAL */}
+            <div className="border-b-2 border-emerald-800 pb-3">
+              <div className="flex flex-row items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-800 text-white flex items-center justify-center font-black text-xl shadow-md shrink-0">
+                    🌱
+                  </div>
+                  <div>
+                    <span className="text-[9.5px] font-black uppercase tracking-widest text-emerald-800 block">
+                      ASESORÍA TÉCNICA AGRONÓMICA PROFESIONAL
+                    </span>
+                    <h1 className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight leading-tight">
+                      Ing. Agr. Ricardo M. Barquero Chacón
+                    </h1>
+                    <p className="text-[11px] font-bold text-slate-700">
+                      Ingeniero Agrónomo • Colegiado No. 5896
+                    </p>
+                    <p className="text-[9.5px] text-slate-500">
+                      Tel: {perfilIngeniero.telefono || '+506 8894-5662'} • {perfilIngeniero.ubicacion || 'Coronado, San José, Costa Rica'} • {perfilIngeniero.email || 'h7coordinador@gmail.com'}
+                    </p>
+                  </div>
                 </div>
-              </div>
 
-              {/* Insectos y Ácaros Propensos */}
-              <div className="bg-white p-2.5 rounded-xl border border-purple-200 space-y-1.5">
-                <span className="font-extrabold text-purple-950 flex items-center justify-between border-b border-purple-100 pb-1 text-[11px]">
-                  <span>🐛 Insectos y Ácaros con Riesgo Poblacional:</span>
-                  <span className="text-[9px] font-bold px-1.5 py-0.2 bg-purple-100 text-purple-900 rounded">Dinámica Térmica</span>
-                </span>
-                <div className="space-y-1.5">
-                  {(analisisClimaIa.insectosAcarosPropensos || []).map((plaga, pIdx) => (
-                    <div key={pIdx} className="bg-purple-50/60 p-1.5 rounded-lg border border-purple-100 space-y-0.5">
-                      <div className="flex items-center justify-between font-bold">
-                        <span className="text-purple-950 text-[11px]">{plaga.plaga}</span>
-                        <span className={`text-[9px] font-black px-1.5 py-0.2 rounded ${
-                          plaga.riesgo.includes('Crítico') ? 'bg-red-600 text-white' : (plaga.riesgo.includes('Alto') ? 'bg-purple-600 text-white' : 'bg-purple-200 text-purple-950')
-                        }`}>
-                          {plaga.riesgo}
-                        </span>
-                      </div>
-                      <p className="text-slate-600 text-[10px] leading-tight">
-                        <strong>Dinámica a {tempFinca}°C:</strong> {plaga.dinamicaPoblacional}
-                      </p>
-                      <p className="text-slate-700 text-[10px] leading-tight">
-                        <strong>Alerta en campo:</strong> {plaga.sintomaAlerta}
-                      </p>
-                    </div>
-                  ))}
+                <div className="text-right shrink-0">
+                  <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-900 border border-emerald-300">
+                    INFORME TÉCNICO OFICIAL
+                  </span>
+                  <div className="mt-0.5 text-[11px] font-bold text-slate-700">
+                    <span>Fecha: </span>
+                    <span className="text-slate-900">{visita?.fecha || '2026-03-10'}</span>
+                  </div>
+                  <div className="text-[9.5px] text-slate-500 font-mono">
+                    Folio: AGRO-CR-{visita?.id?.slice(-5) || '001'}
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Medidas Preventivas Inmediatas Recomendadas */}
-            <div className="bg-emerald-50/90 p-2.5 rounded-xl border border-emerald-200 text-[11px] text-emerald-950 space-y-1">
-              <strong className="block font-bold text-xs text-emerald-950">
-                🛡️ Estrategia y Medidas Preventivas Inmediatas Recomendadas por la I.A.:
-              </strong>
-              <p className="whitespace-pre-line leading-relaxed text-slate-800">
-                {analisisClimaIa.medidasPreventivas}
+            {/* RESUMEN EJECUTIVO PARA EL PRODUCTOR */}
+            <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-2.5">
+              <h3 className="font-extrabold text-[10.5px] uppercase tracking-wider text-emerald-900 mb-0.5 flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                <span>Guía de Trabajo para el Productor:</span>
+              </h3>
+              <p className="text-[10.5px] text-emerald-950 leading-snug">
+                Estimado(a) <strong>{productor.nombre || 'Productor'}</strong>: Presento el informe agronómico correspondiente a la visita en la finca <strong>{finca.nombre || 'la finca'}</strong>. 
+                {filtroLote !== 'todos' ? ` Evaluación consolidada para el lote ${filtroLote}.` : ' Valoración técnica integral de la finca y sus unidades productivas.'} 
+                Se documentaron <strong>{hallazgosFiltrados.length} hallazgos</strong> en campo, parámetros automáticos y geoclima satelital, análisis de suelo y las prescripciones semanales correspondientes.
               </p>
             </div>
-          </div>
-        </div>{/* FIN BLOQUE 2 */}
 
-        {/* BLOQUE 3: 3. MEDICIONES DE CAMPO DE SUELO Y SUSTRATO */}
-        {medicionesSuelo.length > 0 && (
-          <div className="report-page-block print-avoid-break mb-5">
-            <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 mb-2 pb-1 border-b border-slate-200 flex items-center gap-1.5">
-              <span className="w-5 h-5 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center text-xs font-bold">3</span>
-              Mediciones de Suelo y Sustrato en Campo
-            </h3>
-
-            <div className="space-y-3">
-              {medicionesSuelo.map((m, idx) => (
-                <div key={m.id || idx} className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2 text-xs">
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-1">
-                    <span className="font-extrabold text-slate-900">
-                      📍 {m.loteNombre || 'Lote Evaluado'} — {m.metodo || 'Sonda directa'}
-                    </span>
-                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3" />
-                      Aprobado por el Ing. Agr. Ricardo Barquero
-                    </span>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs text-left bg-white rounded-xl border border-slate-200 overflow-hidden">
-                      <thead>
-                        <tr className="bg-slate-100 text-slate-700 text-[11px]">
-                          <th className="py-1.5 px-3 font-bold">Parámetro</th>
-                          <th className="py-1.5 px-3 font-bold text-center">Valor Medido en Campo</th>
-                          <th className="py-1.5 px-3 font-bold text-center">Rango Óptimo ({cultivoDef.nombre})</th>
-                          <th className="py-1.5 px-3 font-bold">Evaluación</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        <tr>
-                          <td className="py-1.5 px-3 font-medium text-slate-800">pH del Suelo / Sustrato</td>
-                          <td className="py-1.5 px-3 text-center font-black text-slate-900">{m.phSuelo}</td>
-                          <td className="py-1.5 px-3 text-center text-slate-600">{cultivoDef.rangoPh || '5.5 - 6.5'}</td>
-                          <td className="py-1.5 px-3 font-semibold text-emerald-700">
-                            {parseFloat(m.phSuelo) >= 5.5 && parseFloat(m.phSuelo) <= 6.5 ? 'Dentro de rango' : 'Requiere calibración'}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="py-1.5 px-3 font-medium text-slate-800">Conductividad Eléctrica (CE)</td>
-                          <td className="py-1.5 px-3 text-center font-black text-slate-900">{m.ceSuelo} mS/cm</td>
-                          <td className="py-1.5 px-3 text-center text-slate-600">{cultivoDef.rangoCe || '1.2 - 1.8 mS/cm'}</td>
-                          <td className="py-1.5 px-3 font-semibold text-emerald-700">
-                            {parseFloat(m.ceSuelo) >= 1.0 && parseFloat(m.ceSuelo) <= 2.0 ? 'Salinidad adecuada' : 'Ajustar conductividad'}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="py-1.5 px-3 font-medium text-slate-800">Temperatura del Suelo</td>
-                          <td className="py-1.5 px-3 text-center font-black text-slate-900">{m.tempSuelo}°C</td>
-                          <td className="py-1.5 px-3 text-center text-slate-600">{cultivoDef.rangoTempSuelo || '16 - 22 °C'}</td>
-                          <td className="py-1.5 px-3 font-semibold text-emerald-700">Actividad radicular favorable</td>
-                        </tr>
-                        <tr>
-                          <td className="py-1.5 px-3 font-medium text-slate-800">Humedad en Rizósfera</td>
-                          <td className="py-1.5 px-3 text-center font-black text-slate-900">{m.humedadSuelo}</td>
-                          <td className="py-1.5 px-3 text-center text-slate-600">{cultivoDef.rangoHumedadSuelo || '60 - 80%'}</td>
-                          <td className="py-1.5 px-3 font-semibold text-emerald-700">Adecuada capacidad de campo</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {m.ajusteRecomendado && (
-                    <div className="bg-emerald-50/80 p-2.5 rounded-xl border border-emerald-200 text-slate-800 text-[11px]">
-                      <strong className="text-emerald-950 font-bold block mb-0.5">Ajuste y Recomendación Agronómica Aprobada:</strong>
-                      <span>{m.ajusteRecomendado}</span>
-                    </div>
-                  )}
+            {/* 1. DATOS GENERALES DE LA ASESORÍA */}
+            <div>
+              <h3 className="font-bold text-[10.5px] uppercase tracking-wider text-slate-800 mb-1 pb-0.5 border-b border-slate-200 flex items-center gap-1">
+                <span className="w-4 h-4 rounded-md bg-emerald-100 text-emerald-800 flex items-center justify-center text-[10px] font-bold">1</span>
+                Datos Generales de la Asesoría
+              </h3>
+              <div className="grid grid-cols-4 print:grid-cols-4 print-grid-4 gap-1.5 text-xs">
+                <div className="bg-slate-50 p-2 rounded-lg border border-slate-200">
+                  <span className="text-slate-500 block text-[9.5px]">Productor / Cliente:</span>
+                  <strong className="text-slate-900 font-bold text-[11px] truncate block">{productor.nombre || 'N/A'}</strong>
+                  <span className="text-slate-500 block text-[9.5px]">{productor.telefono || ''}</span>
                 </div>
-              ))}
+                <div className="bg-slate-50 p-2 rounded-lg border border-slate-200">
+                  <span className="text-slate-500 block text-[9.5px]">Finca Evaluada:</span>
+                  <strong className="text-slate-900 font-bold text-[11px] truncate block">{finca.nombre || 'N/A'}</strong>
+                  <span className="text-slate-500 block text-[9.5px] truncate">{finca.ubicacion || 'Costa Rica'}</span>
+                </div>
+                <div className="bg-slate-50 p-2 rounded-lg border border-slate-200">
+                  <span className="text-slate-500 block text-[9.5px]">Alcance del Reporte:</span>
+                  <strong className="text-slate-900 font-bold text-[11px] truncate block">
+                    {filtroLote === 'todos' ? 'Toda la Finca' : filtroLote}
+                  </strong>
+                  <span className="text-slate-500 block text-[9.5px]">{lote.area || 'N/A'}</span>
+                </div>
+                <div className="bg-slate-50 p-2 rounded-lg border border-slate-200">
+                  <span className="text-slate-500 block text-[9.5px]">Cultivo y Variedad:</span>
+                  <strong className="text-emerald-900 font-bold text-[11px] truncate block">{lote.cultivoNombre || 'N/A'}</strong>
+                  <span className="text-emerald-700 block text-[9.5px] font-semibold truncate">Var: {lote.variedad || 'Estándar'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. TABLA DE PARÁMETROS AUTOMÁTICOS Y CONDICIONES AGROCLIMÁTICAS */}
+            <div>
+              <div className="flex items-center justify-between border-b border-slate-200 mb-1 pb-0.5">
+                <h3 className="font-bold text-[10.5px] uppercase tracking-wider text-slate-800 flex items-center gap-1">
+                  <span className="w-4 h-4 rounded-md bg-blue-100 text-blue-800 flex items-center justify-center text-[10px] font-bold">2</span>
+                  Tabla de Parámetros Automáticos y Condiciones Agroclimáticas de la Finca
+                </h3>
+                <span className="text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded">
+                  ⚡ Satélite DEM & Estación Virtual
+                </span>
+              </div>
+
+              <div className="overflow-hidden border border-slate-200 rounded-lg">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[10px]">
+                    <tr>
+                      <th className="p-1.5">Parámetro Automático</th>
+                      <th className="p-1.5">Valor Registrado</th>
+                      <th className="p-1.5">Origen / Sistema</th>
+                      <th className="p-1.5">Interpretación Técnica / Piso Agronómico</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white text-[10px]">
+                    <tr>
+                      <td className="p-1.5 font-bold text-slate-800 flex items-center gap-1">
+                        <span>🏔️</span> Altitud de la Finca
+                      </td>
+                      <td className="p-1.5">
+                        <strong className="text-blue-900 font-black bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
+                          {altitudFinca} m s.n.m.
+                        </strong>
+                      </td>
+                      <td className="p-1.5 text-slate-500">Satélite DEM / Open-Meteo</td>
+                      <td className="p-1.5 text-slate-700">{analisisClimaIa.pisoAltitudinal}: {analisisClimaIa.descAltitud}</td>
+                    </tr>
+                    <tr>
+                      <td className="p-1.5 font-bold text-slate-800 flex items-center gap-1">
+                        <span>📍</span> Geolocalización GPS
+                      </td>
+                      <td className="p-1.5 font-mono text-slate-900 font-bold">
+                        {finca.gps?.lat ? `${finca.gps.lat}, ${finca.gps.lon}` : '10.0215, -83.9482'}
+                      </td>
+                      <td className="p-1.5 text-slate-500">WGS84 GPS Móvil</td>
+                      <td className="p-1.5 text-slate-700">{finca.ubicacion || 'Ubicación georreferenciada'}</td>
+                    </tr>
+                    <tr>
+                      <td className="p-1.5 font-bold text-slate-800 flex items-center gap-1">
+                        <span>🌡️</span> Temperatura en Visita
+                      </td>
+                      <td className="p-1.5">
+                        <strong className="text-slate-900 font-bold bg-orange-50 px-1.5 py-0.2 rounded border border-orange-200">
+                          {tempFinca} °C
+                        </strong>
+                      </td>
+                      <td className="p-1.5 text-slate-500">Estación Meteorológica Virtual</td>
+                      <td className="p-1.5 text-slate-700">Condición térmica en campo al momento del recorrido</td>
+                    </tr>
+                    <tr>
+                      <td className="p-1.5 font-bold text-slate-800 flex items-center gap-1">
+                        <span>💧</span> Humedad Relativa & Rocío
+                      </td>
+                      <td className="p-1.5">
+                        <strong className="text-cyan-950 font-bold bg-cyan-50 px-1.5 py-0.2 rounded border border-cyan-200">
+                          {humedadFinca} %
+                        </strong>
+                      </td>
+                      <td className="p-1.5 text-slate-500">Sensor Atmosférico Satelital</td>
+                      <td className="p-1.5 text-slate-700">
+                        {humedadFinca >= 75 ? '⚠️ Alta humedad: Conducente a libre de agua y germinación fúngica' : 'Humedad en rango moderado'}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="p-1.5 font-bold text-slate-800 flex items-center gap-1">
+                        <span>🌧️</span> Lluvia Acumulada (7 Días)
+                      </td>
+                      <td className="p-1.5">
+                        <strong className="text-blue-900 font-black bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
+                          {lluvia7d} mm
+                        </strong>
+                      </td>
+                      <td className="p-1.5 text-slate-500">Pluviometría Semanal</td>
+                      <td className="p-1.5 text-slate-700">
+                        {lluvia7d > 35 ? '⚠️ Lluvias intensas: Monitorear asfixia radicular, Phytophthora y lavado' : 'Régimen pluviométrico semanal moderado'}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="p-1.5 font-bold text-slate-800 flex items-center gap-1">
+                        <span>📊</span> Lluvia Histórica Expediente
+                      </td>
+                      <td className="p-1.5">
+                        <strong className="text-indigo-950 font-black bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200">
+                          {lluviaAcumuladaFinca} mm
+                        </strong>
+                      </td>
+                      <td className="p-1.5 text-slate-500">Historial Finca ({estadisticasClima?.totalVisitas || 1} visitas)</td>
+                      <td className="p-1.5 text-slate-700">Acumulado continuo registrado en el expediente del cliente</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* 3. OBSERVACIONES Y VALORACIÓN I.A. SOBRE FACTORES AGROCLIMÁTICOS Y RIESGOS */}
+            <div className="bg-gradient-to-br from-indigo-50/70 via-blue-50/50 to-emerald-50/40 border border-indigo-200 rounded-xl p-2.5 text-xs space-y-2">
+              <div className="flex items-center justify-between border-b border-indigo-200 pb-1">
+                <span className="font-extrabold text-indigo-950 flex items-center gap-1.5 text-[11px]">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                  3. Observaciones y Valoración I.A.: Factores Climáticos y Riesgos Fitosanitarios
+                </span>
+                <span className="text-[9px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-200 px-1.5 py-0.2 rounded-full flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-700" />
+                  Validado por el Agrónomo
+                </span>
+              </div>
+
+              {/* Impacto Fisiológico */}
+              <div className="bg-white/90 p-2 rounded-lg border border-indigo-100 text-[10px] leading-relaxed text-slate-800 space-y-0.5">
+                <strong className="text-indigo-950 block font-bold text-[10.5px]">
+                  🌡️ Impacto Fisiológico de Temperatura ({tempFinca}°C) y Humedad ({humedadFinca}%) en {lote.cultivoNombre || 'el cultivo'}:
+                </strong>
+                <p>{analisisClimaIa.impactoFisiologico}</p>
+              </div>
+
+              {/* Grid 2 Columnas de Riesgos */}
+              <div className="grid grid-cols-2 print:grid-cols-2 print-grid-2 gap-1.5 text-[10px]">
+                {/* Enfermedades Propensas */}
+                <div className="bg-white p-2 rounded-lg border border-amber-200 space-y-1">
+                  <span className="font-extrabold text-amber-950 flex items-center justify-between border-b border-amber-100 pb-0.5 text-[10.5px]">
+                    <span>🍄 Enfermedades Propensas:</span>
+                    <span className="text-[8.5px] font-bold px-1 py-0.2 bg-amber-100 text-amber-900 rounded">Alerta Fúngica</span>
+                  </span>
+                  <div className="space-y-1">
+                    {(analisisClimaIa.enfermedadesPropensas || []).slice(0, 2).map((enf, eIdx) => (
+                      <div key={eIdx} className="bg-amber-50/60 p-1 rounded border border-amber-100 space-y-0.5">
+                        <div className="flex items-center justify-between font-bold">
+                          <span className="text-amber-950">{enf.patogeno}</span>
+                          <span className={`text-[8.5px] font-black px-1 rounded ${
+                            enf.riesgo.includes('Crítico') ? 'bg-red-600 text-white' : (enf.riesgo.includes('Alto') ? 'bg-orange-500 text-white' : 'bg-amber-200 text-amber-950')
+                          }`}>
+                            {enf.riesgo}
+                          </span>
+                        </div>
+                        <p className="text-slate-600 text-[9.5px] leading-tight">
+                          <strong>Condición:</strong> {enf.condicionPredisponente}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Insectos y Ácaros */}
+                <div className="bg-white p-2 rounded-lg border border-purple-200 space-y-1">
+                  <span className="font-extrabold text-purple-950 flex items-center justify-between border-b border-purple-100 pb-0.5 text-[10.5px]">
+                    <span>🐛 Insectos / Ácaros Propensos:</span>
+                    <span className="text-[8.5px] font-bold px-1 py-0.2 bg-purple-100 text-purple-900 rounded">Dinámica Térmica</span>
+                  </span>
+                  <div className="space-y-1">
+                    {(analisisClimaIa.insectosAcarosPropensos || []).slice(0, 2).map((plaga, pIdx) => (
+                      <div key={pIdx} className="bg-purple-50/60 p-1 rounded border border-purple-100 space-y-0.5">
+                        <div className="flex items-center justify-between font-bold">
+                          <span className="text-purple-950">{plaga.plaga}</span>
+                          <span className={`text-[8.5px] font-black px-1 rounded ${
+                            plaga.riesgo.includes('Crítico') ? 'bg-red-600 text-white' : (plaga.riesgo.includes('Alto') ? 'bg-purple-600 text-white' : 'bg-purple-200 text-purple-950')
+                          }`}>
+                            {plaga.riesgo}
+                          </span>
+                        </div>
+                        <p className="text-slate-600 text-[9.5px] leading-tight">
+                          <strong>Dinámica a {tempFinca}°C:</strong> {plaga.dinamicaPoblacional}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Medidas Preventivas */}
+              <div className="bg-emerald-50/90 p-2 rounded-lg border border-emerald-200 text-[10px] text-emerald-950 space-y-0.5">
+                <strong className="block font-bold text-[10.5px] text-emerald-950">
+                  🛡️ Estrategia y Medidas Preventivas Inmediatas Recomendadas por la I.A.:
+                </strong>
+                <p className="leading-tight text-slate-800">
+                  {analisisClimaIa.medidasPreventivas}
+                </p>
+              </div>
             </div>
           </div>
-        )}
 
-        {/* BLOQUE 4: 4. DIAGNÓSTICO VISUAL DE HALLAZGOS (FOTOS CON PROPORCIÓN AJUSTADA) */}
-        <div className="report-page-block print-avoid-break mb-5">
-          <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 mb-2.5 pb-1 border-b border-slate-200 flex items-center gap-1.5">
-            <span className="w-5 h-5 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center text-xs font-bold">4</span>
-            Diagnóstico Visual de Hallazgos y Síntomas en Campo ({hallazgosFiltrados.length})
-          </h3>
+          {/* PIE DE PÁGINA 1 EDITORIAL */}
+          <div className="border-t border-slate-200 pt-2 flex items-center justify-between text-[9px] text-slate-400">
+            <span>AgroAsesor Pro CR™ • Ing. Agr. Ricardo M. Barquero Chacón (Col. 5896)</span>
+            <span>Dossier Agronómico Oficial • Costa Rica</span>
+            <span className="font-bold text-slate-700">Página 1 de {totalPaginas}</span>
+          </div>
+        </div>
 
-          {hallazgosFiltrados.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 print-grid-2 gap-3">
-              {hallazgosFiltrados.map((h, idx) => (
-                <div key={h.id || idx} className="finding-card print-avoid-break border border-slate-200 rounded-xl overflow-hidden bg-slate-50 flex flex-col shadow-xs">
-                  {h.fotoAnotada ? (
-                    <div 
-                      className="finding-photo-container w-full bg-slate-100 flex items-center justify-center overflow-hidden border-b border-slate-200" 
-                      style={{ maxHeight: '160px' }}
-                    >
-                      <img 
-                        src={h.fotoAnotada} 
-                        alt={h.titulo} 
-                        className="finding-photo w-full h-36 print:h-32 object-cover block"
-                      />
+        {/* ========================================================= */}
+        {/* PÁGINA(S) 2: DOSSIER CIENTÍFICO DE HALLAZGOS Y SUELO     */}
+        {/* ========================================================= */}
+        {paginasHallazgos.map((grupoHallazgos, pIdx) => {
+          const numPaginaActual = 2 + pIdx;
+          return (
+            <div key={`hallazgos-page-${pIdx}`} className={`report-editorial-page page-${numPaginaActual}`}>
+              <div className="space-y-3">
+                {/* Header Mini de Revista Científica */}
+                <div className="border-b-2 border-emerald-800/80 pb-2 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-emerald-800 font-black text-sm">🌱 AgroAsesor Pro CR</span>
+                    <span className="text-slate-300">|</span>
+                    <span className="font-extrabold text-slate-800 uppercase tracking-wide text-[11px]">
+                      Dossier Científico de Hallazgos en Campo y Análisis Edáfico {pIdx > 0 ? `(Parte ${pIdx + 1})` : ''}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-slate-600 font-semibold">
+                    <span>{finca.nombre || 'Finca'}</span> • <span>{visita?.fecha}</span>
+                  </div>
+                </div>
+
+                {/* Mediciones de Suelo y Sustrato en Campo (Solo en la primera página de hallazgos) */}
+                {pIdx === 0 && medicionesSuelo.length > 0 && (
+                  <div className="space-y-2">
+                    <h3 className="font-bold text-[10.5px] uppercase tracking-wider text-slate-800 pb-0.5 border-b border-slate-200 flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-md bg-emerald-100 text-emerald-800 flex items-center justify-center text-[10px] font-bold">3</span>
+                      Mediciones de Suelo y Sustrato en Campo
+                    </h3>
+
+                    {medicionesSuelo.map((m, mIdx) => (
+                      <div key={m.id || mIdx} className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5 text-xs">
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-1">
+                          <span className="font-extrabold text-slate-900 text-[11px]">
+                            📍 {m.loteNombre || 'Lote Evaluado'} — {m.metodo || 'Sonda directa en campo'}
+                          </span>
+                          <span className="text-[9px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.2 rounded">
+                            Validado por Ing. Ricardo Barquero (Col. 5896)
+                          </span>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs text-left bg-white rounded-lg border border-slate-200 overflow-hidden">
+                            <thead>
+                              <tr className="bg-slate-100 text-slate-700 text-[10px]">
+                                <th className="py-1 px-2 font-bold">Parámetro</th>
+                                <th className="py-1 px-2 font-bold text-center">Valor Medido</th>
+                                <th className="py-1 px-2 font-bold text-center">Rango Óptimo ({cultivoDef.nombre})</th>
+                                <th className="py-1 px-2 font-bold">Evaluación Agronómica</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 text-[10px]">
+                              <tr>
+                                <td className="py-1 px-2 font-medium text-slate-800">pH del Suelo / Sustrato</td>
+                                <td className="py-1 px-2 text-center font-black text-slate-900">{m.phSuelo}</td>
+                                <td className="py-1 px-2 text-center text-slate-600">{cultivoDef.rangoPh || '5.5 - 6.5'}</td>
+                                <td className="py-1 px-2 font-semibold text-emerald-700">
+                                  {parseFloat(m.phSuelo) >= 5.5 && parseFloat(m.phSuelo) <= 6.5 ? 'Dentro de rango óptimo' : 'Requiere ajuste en solución'}
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className="py-1 px-2 font-medium text-slate-800">Conductividad Eléctrica (CE)</td>
+                                <td className="py-1 px-2 text-center font-black text-slate-900">{m.ceSuelo} mS/cm</td>
+                                <td className="py-1 px-2 text-center text-slate-600">{cultivoDef.rangoCe || '1.2 - 1.8 mS/cm'}</td>
+                                <td className="py-1 px-2 font-semibold text-emerald-700">
+                                  {parseFloat(m.ceSuelo) >= 1.0 && parseFloat(m.ceSuelo) <= 2.0 ? 'Salinidad controlada' : 'Ajustar conductividad'}
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className="py-1 px-2 font-medium text-slate-800">Temperatura del Suelo</td>
+                                <td className="py-1 px-2 text-center font-black text-slate-900">{m.tempSuelo}°C</td>
+                                <td className="py-1 px-2 text-center text-slate-600">{cultivoDef.rangoTempSuelo || '16 - 22 °C'}</td>
+                                <td className="py-1 px-2 font-semibold text-emerald-700">Actividad radicular favorable</td>
+                              </tr>
+                              <tr>
+                                <td className="py-1 px-2 font-medium text-slate-800">Humedad en Rizósfera</td>
+                                <td className="py-1 px-2 text-center font-black text-slate-900">{m.humedadSuelo}</td>
+                                <td className="py-1 px-2 text-center text-slate-600">{cultivoDef.rangoHumedadSuelo || '60 - 80%'}</td>
+                                <td className="py-1 px-2 font-semibold text-emerald-700">Adecuada capacidad de campo</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {m.ajusteRecomendado && (
+                          <div className="bg-emerald-50/80 p-2 rounded-lg border border-emerald-200 text-slate-800 text-[10px]">
+                            <strong className="text-emerald-950 font-bold block mb-0.5">Ajuste y Recomendación Agronómica:</strong>
+                            <span>{m.ajusteRecomendado}</span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Diagnóstico Visual de Hallazgos en Formato Revista Científica */}
+                <div>
+                  <div className="flex items-center justify-between border-b border-slate-200 mb-2 pb-1">
+                    <h3 className="font-bold text-[10.5px] uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-md bg-amber-100 text-amber-800 flex items-center justify-center text-[10px] font-bold">
+                        {pIdx === 0 ? '4' : '4b'}
+                      </span>
+                      Diagnóstico Visual de Hallazgos Fitosanitarios en Campo
+                    </h3>
+                    <span className="text-[9px] font-bold text-slate-500">
+                      Formato Revista Científica • Proporción HD Real
+                    </span>
+                  </div>
+
+                  {grupoHallazgos.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 print-grid-2 gap-3">
+                      {grupoHallazgos.map((h, hIdx) => {
+                        const figureIndex = (pIdx === 0 ? 0 : 2) + hIdx + 1;
+                        return (
+                          <div key={h.id || hIdx} className="finding-card border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs flex flex-col justify-between">
+                            {h.fotoAnotada ? (
+                              <div 
+                                onClick={() => setModalFotoHd({
+                                  url: h.fotoAnotada,
+                                  figura: `Figura ${figureIndex}`,
+                                  titulo: h.titulo,
+                                  categoria: h.categoria,
+                                  severidad: h.severidad,
+                                  lote: h.loteNombre || lote.nombre,
+                                  fecha: h.fecha || visita?.fecha,
+                                  descripcion: h.descripcion
+                                })}
+                                className="scientific-photo-container"
+                                title="Click para ampliar imagen en Alta Definición HD"
+                              >
+                                <img 
+                                  src={h.fotoAnotada} 
+                                  alt={h.titulo} 
+                                  className="scientific-photo"
+                                />
+                                <div className="absolute top-2 left-2 bg-black/75 backdrop-blur-xs text-white px-2 py-0.5 rounded text-[9px] font-mono font-bold tracking-wider border border-white/20">
+                                  FIG. {figureIndex}
+                                </div>
+                                <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-xs text-white/90 px-1.5 py-0.5 rounded text-[9px] flex items-center gap-1 no-print">
+                                  <ZoomIn className="w-3 h-3" />
+                                  <span>HD</span>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="h-28 bg-slate-100 flex items-center justify-center text-xs text-slate-400 italic">
+                                Sin fotografía adjunta
+                              </div>
+                            )}
+
+                            {/* Pie de Figura Científica */}
+                            <div className="scientific-caption flex-1 flex flex-col justify-between">
+                              <div>
+                                <div className="flex items-center justify-between gap-1 mb-1">
+                                  <span className="font-extrabold text-[9.5px] text-emerald-900 bg-emerald-50 border border-emerald-200 px-2 py-0.2 rounded">
+                                    {h.categoria || 'Hallazgo Fitosanitario'}
+                                  </span>
+                                  <span className={`font-black text-[9px] px-2 py-0.2 rounded border ${
+                                    h.severidad?.toLowerCase().includes('alta') || h.severidad?.toLowerCase().includes('crítica')
+                                      ? 'bg-red-50 text-red-700 border-red-200'
+                                      : 'bg-amber-50 text-amber-800 border-amber-200'
+                                  }`}>
+                                    Severidad: {h.severidad || 'Media'}
+                                  </span>
+                                </div>
+                                <p className="text-slate-900 font-bold text-xs leading-snug">
+                                  <strong className="text-emerald-800 font-black">Figura {figureIndex}: </strong>
+                                  {h.titulo}
+                                </p>
+                                <p className="text-slate-600 text-[10.5px] mt-1 leading-tight">
+                                  {h.descripcion}
+                                </p>
+                              </div>
+                              <div className="flex items-center justify-between text-[9px] text-slate-400 mt-2 pt-1 border-t border-slate-100">
+                                <span className="font-semibold text-slate-500">📍 Lote: {h.loteNombre || lote.nombre || 'Lote 1'}</span>
+                                <span>📅 {h.fecha || visita?.fecha}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : (
-                    <div className="h-20 bg-slate-200 flex items-center justify-center text-xs text-slate-500 italic">
-                      Sin fotografía registrada
-                    </div>
+                    <p className="text-xs text-slate-500 italic bg-slate-50 p-3 rounded-xl border">
+                      No se registraron hallazgos fitosanitarios para el alcance seleccionado.
+                    </p>
                   )}
-                  <div className="p-2.5 text-xs flex-1 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center justify-between gap-1 mb-1">
-                        <span className="font-bold text-[9.5px] text-emerald-800 bg-emerald-100 px-2 py-0.2 rounded">
-                          {h.categoria}
-                        </span>
-                        <span className="font-bold text-[9.5px] text-red-700 bg-red-100 px-2 py-0.2 rounded">
-                          Severidad: {h.severidad}
-                        </span>
-                      </div>
-                      <h4 className="font-bold text-slate-900 text-xs sm:text-sm">{h.titulo}</h4>
-                      <p className="text-slate-600 mt-1 leading-tight text-[10.5px]">{h.descripcion}</p>
-                    </div>
-                    <div className="flex items-center justify-between text-[9.5px] text-slate-400 mt-2 pt-1 border-t border-slate-200/60">
-                      <span>Lote: {h.loteNombre || lote.nombre || 'Lote 1'}</span>
-                      <span>{h.fecha}</span>
-                    </div>
-                  </div>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-slate-500 italic bg-slate-50 p-3 rounded-xl border">
-              No se registraron hallazgos fitosanitarios para el alcance seleccionado.
-            </p>
-          )}
-        </div>{/* FIN BLOQUE 4 */}
-
-        {/* 5. PROGRAMA NUTRICIONAL Y FERTIRRIEGO */}
-        <div className="mb-6 space-y-4">
-          {recFertirriegoFiltradas.length > 0 ? (
-            recFertirriegoFiltradas.map((semana, sIdx) => (
-              <div key={sIdx} className="report-page-block event-card print-avoid-break mb-5 bg-slate-50/70 rounded-2xl border-2 border-blue-200 p-4 sm:p-5 space-y-3 shadow-xs">
-                {/* ENCABEZADO INTEGRADO DE SECCIÓN: PROHIBIDO CORTAR TÍTULO DE CUADRO */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b-2 border-blue-600 pb-2 mb-2 gap-2">
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-6 h-6 rounded-lg bg-blue-800 text-white flex items-center justify-center text-xs font-black shadow-xs shrink-0">
-                      5
-                    </span>
-                    <div>
-                      <h3 className="font-black text-xs sm:text-sm text-blue-950 uppercase tracking-wide">
-                        5. Programa Nutricional: Fertirriego y Enmiendas por Semanas
-                      </h3>
-                      <span className="text-[11px] font-bold text-blue-700 block">
-                        {semana.titulo || `Semana ${semana.semana}`} {sIdx > 0 ? '• (Continuación del Programa Nutricional)' : '• Prescripción Técnica'}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 self-start sm:self-auto">
-                    <span className="text-xs font-black text-blue-900 bg-blue-100 px-3 py-1 rounded-xl border border-blue-300 shadow-2xs">
-                      Semana {semana.semana}
-                    </span>
-                  </div>
-                </div>
-
-                {(semana.eventos || []).map((ev, eIdx) => (
-                  <div key={eIdx} className="bg-white rounded-xl border border-slate-200 p-3 space-y-2 text-xs shadow-xs">
-                    <div className="flex items-center justify-between font-bold text-slate-900 border-b pb-1">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span>{ev.modalidadIcono || '💧'}</span>
-                        <span>{ev.nombreEvento || ev.modalidadNombre || ev.tipo}</span>
-                        <span className="text-[10px] font-bold px-2 py-0.2 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                          {ev.alcance || 'Toda la Finca'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {ev.conductividadObjetivo && (
-                          <span className="text-emerald-800 font-bold text-[11px] bg-emerald-50 px-1.5 py-0.5 rounded">
-                            CE: {ev.conductividadObjetivo}
-                          </span>
-                        )}
-                        {ev.phObjetivo && (
-                          <span className="text-blue-800 font-bold text-[11px] bg-blue-50 px-1.5 py-0.5 rounded">
-                            pH: {ev.phObjetivo}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Dosatron (Tanque A y B) */}
-                    {ev.lineasTanqueA && ev.lineasTanqueB ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                        <div className="border border-blue-200 rounded-lg p-2.5 bg-blue-50/30">
-                          <span className="font-bold text-blue-900 block text-[11px] mb-1.5 border-b border-blue-100 pb-0.5">
-                            🔵 TANQUE A (Calcio y Nitratos):
-                          </span>
-                          <div className="space-y-1">
-                            {ev.lineasTanqueA.map((l, idx) => (
-                              <div key={idx} className="flex justify-between border-b border-slate-100 py-0.5 text-xs">
-                                <span className="text-slate-800 font-medium">{l.producto}</span>
-                                <strong className="text-blue-900 shrink-0 ml-1">{l.dosis} {l.unidad}</strong>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className="border border-amber-200 rounded-lg p-2.5 bg-amber-50/30">
-                          <span className="font-bold text-amber-900 block text-[11px] mb-1.5 border-b border-amber-100 pb-0.5">
-                            🟡 TANQUE B (Fósforo, Sulfatos y Micro):
-                          </span>
-                          <div className="space-y-1">
-                            {ev.lineasTanqueB.map((l, idx) => (
-                              <div key={idx} className="flex justify-between border-b border-slate-100 py-0.5 text-xs">
-                                <span className="text-slate-800 font-medium">{l.producto}</span>
-                                <strong className="text-amber-900 shrink-0 ml-1">{l.dosis} {l.unidad}</strong>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      /* Modalidad de lista única */
-                      <div className="pt-1">
-                        <div className="space-y-1 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                          {(ev.productos || []).map((l, idx) => (
-                            <div key={idx} className="flex justify-between border-b border-slate-200/60 py-1 text-xs last:border-b-0">
-                              <span className="text-slate-900 font-bold">{l.producto}</span>
-                              <strong className="text-emerald-900 font-black text-sm shrink-0 ml-2">
-                                {l.dosis} {l.unidad}
-                              </strong>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {ev.observacionesPie && (
-                      <p className="text-[11px] text-slate-600 italic pt-1 border-t border-slate-100">
-                        Instrucción: {ev.observacionesPie}
-                      </p>
-                    )}
-                  </div>
-                ))}
               </div>
-            ))
-          ) : (
-            <div className="report-page-block print-avoid-break mb-5 bg-slate-50 rounded-2xl border border-slate-200 p-4">
-              <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 mb-2 pb-1 border-b border-slate-200 flex items-center gap-1.5">
-                <span className="w-5 h-5 rounded-lg bg-blue-100 text-blue-800 flex items-center justify-center text-xs font-bold">5</span>
-                5. Programa Nutricional: Fertirriego y Enmiendas por Semanas
-              </h3>
-              <p className="text-xs text-slate-500 italic">
-                No se han programado cuadros de fertirriego para el alcance seleccionado.
-              </p>
-            </div>
-          )}
-        </div>
 
-        {/* 6. PROGRAMA FITOSANITARIO FOLIAR */}
-        <div className="mb-6 space-y-4">
-          {recPlaguicidasFiltradas.length > 0 ? (
-            recPlaguicidasFiltradas.map((semana, sIdx) => (
-              <div key={sIdx} className="report-page-block app-card print-avoid-break mb-5 bg-slate-50/70 rounded-2xl border-2 border-purple-200 p-4 sm:p-5 space-y-3 shadow-xs">
-                {/* ENCABEZADO INTEGRADO DE SECCIÓN: PROHIBIDO CORTAR TÍTULO DE CUADRO */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b-2 border-purple-600 pb-2 mb-2 gap-2">
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-6 h-6 rounded-lg bg-purple-800 text-white flex items-center justify-center text-xs font-black shadow-xs shrink-0">
-                      6
+              {/* Footer Página Hallazgos */}
+              <div className="border-t border-slate-200 pt-2 flex items-center justify-between text-[9px] text-slate-400">
+                <span>AgroAsesor Pro CR™ • Ing. Agr. Ricardo M. Barquero Chacón (Col. 5896)</span>
+                <span>Dossier Agronómico Oficial • Costa Rica</span>
+                <span className="font-bold text-slate-700">Página {numPaginaActual} de {totalPaginas}</span>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* ========================================================= */}
+        {/* PÁGINAS SEMANALES DEDICADAS DE RECOMENDACIONES (1 POR SEMANA) */}
+        {/* ========================================================= */}
+        {semanasParaReporte.map((semNum, sIdx) => {
+          const numPaginaActual = 1 + paginasHallazgos.length + sIdx + 1;
+          const fertSemana = recFertirriegoFiltradas.find(s => s.semana === semNum);
+          const plagSemana = recPlaguicidasFiltradas.find(s => s.semana === semNum);
+          const esUltimaSemana = sIdx === semanasParaReporte.length - 1;
+
+          return (
+            <div key={`semana-page-${semNum}`} className={`report-editorial-page page-${numPaginaActual}`}>
+              <div className="space-y-3">
+                {/* Header Semanal de Alta Gama */}
+                <div className="border-b-2 border-slate-800 pb-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-7 h-7 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black text-xs shadow-xs">
+                      S{semNum}
                     </span>
                     <div>
-                      <h3 className="font-black text-xs sm:text-sm text-purple-950 uppercase tracking-wide">
-                        6. Programa Fitosanitario Foliar y Estrategia FRAC / IRAC
+                      <h3 className="font-black text-xs sm:text-sm text-slate-900 uppercase tracking-wide">
+                        Prescripción Técnica Integral • Semana {semNum}
                       </h3>
-                      <span className="text-[11px] font-bold text-purple-700 block">
-                        {semana.titulo || `Semana ${semana.semana}`} {sIdx > 0 ? '• (Continuación del Programa Fitosanitario)' : '• Prescripción Técnica Segregada'}
+                      <span className="text-[10px] font-bold text-emerald-800 block">
+                        Nutrición, Fertirriego y Manejo Fitosanitario Segregado con Doble Dosis (Litro / 200 L)
                       </span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 self-start sm:self-auto">
-                    <span className="text-xs font-black text-purple-900 bg-purple-100 px-3 py-1 rounded-xl border border-purple-300 shadow-2xs">
-                      Semana {semana.semana}
-                    </span>
+                  <div className="text-right text-[10.5px]">
+                    <span className="font-bold text-slate-900 block">{finca.nombre || 'Finca'}</span>
+                    <span className="text-slate-500 text-[10px]">Validez: 7 días de prescripción</span>
                   </div>
                 </div>
 
-                {semana.sinAplicacion ? (
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-start gap-2.5 text-xs text-emerald-900">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-                    <div>
-                      <strong className="block font-bold">Sin Aplicación Fitosanitaria Requerida:</strong>
-                      <span>
-                        {semana.motivoSinAplicacion || 'Poblaciones por debajo del umbral de daño económico. Se mantiene monitoreo preventivo sin intervención química.'}
-                      </span>
+                {/* SECCIÓN A: NUTRICIÓN Y FERTIRRIEGO DE LA SEMANA */}
+                <div className="bg-slate-50/70 border border-blue-200 rounded-xl p-2.5 space-y-2">
+                  <div className="flex items-center justify-between border-b border-blue-200 pb-1">
+                    <span className="font-extrabold text-blue-950 text-xs flex items-center gap-1.5">
+                      <span className="text-blue-700">💧</span>
+                      A. Programa Nutricional y Fertirriego — Semana {semNum}
+                    </span>
+                    <span className="text-[9.5px] font-bold text-blue-800 bg-blue-100 px-2 py-0.2 rounded">
+                      Sales Solubles y Enmiendas
+                    </span>
+                  </div>
+
+                  {fertSemana && fertSemana.eventos && fertSemana.eventos.length > 0 ? (
+                    <div className="space-y-2">
+                      {fertSemana.eventos.map((ev, eIdx) => (
+                        <div key={eIdx} className="bg-white rounded-lg border border-slate-200 p-2 text-xs space-y-1.5">
+                          <div className="flex items-center justify-between border-b border-slate-100 pb-0.5">
+                            <div className="flex items-center gap-1 font-bold text-slate-800">
+                              <span>{ev.modalidadIcono || '💧'}</span>
+                              <span>{ev.nombreEvento || ev.modalidadNombre || 'Fertirriego'}</span>
+                              <span className="text-[9.5px] font-bold px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                {ev.alcance || 'Toda la Finca'}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 text-[10px]">
+                              {ev.conductividadObjetivo && (
+                                <span className="font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                                  CE: {ev.conductividadObjetivo}
+                                </span>
+                              )}
+                              {ev.phObjetivo && (
+                                <span className="font-bold text-blue-800 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
+                                  pH: {ev.phObjetivo}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Tanque A y Tanque B */}
+                          {ev.lineasTanqueA && ev.lineasTanqueB ? (
+                            <div className="grid grid-cols-2 gap-2 text-[10.5px]">
+                              <div className="bg-blue-50/40 p-1.5 rounded border border-blue-100 space-y-0.5">
+                                <strong className="text-blue-900 block text-[10px] font-bold border-b border-blue-100 pb-0.5">
+                                  🔵 TANQUE A (Calcio y Nitratos):
+                                </strong>
+                                {ev.lineasTanqueA.map((l, lIdx) => (
+                                  <div key={lIdx} className="flex justify-between text-slate-800 py-0.2">
+                                    <span>{l.producto}</span>
+                                    <strong className="text-blue-950 ml-1">{l.dosis} {l.unidad}</strong>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="bg-amber-50/40 p-1.5 rounded border border-amber-100 space-y-0.5">
+                                <strong className="text-amber-900 block text-[10px] font-bold border-b border-amber-100 pb-0.5">
+                                  🟡 TANQUE B (Fósforo, Sulfatos y Micros):
+                                </strong>
+                                {ev.lineasTanqueB.map((l, lIdx) => (
+                                  <div key={lIdx} className="flex justify-between text-slate-800 py-0.2">
+                                    <span>{l.producto}</span>
+                                    <strong className="text-amber-950 ml-1">{l.dosis} {l.unidad}</strong>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="bg-slate-50 p-1.5 rounded border border-slate-200 space-y-0.5 text-[10.5px]">
+                              {(ev.productos || []).map((l, lIdx) => (
+                                <div key={lIdx} className="flex justify-between py-0.5 border-b border-slate-100 last:border-0">
+                                  <span className="font-semibold text-slate-800">{l.producto}</span>
+                                  <strong className="text-emerald-900 ml-1">{l.dosis} {l.unidad}</strong>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {ev.observacionesPie && (
+                            <p className="text-[10px] text-slate-600 italic pt-0.5">
+                              Instrucción: {ev.observacionesPie}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-500 italic bg-white p-2 rounded-lg border border-slate-200">
+                      Nutrición edáfica continua. No se programan cambios en la solución madre esta semana.
+                    </p>
+                  )}
+                </div>
+
+                {/* SECCIÓN B: MANEJO FITOSANITARIO FOLIAR SEGREGADO */}
+                <div className="bg-slate-50/70 border border-purple-200 rounded-xl p-2.5 space-y-2">
+                  <div className="flex items-center justify-between border-b border-purple-200 pb-1">
+                    <span className="font-extrabold text-purple-950 text-xs flex items-center gap-1.5">
+                      <span className="text-purple-700">🛡️</span>
+                      B. Programa Fitosanitario Foliar Segregado — Semana {semNum}
+                    </span>
+                    <span className="text-[9.5px] font-bold text-purple-800 bg-purple-100 px-2 py-0.2 rounded">
+                      Rotación FRAC / IRAC & Dosis Doble (L / 200L)
+                    </span>
+                  </div>
+
+                  {plagSemana && plagSemana.sinAplicacion ? (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 flex items-start gap-2 text-xs text-emerald-900">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="block font-bold text-emerald-950">Sin Aplicación Fitosanitaria Requerida:</strong>
+                        <span className="text-[11px]">
+                          {plagSemana.motivoSinAplicacion || 'Poblaciones fitófagas y fúngicas por debajo del umbral económico. Mantener monitoreo semanal sin intervención química.'}
+                        </span>
+                      </div>
+                    </div>
+                  ) : plagSemana && plagSemana.aplicaciones && plagSemana.aplicaciones.length > 0 ? (
+                    <div className="space-y-2">
+                      {plagSemana.aplicaciones.map((app, aIdx) => (
+                        <div key={aIdx} className="bg-white rounded-lg border border-slate-200 p-2 text-xs space-y-1.5">
+                          <div className="flex items-center justify-between border-b border-slate-100 pb-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className={`px-2 py-0.2 rounded text-[9px] font-black text-white ${
+                                app.tipoMezcla === 'fungicida_foliar' ? 'bg-emerald-700' : 'bg-purple-800'
+                              }`}>
+                                {app.tipoMezcla === 'fungicida_foliar' ? 'MEZCLA 1 (Fungicida + Foliar)' : 'MEZCLA 2 (Insecticida + Acaricida)'}
+                              </span>
+                              <strong className="text-slate-900 text-[11px]">{app.nombre}</strong>
+                            </div>
+                            <span className="text-slate-500 font-semibold text-[10px]">Tanque: {app.volumenTanque}</span>
+                          </div>
+
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs text-left">
+                              <thead>
+                                <tr className="bg-slate-100 text-slate-700 border-b border-slate-200 text-[10px]">
+                                  <th className="py-1 px-1.5 font-bold w-7 text-center">Paso</th>
+                                  <th className="py-1 px-1.5 font-bold">Insumo Comercial</th>
+                                  <th className="py-1 px-1.5 font-bold">FRAC / IRAC</th>
+                                  <th className="py-1 px-1.5 font-bold text-center text-blue-900 bg-blue-50/70 border-x border-blue-100">Dosis / Litro</th>
+                                  <th className="py-1 px-1.5 font-bold text-center text-purple-950 bg-purple-50/70 border-r border-purple-100">Dosis / Estañón 200 L</th>
+                                  <th className="py-1 px-1.5 font-bold">Función / Blanco</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {(app.ordenMezcla || []).map((l, lIdx) => {
+                                  const dual = calcularDosisDual(l.dosis || '');
+                                  const dLitro = l.dosisLitro || dual.dosisLitro;
+                                  const dEstanon = l.dosisEstanon || dual.dosisEstanon;
+                                  return (
+                                    <tr key={lIdx} className="hover:bg-slate-50/50">
+                                      <td className="py-1 px-1.5 text-center font-bold text-[9.5px] text-slate-500">
+                                        {lIdx + 1}
+                                      </td>
+                                      <td className="py-1 px-1.5 font-bold text-slate-900">
+                                        <span>{l.producto}</span>
+                                        {l.registroSfe && (
+                                          <span className="block text-[8.5px] font-bold text-emerald-800">
+                                            🏛️ {l.registroSfe}
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td className="py-1 px-1.5 font-bold text-indigo-700 text-[10px]">
+                                        {l.fracIrac || 'N/A'}
+                                      </td>
+                                      <td className="py-1 px-1.5 font-bold text-blue-900 text-center bg-blue-50/20 border-x border-blue-100 whitespace-nowrap">
+                                        {dLitro}
+                                      </td>
+                                      <td className="py-1 px-1.5 font-black text-purple-950 text-center bg-purple-50/30 border-r border-purple-100 whitespace-nowrap">
+                                        {dEstanon}
+                                      </td>
+                                      <td className="py-1 px-1.5 text-slate-600 text-[10px]">
+                                        {l.funcion || ''}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {app.observacionesPie && (
+                            <p className="text-[10px] text-slate-600 italic pt-0.5 border-t border-slate-100">
+                              Instrucción: {app.observacionesPie}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-500 italic bg-white p-2 rounded-lg border border-slate-200">
+                      No se han programado aplicaciones fitosanitarias químicas para esta semana.
+                    </p>
+                  )}
+                </div>
+
+                {/* MARCO LEGAL Y FIRMA DEL INGENIERO (EN LA ÚLTIMA PÁGINA) */}
+                {esUltimaSemana && (
+                  <div className="border-t-2 border-slate-300 pt-3 mt-3">
+                    <div className="flex flex-row items-center justify-between gap-4">
+                      <div className="space-y-0.5 text-left">
+                        <div className="text-base text-emerald-900 font-bold italic tracking-wide">
+                          Ricardo M. Barquero Chacón
+                        </div>
+                        <div className="w-48 h-0.5 bg-slate-400"></div>
+                        <p className="text-xs font-bold text-slate-900">
+                          Ing. Agr. Ricardo Manuel Barquero Chacón
+                        </p>
+                        <p className="text-[10.5px] text-slate-600 font-medium">
+                          Ingeniero Agrónomo • Colegiado No. 5896
+                        </p>
+                        <p className="text-[9px] text-slate-500">
+                          Colegio de Ingenieros Agrónomos de Costa Rica • Tel: +506 8894-5662
+                        </p>
+                      </div>
+
+                      <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-center space-y-0.5 max-w-xs">
+                        <span className="text-[9px] font-extrabold uppercase tracking-wider text-emerald-800 block">
+                          VALIDACIÓN OFICIAL BPA COSTA RICA
+                        </span>
+                        <p className="text-[9.5px] text-slate-600 leading-tight">
+                          Prescripción conforme al marco fitosanitario nacional (SFE / MAG) y registro oficial.
+                        </p>
+                        <div className="pt-0.5 text-[9px] text-slate-400 font-mono">
+                          REG-CR: 5896 • {visita?.fecha || '2026-03-10'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 pt-1 border-t border-slate-200 text-center text-[8.5px] text-slate-400">
+                      © 2026 <strong>Ricardo Manuel Barquero Chacón</strong>. Todos los derechos reservados • AgroAsesor Pro CR™.
                     </div>
                   </div>
-                ) : (
-                  (semana.aplicaciones || []).map((app, aIdx) => (
-                    <div key={aIdx} className="bg-white rounded-xl border border-slate-200 p-3 space-y-2 text-xs shadow-xs">
-                      <div className="flex items-center justify-between font-bold text-slate-900 border-b pb-1">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-black text-white ${
-                            app.tipoMezcla === 'fungicida_foliar' ? 'bg-emerald-700' : 'bg-purple-800'
-                          }`}>
-                            {app.tipoMezcla === 'fungicida_foliar' ? 'MEZCLA 1 (Fungicida + Foliar)' : 'MEZCLA 2 (Insecticida + Acaricida)'}
-                          </span>
-                          <span>{app.nombre}</span>
-                          <span className="text-[10px] font-bold px-2 py-0.2 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
-                            {app.alcance || 'Toda la Finca'}
-                          </span>
-                        </div>
-                        <span className="text-slate-600 font-semibold text-[11px]">Vol: {app.volumenTanque}</span>
-                      </div>
-
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs text-left">
-                          <thead>
-                            <tr className="bg-slate-100 text-slate-700 border-b border-slate-200 text-[11px]">
-                              <th className="py-1.5 px-2 font-bold w-10 text-center">Paso</th>
-                              <th className="py-1.5 px-2 font-bold">Insumo Comercial</th>
-                              <th className="py-1.5 px-2 font-bold">FRAC / IRAC</th>
-                              <th className="py-1.5 px-2 font-bold text-center text-blue-900 bg-blue-50/70 border-x border-blue-100">Dosis / Litro</th>
-                              <th className="py-1.5 px-2 font-bold text-center text-purple-950 bg-purple-50/70 border-r border-purple-100">Dosis / Estañón 200 L</th>
-                              <th className="py-1.5 px-2 font-bold">Objetivo / Blanco</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {(app.ordenMezcla || []).map((l, idx) => {
-                              const dual = calcularDosisDual(l.dosis || '');
-                              const dLitro = l.dosisLitro || dual.dosisLitro;
-                              const dEstanon = l.dosisEstanon || dual.dosisEstanon;
-                              return (
-                                <tr key={idx} className="hover:bg-slate-50/50">
-                                  <td className="py-1.5 px-2 text-center font-bold text-[10px] text-slate-500">
-                                    {idx + 1}
-                                  </td>
-                                  <td className="py-1.5 px-2 font-bold text-slate-900">
-                                    <div>
-                                      <span>{l.producto}</span>
-                                      {l.registroSfe && (
-                                        <span className="block text-[9px] font-bold text-emerald-800">
-                                          🏛️ {l.registroSfe}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </td>
-                                  <td className="py-1.5 px-2 font-bold text-indigo-700 text-[11px]">
-                                    {l.fracIrac || 'N/A'}
-                                  </td>
-                                  <td className="py-1.5 px-2 font-bold text-blue-900 text-center bg-blue-50/20 border-x border-blue-100 whitespace-nowrap">
-                                    {dLitro}
-                                  </td>
-                                  <td className="py-1.5 px-2 font-black text-purple-950 text-center bg-purple-50/30 border-r border-purple-100 whitespace-nowrap">
-                                    {dEstanon}
-                                  </td>
-                                  <td className="py-1.5 px-2 text-slate-600 text-[11px]">
-                                    {l.funcion || ''}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {app.observacionesPie && (
-                        <p className="text-[11px] text-slate-600 italic pt-1 border-t border-slate-100">
-                          Instrucción: {app.observacionesPie}
-                        </p>
-                      )}
-                    </div>
-                  ))
                 )}
               </div>
-            ))
-          ) : (
-            <div className="report-page-block print-avoid-break mb-5 bg-slate-50 rounded-2xl border border-slate-200 p-4">
-              <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 mb-2 pb-1 border-b border-slate-200 flex items-center gap-1.5">
-                <span className="w-5 h-5 rounded-lg bg-purple-100 text-purple-800 flex items-center justify-center text-xs font-bold">6</span>
-                6. Programa Fitosanitario Foliar y Estrategia FRAC / IRAC
-              </h3>
-              <p className="text-xs text-slate-500 italic">
-                No se han estructurado aplicaciones fitosanitarias para el alcance seleccionado.
-              </p>
-            </div>
-          )}
-        </div>
 
-        {/* 7. FIRMA OFICIAL DEL INGENIERO AGRÓNOMO */}
-        <div className="report-page-block signature-block print-avoid-break border-t-2 border-slate-300 pt-5 mt-6">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
-            <div className="text-center sm:text-left space-y-1">
-              <div className="text-xl text-emerald-900 font-bold italic tracking-wide">
-                Ricardo M. Barquero Chacón
-              </div>
-              <div className="w-56 h-0.5 bg-slate-400 mx-auto sm:mx-0"></div>
-              <p className="text-xs font-bold text-slate-900">
-                Ing. Agr. Ricardo Manuel Barquero Chacón
-              </p>
-              <p className="text-[11px] text-slate-600">
-                Ingeniero Agrónomo • Colegiado No. 5896
-              </p>
-              <p className="text-[10px] text-slate-500">
-                Firma Técnica y Validación Profesional de Asesoría en Campo
-              </p>
-            </div>
-
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-center space-y-1 max-w-xs">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 block">
-                VALIDACIÓN OFICIAL
-              </span>
-              <p className="text-[11px] text-slate-600 leading-tight">
-                Informe emitido conforme a las Buenas Prácticas Agrícolas (BPA) y legislación fitosanitaria de Costa Rica.
-              </p>
-              <div className="pt-1 text-[10px] text-slate-400 font-mono">
-                REG-CR: 5896 • {visita?.fecha || '2026-03-10'}
+              {/* Footer Página Semanal */}
+              <div className="border-t border-slate-200 pt-2 flex items-center justify-between text-[9px] text-slate-400">
+                <span>AgroAsesor Pro CR™ • Ing. Agr. Ricardo M. Barquero Chacón (Col. 5896)</span>
+                <span>Prescripción Técnica Oficial • Semana {semNum}</span>
+                <span className="font-bold text-slate-700">Página {numPaginaActual} de {totalPaginas}</span>
               </div>
             </div>
-          </div>
-        </div>
-
-        {/* PIE LEGAL Y DERECHOS DE AUTOR */}
-        <div className="mt-8 pt-4 border-t border-slate-200 text-center text-[10px] text-slate-400 space-y-0.5 print-avoid-break">
-          <p className="font-semibold text-slate-500">
-            © 2026 <strong>Ricardo Manuel Barquero Chacón</strong>. Todos los derechos reservados.
-          </p>
-          <p>
-            AgroAsesor Pro CR™ • Software agronómico bajo propiedad intelectual de Ricardo Manuel Barquero Chacón. Documento oficial de prescripción fitosanitaria y nutricional.
-          </p>
-        </div>
-
+          );
+        })}
       </div>
 
       {/* ========================================================= */}
@@ -1819,6 +1853,55 @@ export default function ReportModule({ visita, onOpenAi, onNavegarTab }) {
             >
               Entendido
             </button>
+          </div>
+        </div>
+      )}
+      {/* ========================================================= */}
+      {/* MODAL HD VISOR FOTOGRÁFICO CIENTÍFICO (REVISTA) */}
+      {/* ========================================================= */}
+      {modalFotoHd && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn no-print">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-3xl w-full overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-1 bg-emerald-600 text-white rounded-lg text-xs font-mono font-bold">
+                  {modalFotoHd.figura}
+                </span>
+                <h4 className="font-bold text-sm text-white">{modalFotoHd.titulo}</h4>
+              </div>
+              <button 
+                onClick={() => setModalFotoHd(null)}
+                className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 bg-black flex items-center justify-center p-2 overflow-auto min-h-[300px]">
+              <img 
+                src={modalFotoHd.url} 
+                alt={modalFotoHd.titulo} 
+                className="max-h-[60vh] max-w-full object-contain rounded-lg shadow-lg"
+              />
+            </div>
+
+            <div className="p-4 bg-slate-950 border-t border-slate-800 text-xs text-slate-300 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800">
+                  {modalFotoHd.categoria}
+                </span>
+                <span className="font-bold text-red-400 bg-red-950/60 px-2 py-0.5 rounded border border-red-800">
+                  Severidad: {modalFotoHd.severidad}
+                </span>
+              </div>
+              <p className="text-slate-200 leading-relaxed text-[11.5px]">
+                {modalFotoHd.descripcion}
+              </p>
+              <div className="flex items-center justify-between text-[10px] text-slate-500 pt-2 border-t border-slate-800">
+                <span>📍 Lote: {modalFotoHd.lote}</span>
+                <span>📅 Fecha: {modalFotoHd.fecha}</span>
+              </div>
+            </div>
           </div>
         </div>
       )}

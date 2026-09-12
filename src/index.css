@@ -32,12 +32,72 @@
 }
 
 /* ========================================================================== */
+/* MOTOR DE MAQUETACIÓN EDITORIAL DE REVISTA CIENTÍFICA (PANTALLA Y PDF)     */
+/* ========================================================================== */
+
+/* Hojas editoriales estándar en pantalla */
+.report-editorial-page {
+  width: 100%;
+  max-width: 215.9mm;
+  min-height: 279.4mm;
+  margin: 0 auto 32px auto;
+  background: #ffffff;
+  box-shadow: 0 16px 40px -8px rgba(15, 23, 42, 0.14), 0 4px 14px -2px rgba(15, 23, 42, 0.08);
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  padding: 8mm 10mm 7mm 10mm;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-sizing: border-box;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Contenedores de fotografías científicas en HD (Formato Revista) */
+.scientific-photo-container {
+  width: 100%;
+  height: 180px;
+  background-color: #0b1120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+}
+
+.scientific-photo,
+img.scientific-photo {
+  max-width: 100% !important;
+  max-height: 100% !important;
+  width: auto !important;
+  height: auto !important;
+  object-fit: contain !important;
+  display: block !important;
+  margin: auto !important;
+  transition: transform 0.25s ease-in-out;
+}
+
+.scientific-photo-container:hover .scientific-photo {
+  transform: scale(1.03);
+}
+
+/* Pie de figura técnica de revista científica */
+.scientific-caption {
+  background: #ffffff;
+  padding: 8px 10px;
+  border-top: 1px solid #e2e8f0;
+}
+
+/* ========================================================================== */
 /* MOTOR DE IMPRESIÓN EDITORIAL VECTORIAL DE ALTA DEFINICIÓN (3-4 PÁGINAS)     */
 /* ========================================================================== */
 @media print {
   @page {
     size: letter portrait;
-    margin: 8mm 10mm 8mm 10mm;
+    margin: 0;
   }
   
   *, *::before, *::after {
@@ -53,9 +113,9 @@
     color: #0f172a !important;
     padding: 0 !important;
     margin: 0 !important;
-    font-size: 8.5pt !important;
+    font-size: 8pt !important;
     line-height: 1.25 !important;
-    width: 100% !important;
+    width: 215.9mm !important;
     height: auto !important;
   }
 
@@ -71,7 +131,7 @@
   .report-sheet {
     display: block !important;
     width: 100% !important;
-    max-width: 198mm !important;
+    max-width: 215.9mm !important;
     margin: 0 auto !important;
     padding: 0 !important;
     border: none !important;
@@ -79,14 +139,40 @@
     background: transparent !important;
   }
 
-  /* Control tipográfico proporcional en impresión */
-  h1 { font-size: 13pt !important; line-height: 1.2 !important; font-weight: 900 !important; margin: 0 !important; }
-  h2 { font-size: 11pt !important; line-height: 1.2 !important; font-weight: 800 !important; margin: 0 !important; }
-  h3 { font-size: 9pt !important; line-height: 1.2 !important; font-weight: 800 !important; margin: 0 !important; }
-  h4 { font-size: 8.2pt !important; line-height: 1.2 !important; font-weight: 700 !important; margin: 0 !important; }
-  p, span, li { font-size: 8pt !important; line-height: 1.22 !important; }
+  .report-editorial-page {
+    width: 215.9mm !important;
+    height: 279.4mm !important;
+    max-height: 279.4mm !important;
+    padding: 8mm 10mm 7mm 10mm !important;
+    margin: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    page-break-after: always !important;
+    break-after: page !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    box-sizing: border-box !important;
+    background: #ffffff !important;
+  }
 
-  /* Bloques indivisibles y flujo inteligente */
+  .report-editorial-page:last-child {
+    page-break-after: auto !important;
+    break-after: auto !important;
+  }
+
+  /* Control tipográfico proporcional en impresión */
+  h1 { font-size: 12.5pt !important; line-height: 1.2 !important; font-weight: 900 !important; margin: 0 !important; }
+  h2 { font-size: 10.5pt !important; line-height: 1.2 !important; font-weight: 800 !important; margin: 0 !important; }
+  h3 { font-size: 8.8pt !important; line-height: 1.2 !important; font-weight: 800 !important; margin: 0 !important; }
+  h4 { font-size: 8pt !important; line-height: 1.2 !important; font-weight: 700 !important; margin: 0 !important; }
+  p, span, li { font-size: 7.8pt !important; line-height: 1.22 !important; }
+
+  /* Bloques indivisibles */
   .report-page-block,
   .print-avoid-break, 
   .report-section,
@@ -97,20 +183,14 @@
   .clima-card {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
-    margin-bottom: 3.5mm !important;
+    margin-bottom: 2mm !important;
   }
 
-  /* Los encabezados nunca deben quedar huérfanos al fondo de una página */
-  h1, h2, h3, h4, h5, .section-header {
-    page-break-after: avoid !important;
-    break-after: avoid !important;
-  }
-
-  /* Tablas: Estructura fija y legible en papel */
+  /* Tablas */
   table {
     width: 100% !important;
     border-collapse: collapse !important;
-    font-size: 7.8pt !important;
+    font-size: 7.4pt !important;
     margin-top: 1mm !important;
     margin-bottom: 1.5mm !important;
     page-break-inside: avoid !important;
@@ -122,19 +202,19 @@
   }
 
   th {
-    font-size: 7.5pt !important;
+    font-size: 7.2pt !important;
     font-weight: 800 !important;
     background-color: #f1f5f9 !important;
     color: #0f172a !important;
-    padding: 1.5mm 2mm !important;
+    padding: 1.2mm 1.6mm !important;
     border: 1px solid #cbd5e1 !important;
     text-transform: uppercase !important;
     letter-spacing: 0.02em !important;
   }
 
   td {
-    font-size: 7.6pt !important;
-    padding: 1.5mm 2mm !important;
+    font-size: 7.3pt !important;
+    padding: 1.2mm 1.6mm !important;
     border: 1px solid #e2e8f0 !important;
     line-height: 1.2 !important;
   }
@@ -144,7 +224,7 @@
     break-inside: avoid !important;
   }
 
-  /* Cuadrículas fijas para que nunca colapsen a 1 columna */
+  /* Cuadrículas fijas */
   .print-grid-2,
   .print\:grid-cols-2 {
     display: grid !important;
@@ -159,45 +239,42 @@
     gap: 2mm !important;
   }
 
-  /* Tarjetas de hallazgos y fotografías compactas */
+  /* Tarjetas de hallazgos científicas */
   .finding-card {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
     border: 1px solid #cbd5e1 !important;
     border-radius: 6px !important;
     overflow: hidden !important;
-    background: #f8fafc !important;
+    background: #ffffff !important;
   }
 
-  .finding-photo-container {
-    height: 95px !important;
-    max-height: 95px !important;
+  .scientific-photo-container {
+    height: 135px !important;
+    max-height: 135px !important;
+    background-color: #0b1120 !important;
   }
 
-  .finding-photo, 
-  img.finding-photo {
-    height: 95px !important;
-    max-height: 95px !important;
-    width: 100% !important;
-    object-fit: cover !important;
+  .scientific-photo, 
+  img.scientific-photo {
+    max-height: 135px !important;
+    max-width: 100% !important;
+    width: auto !important;
+    height: auto !important;
+    object-fit: contain !important;
     display: block !important;
+    margin: auto !important;
   }
 
   img {
     max-width: 100% !important;
   }
 
-  /* Espaciadores y divisores reducidos para compacidad */
+  /* Espaciadores compactos */
   .p-5, .p-8, .p-6, .p-4 {
-    padding: 3mm !important;
+    padding: 2.5mm !important;
   }
   .mb-5, .mb-6, .mb-4 {
-    margin-bottom: 3mm !important;
-  }
-  .space-y-3 > * + * {
-    margin-top: 2mm !important;
-  }
-  .space-y-4 > * + * {
-    margin-top: 2.5mm !important;
+    margin-bottom: 2mm !important;
   }
 }
