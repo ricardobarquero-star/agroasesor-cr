@@ -5,12 +5,14 @@ import { storageService } from '../services/storageService';
 
 export default function SettingsModal({ isOpen, onClose, onDataReload }) {
   const [apiKey, setApiKey] = useState(geminiService.getApiKey());
+  const [modeloGemini, setModeloGemini] = useState(geminiService.getModel());
   const [guardadoExito, setGuardadoExito] = useState(false);
 
   if (!isOpen) return null;
 
   const handleSaveKey = () => {
     geminiService.setApiKey(apiKey);
+    geminiService.setModel(modeloGemini);
     setGuardadoExito(true);
     setTimeout(() => setGuardadoExito(false), 2500);
   };
@@ -81,10 +83,28 @@ export default function SettingsModal({ isOpen, onClose, onDataReload }) {
               <input 
                 type="password"
                 value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setApiKey(val);
+                  if (val.trim().startsWith('AQ.') && modeloGemini !== 'gemini-3.8-flash') {
+                    setModeloGemini('gemini-3.8-flash');
+                  }
+                }}
                 placeholder="Pegue su clave (AQ.Ab... o AIzaSy...)"
                 className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
               />
+              <select
+                value={modeloGemini}
+                onChange={(e) => setModeloGemini(e.target.value)}
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
+              >
+                <option value="gemini-3.8-flash">⚡ Gemini 3.8 Flash (Claves AQ.Ab...)</option>
+                <option value="gemini-3.6-flash">⚡ Gemini 3.6 Flash</option>
+                <option value="gemini-3.5-flash">⚡ Gemini 3.5 Flash</option>
+                <option value="gemini-2.5-flash">⚡ Gemini 2.5 Flash</option>
+                <option value="gemini-2.0-flash">⚡ Gemini 2.0 Flash</option>
+                <option value="gemini-1.5-flash">⚡ Gemini 1.5 Flash</option>
+              </select>
               <button
                 onClick={handleSaveKey}
                 className="w-full py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow"

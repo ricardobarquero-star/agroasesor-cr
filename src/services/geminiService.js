@@ -8,11 +8,17 @@
 
 import { storageService } from './storageService';
 
-// Modelos ordenados por estabilidad y cuota
+// Modelos ordenados por prioridad (incorporando soporte oficial para claves AQ.Ab y modelos 3.8 / 3.6 flash)
 const MODELOS_DISPONIBLES = [
+  'gemini-3.8-flash',
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
+  'gemini-3.0-flash',
+  'gemini-2.5-flash',
   'gemini-2.0-flash',
   'gemini-2.0-flash-lite',
-  'gemini-1.5-flash'
+  'gemini-1.5-flash',
+  'gemini-1.5-pro'
 ];
 
 /**
@@ -20,52 +26,99 @@ const MODELOS_DISPONIBLES = [
  */
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function llamarApiGeminiConCascada({ key, requestBody }) {
+async function llamarApiGeminiConCascada({ key, requestBody, modeloPreferido }) {
   let ultimoError = null;
+  const keyLimpia = (key || '').trim();
 
-  for (let i = 0; i < MODELOS_DISPONIBLES.length; i++) {
-    const modelo = MODELOS_DISPONIBLES[i];
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${encodeURIComponent(key)}`;
-      
-      const response = await fetch(url, {
-        method: 'POST',
+  // Priorizar el modelo configurado por el usuario o sugerido por la clave AQ.Ab
+  const modeloConfigurado = modeloPreferido || geminiService.getModel();
+  const listaModelos = [
+    modeloConfigurado,
+    ...MODELOS_DISPONIBLES.filter(m => m !== modeloConfigurado)
+  ];
+
+  for (let i = 0; i < listaModelos.length; i++) {
+    const modelo = listaModelos[i];
+    if (!modelo) continue;
+
+    // Estrategias de autenticación para soportar tanto claves estándar (AIzaSy) como las nuevas (AQ.Ab...)
+    const variantesAuth = [
+      // 1. Estándar v1beta con query param y header x-goog-api-key
+      {
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${encodeURIComponent(keyLimpia)}`,
         headers: {
           'Content-Type': 'application/json',
-          'x-goog-api-key': key // Imprescindible para las nuevas claves que inician con AQ.
-        },
-        body: JSON.stringify(requestBody)
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        const texto = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        return {
-          exito: true,
-          texto,
-          modeloUsado: modelo
-        };
+          'x-goog-api-key': keyLimpia
+        }
+      },
+      // 2. Solo header x-goog-api-key sin ?key= en URL (recomendado para claves con formato AQ.Ab)
+      {
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': keyLimpia
+        }
+      },
+      // 3. Autenticación tipo Bearer token
+      {
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${keyLimpia}`
+        }
+      },
+      // 4. Endpoint v1 oficial
+      {
+        url: `https://generativelanguage.googleapis.com/v1/models/${modelo}:generateContent?key=${encodeURIComponent(keyLimpia)}`,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': keyLimpia
+        }
       }
+    ];
 
-      const errData = await response.json().catch(() => ({}));
-      const msg = errData.error?.message || `HTTP ${response.status}`;
-      ultimoError = msg;
+    for (const ep of variantesAuth) {
+      try {
+        const response = await fetch(ep.url, {
+          method: 'POST',
+          headers: ep.headers,
+          body: JSON.stringify(requestBody)
+        });
 
-      // Manejo de modelo saturado (HTTP 429 / 503) o no encontrado (404)
-      if (response.status === 429 || response.status === 503) {
-        console.warn(`Modelo ${modelo} saturado (${response.status}), aplicando backoff y probando siguiente...`);
-        await delay(1000); // 1 segundo de amortiguación
-        continue;
-      } else if (response.status === 404 || msg.toLowerCase().includes('not found')) {
-        console.warn(`Modelo ${modelo} no disponible para esta clave, probando siguiente...`);
-        continue;
-      } else {
-        // Error de credenciales u otro problema
-        return { exito: false, error: msg, modeloUsado: modelo };
+        if (response.ok) {
+          const result = await response.json();
+          const texto = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          return {
+            exito: true,
+            texto,
+            modeloUsado: modelo
+          };
+        }
+
+        const errData = await response.json().catch(() => ({}));
+        const msg = errData.error?.message || `HTTP ${response.status}`;
+        ultimoError = msg;
+
+        // Si es 404 (modelo no encontrado en esta API o versión), pasar al siguiente modelo
+        if (response.status === 404 || msg.toLowerCase().includes('not found')) {
+          break; // Pasar al siguiente modelo de la lista
+        }
+
+        // Si es 429/503 (servidor saturado), pausar y probar siguiente
+        if (response.status === 429 || response.status === 503) {
+          console.warn(`Modelo ${modelo} saturado (${response.status}), probando variante...`);
+          await delay(800);
+          continue;
+        }
+
+        // Si es 400 o 401 con error de auth en esta variante, probar la siguiente variante
+        if (response.status === 400 || response.status === 401) {
+          continue;
+        }
+      } catch (e) {
+        ultimoError = e.message;
+        await delay(400);
       }
-    } catch (e) {
-      ultimoError = e.message;
-      await delay(600);
     }
   }
 
@@ -81,7 +134,29 @@ export const geminiService = {
   },
 
   setApiKey(key) {
-    localStorage.setItem('agroasesor_gemini_api_key', key.trim());
+    const cleanKey = (key || '').trim();
+    localStorage.setItem('agroasesor_gemini_api_key', cleanKey);
+    // Si la clave empieza con AQ.Ab y no hay modelo específico, predeterminar a gemini-3.8-flash
+    if (cleanKey.startsWith('AQ.') && !localStorage.getItem('agroasesor_gemini_model')) {
+      this.setModel('gemini-3.8-flash');
+    }
+  },
+
+  getModel() {
+    const saved = localStorage.getItem('agroasesor_gemini_model');
+    if (saved) return saved;
+    const key = this.getApiKey();
+    return (key && key.startsWith('AQ.')) ? 'gemini-3.8-flash' : 'gemini-3.8-flash';
+  },
+
+  setModel(model) {
+    if (model) {
+      localStorage.setItem('agroasesor_gemini_model', model.trim());
+    }
+  },
+
+  getModelosDisponibles() {
+    return MODELOS_DISPONIBLES;
   },
 
   removeApiKey() {
@@ -91,28 +166,38 @@ export const geminiService = {
   /**
    * Probar conectividad real con la clave API de Gemini
    */
-  async probarConexion(claveAProbar) {
+  async probarConexion(claveAProbar, modeloPersonalizado) {
     const key = (claveAProbar || this.getApiKey() || '').trim();
     if (!key) {
       return { exito: false, error: 'Por favor ingrese una clave de API antes de probar.' };
     }
 
+    const modeloTarget = modeloPersonalizado || this.getModel() || 'gemini-3.8-flash';
+
     const testBody = {
       contents: [{ parts: [{ text: 'Responde únicamente con la palabra "CONECTADO" si recibes este mensaje de prueba.' }] }]
     };
 
-    const res = await llamarApiGeminiConCascada({ key, requestBody: testBody });
+    const res = await llamarApiGeminiConCascada({ 
+      key, 
+      requestBody: testBody, 
+      modeloPreferido: modeloTarget 
+    });
+
     if (res.exito) {
+      if (res.modeloUsado) {
+        this.setModel(res.modeloUsado);
+      }
       return {
         exito: true,
-        mensaje: `¡Conexión exitosa con Google Gemini (${res.modeloUsado})! Clave ${key.startsWith('AQ.') ? 'AQ' : 'estándar'} verificada y activa.`,
+        mensaje: `¡Conexión exitosa con Google Gemini (${res.modeloUsado})! Clave ${key.startsWith('AQ.') ? 'nueva AQ.Ab (3.8 Flash)' : 'estándar'} verificada y activa.`,
         respuesta: res.texto.trim(),
         modelo: res.modeloUsado
       };
     } else {
       return {
         exito: false,
-        error: `Fallo al validar clave: ${res.error}`
+        error: `Fallo al validar clave con modelo ${modeloTarget}: ${res.error}. El sistema probará automáticamente la cascada de modelos en cada consulta.`
       };
     }
   },

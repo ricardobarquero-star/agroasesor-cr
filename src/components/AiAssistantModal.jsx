@@ -83,7 +83,7 @@ export default function AiAssistantModal({ isOpen, onClose, modulo, contexto }) 
               <div className="flex items-center gap-1.5">
                 <h3 className="font-bold text-sm sm:text-base leading-tight">Asistente Virtual Agronómico</h3>
                 <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/30 text-emerald-200 border border-emerald-400/30">
-                  Gemini AI
+                  {geminiService.getModel()}
                 </span>
               </div>
               <p className="text-[11px] text-emerald-200/90">

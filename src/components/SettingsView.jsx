@@ -14,6 +14,9 @@ export default function SettingsView({ onDataReload }) {
 
   // Estado de Gemini API Key
   const [apiKey, setApiKey] = useState(geminiService.getApiKey());
+  const [modeloGemini, setModeloGemini] = useState(geminiService.getModel());
+  const [modoModeloCustom, setModoModeloCustom] = useState(false);
+  const [modeloCustomTexto, setModeloCustomTexto] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [probandoKey, setProbandoKey] = useState(false);
   const [testResultado, setTestResultado] = useState(null);
@@ -32,6 +35,8 @@ export default function SettingsView({ onDataReload }) {
 
   const handleGuardarKey = () => {
     geminiService.setApiKey(apiKey);
+    const modeloFinal = modoModeloCustom && modeloCustomTexto.trim() ? modeloCustomTexto.trim() : modeloGemini;
+    geminiService.setModel(modeloFinal);
     setKeyGuardada(true);
     setTimeout(() => setKeyGuardada(false), 3000);
   };
@@ -46,9 +51,13 @@ export default function SettingsView({ onDataReload }) {
   const handleProbarKey = async () => {
     setProbandoKey(true);
     setTestResultado(null);
+    const modeloFinal = modoModeloCustom && modeloCustomTexto.trim() ? modeloCustomTexto.trim() : modeloGemini;
     try {
-      const res = await geminiService.probarConexion(apiKey);
+      const res = await geminiService.probarConexion(apiKey, modeloFinal);
       setTestResultado(res);
+      if (res.exito && res.modelo) {
+        setModeloGemini(res.modelo);
+      }
     } catch (e) {
       setTestResultado({ exito: false, error: e.message });
     } finally {
@@ -241,7 +250,13 @@ export default function SettingsView({ onDataReload }) {
               <input
                 type={showKey ? 'text' : 'password'}
                 value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setApiKey(val);
+                  if (val.trim().startsWith('AQ.') && modeloGemini !== 'gemini-3.8-flash') {
+                    setModeloGemini('gemini-3.8-flash');
+                  }
+                }}
                 placeholder="Pegue aquí su clave (ej: AQ.Ab... o AIzaSy...)"
                 className="w-full bg-slate-50 border border-slate-300 rounded-xl pl-3 pr-10 py-2.5 text-xs font-mono text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
               />
@@ -254,6 +269,74 @@ export default function SettingsView({ onDataReload }) {
                 {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
+          </div>
+
+          {/* Selector de Modelo Gemini */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Modelo Gemini Asignado (Predeterminado para claves AQ.Ab...)
+            </label>
+            {!modoModeloCustom ? (
+              <div className="flex gap-2">
+                <select
+                  value={modeloGemini}
+                  onChange={(e) => {
+                    if (e.target.value === '__custom__') {
+                      setModoModeloCustom(true);
+                      setModeloCustomTexto(modeloGemini);
+                    } else {
+                      setModeloGemini(e.target.value);
+                    }
+                  }}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
+                >
+                  <option value="gemini-3.8-flash">⚡ Gemini 3.8 Flash (Específico para claves AQ.Ab...)</option>
+                  <option value="gemini-3.6-flash">⚡ Gemini 3.6 Flash</option>
+                  <option value="gemini-3.5-flash">⚡ Gemini 3.5 Flash</option>
+                  <option value="gemini-2.5-flash">⚡ Gemini 2.5 Flash</option>
+                  <option value="gemini-2.0-flash">⚡ Gemini 2.0 Flash</option>
+                  <option value="gemini-2.0-flash-lite">⚡ Gemini 2.0 Flash Lite</option>
+                  <option value="gemini-1.5-flash">⚡ Gemini 1.5 Flash</option>
+                  <option value="__custom__">✏️ [+ Escribir otro modelo...]</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModoModeloCustom(true);
+                    setModeloCustomTexto(modeloGemini);
+                  }}
+                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 shrink-0"
+                  title="Escribir modelo manual"
+                >
+                  ✏️
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={modeloCustomTexto}
+                  onChange={(e) => setModeloCustomTexto(e.target.value)}
+                  placeholder="Ej: gemini-3.8-flash o gemini-3.6-flash"
+                  className="w-full bg-white border border-emerald-400 rounded-xl px-3 py-2.5 text-xs font-mono text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModoModeloCustom(false);
+                    if (modeloCustomTexto.trim()) {
+                      setModeloGemini(modeloCustomTexto.trim());
+                    }
+                  }}
+                  className="px-3 py-2 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-xl text-xs font-bold text-emerald-800 shrink-0"
+                >
+                  Lista
+                </button>
+              </div>
+            )}
+            <p className="text-[11px] text-slate-500 mt-1">
+              Las claves que inician con <strong>AQ.Ab...</strong> operan con <strong>Gemini 3.8 Flash</strong> o <strong>3.6 Flash</strong>. El sistema utiliza cascada automática inteligente.
+            </p>
           </div>
 
           {/* Resultado de la prueba en vivo */}
