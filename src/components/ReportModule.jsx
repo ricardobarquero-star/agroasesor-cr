@@ -4,7 +4,7 @@ import {
   MapPin, Calendar, CloudRain, Droplet, ShieldAlert, Sparkles, 
   Printer, ArrowRight, UserCheck, AlertTriangle, Check, Filter,
   Building2, Layers, FolderOpen, Thermometer, Activity, Compass,
-  Sliders, ShieldCheck, Sun, Info
+  Sliders, ShieldCheck, Sun, Info, Paperclip, X
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
@@ -14,7 +14,9 @@ import { storageService } from '../services/storageService';
 export default function ReportModule({ visita, onOpenAi }) {
   const reportRef = useRef(null);
   const [generandoPdf, setGenerandoPdf] = useState(false);
+  const [mensajeEstado, setMensajeEstado] = useState('');
   const [guardadoEnExpediente, setGuardadoEnExpediente] = useState(false);
+  const [modalDescargaInfo, setModalDescargaInfo] = useState({ abierto: false, archivo: '', destino: '' });
   
   // Filtro de alcance para el reporte (Toda la Finca o Lote Específico)
   const [filtroLote, setFiltroLote] = useState('todos');
@@ -69,6 +71,74 @@ export default function ReportModule({ visita, onOpenAi }) {
     return { ...semana, aplicaciones: appsFiltradas };
   }).filter(semana => semana.sinAplicacion || (semana.aplicaciones && semana.aplicaciones.length > 0));
 
+  // Generar Blob y File del PDF asegurando captura completa aún si está en vista digital
+  const generarPdfBlobYArchivo = async () => {
+    if (!reportRef.current) return null;
+    const element = reportRef.current;
+
+    const estabaOculto = element.classList.contains('hidden');
+    if (estabaOculto) {
+      element.classList.remove('hidden');
+      element.style.position = 'fixed';
+      element.style.left = '-9999px';
+      element.style.top = '0';
+      element.style.width = '1024px';
+      element.style.display = 'block';
+    }
+
+    try {
+      // Esperar brevemente para layout y render de fuentes/imágenes
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const canvas = await html2canvas(element, {
+        scale: 2, // 2x DPI para nitidez editorial y legibilidad de tablas
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        windowWidth: 1024
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+      let heightLeft = pdfHeight;
+      let position = 0;
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      // Página 1
+      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
+      heightLeft -= pageHeight;
+
+      // Páginas adicionales si el informe es extenso
+      while (heightLeft > 0) {
+        position = heightLeft - pdfHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
+        heightLeft -= pageHeight;
+      }
+
+      const nombreLoteStr = filtroLote === 'todos' ? 'Consolidado' : filtroLote.replace(/\s+/g, '_');
+      const fincaLimpia = (finca.nombre || 'Finca').replace(/\s+/g, '_');
+      const fileName = `Informe_${fincaLimpia}_${nombreLoteStr}_${visita.fecha || '2026'}.pdf`;
+
+      const pdfBlob = pdf.output('blob');
+      const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
+
+      return { pdf, pdfBlob, pdfFile, fileName };
+    } finally {
+      if (estabaOculto) {
+        element.classList.add('hidden');
+        element.style.position = '';
+        element.style.left = '';
+        element.style.top = '';
+        element.style.width = '';
+        element.style.display = '';
+      }
+    }
+  };
+
   // Guardar reporte en el expediente del cliente
   const handleGuardarEnExpediente = () => {
     const nuevoReporte = {
@@ -97,50 +167,148 @@ export default function ReportModule({ visita, onOpenAi }) {
     window.print();
   };
 
-  // Descargar PDF con dimensiones controladas para evitar distorsiones
+  // Descargar PDF al dispositivo
   const handleDescargarPDF = async () => {
-    if (!reportRef.current) return;
     setGenerandoPdf(true);
+    setMensajeEstado('Generando y descargando archivo PDF...');
     try {
-      const element = reportRef.current;
-      
-      const canvas = await html2canvas(element, {
-        scale: 2, // 2x DPI para nitidez editorial
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        windowWidth: 1024 // Ancho constante para homologar pantalla y PDF
-      });
-
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-      let heightLeft = pdfHeight;
-      let position = 0;
-      const pageHeight = pdf.internal.pageSize.getHeight();
-
-      // Página 1
-      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
-      heightLeft -= pageHeight;
-
-      // Páginas adicionales si el informe es extenso
-      while (heightLeft > 0) {
-        position = heightLeft - pdfHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
-        heightLeft -= pageHeight;
+      const res = await generarPdfBlobYArchivo();
+      if (res) {
+        res.pdf.save(res.fileName);
       }
-
-      const nombreLoteStr = filtroLote === 'todos' ? 'Consolidado' : filtroLote.replace(/\s+/g, '_');
-      const fileName = `Informe_${(finca.nombre || 'Finca').replace(/\s+/g, '_')}_${nombreLoteStr}_${visita.fecha || '2026'}.pdf`;
-      pdf.save(fileName);
     } catch (e) {
       console.error('Error generando PDF:', e);
       window.print();
     } finally {
       setGenerandoPdf(false);
+      setMensajeEstado('');
+    }
+  };
+
+  // COMPARTIR NATIVO: Abre el selector del sistema (iOS / Android) con el PDF ADJUNTO
+  const handleCompartirPDFNativo = async () => {
+    setGenerandoPdf(true);
+    setMensajeEstado('Preparando archivo PDF para adjuntar...');
+    try {
+      const res = await generarPdfBlobYArchivo();
+      if (!res) return;
+      const { pdf, pdfFile, fileName } = res;
+
+      if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+        await navigator.share({
+          files: [pdfFile],
+          title: `Informe Agronómico - ${finca.nombre || 'Finca'}`,
+          text: `Estimado(a) ${productor.nombre || 'Productor'}: Adjunto informe técnico oficial de la visita del ${visita.fecha}.`
+        });
+      } else {
+        // Fallback para computadoras u otros navegadores
+        pdf.save(fileName);
+        setModalDescargaInfo({
+          abierto: true,
+          archivo: fileName,
+          destino: 'general'
+        });
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error('Error compartiendo PDF:', err);
+        alert('No se pudo abrir el selector para compartir: ' + err.message);
+      }
+    } finally {
+      setGenerandoPdf(false);
+      setMensajeEstado('');
+    }
+  };
+
+  // WHATSAPP CON PDF: Comparte el archivo PDF directamente por WhatsApp
+  const handleCompartirWhatsAppConPDF = async () => {
+    setGenerandoPdf(true);
+    setMensajeEstado('Preparando informe PDF para WhatsApp...');
+    try {
+      const res = await generarPdfBlobYArchivo();
+      if (!res) return;
+      const { pdf, pdfFile, fileName } = res;
+
+      const telefonoLimpio = (productor.telefono || '').replace(/[^0-9]/g, '');
+      const textoMensaje = generarTextoCompletoWhatsApp();
+
+      // En móviles que soportan compartir archivos nativamente (iOS / Android)
+      if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+        await navigator.share({
+          files: [pdfFile],
+          title: `Informe Agronómico - ${finca.nombre || 'Finca'}`,
+          text: `🌱 *AGROASESOR PRO CR - INFORME OFICIAL*\nProductor: ${productor.nombre}\nFinca: ${finca.nombre} (${visita.fecha})\n\nAdjunto el informe técnico completo en documento PDF.`
+        });
+      } else {
+        // En PC o navegador web: descargar el PDF y abrir la conversación de WhatsApp
+        pdf.save(fileName);
+        await navigator.clipboard.writeText(textoMensaje).catch(() => {});
+
+        const url = telefonoLimpio 
+          ? `https://api.whatsapp.com/send?phone=${telefonoLimpio}&text=${encodeURIComponent(textoMensaje)}`
+          : `https://api.whatsapp.com/send?text=${encodeURIComponent(textoMensaje)}`;
+        window.open(url, '_blank');
+
+        setModalDescargaInfo({
+          abierto: true,
+          archivo: fileName,
+          destino: 'whatsapp'
+        });
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error('Error enviando por WhatsApp:', err);
+      }
+    } finally {
+      setGenerandoPdf(false);
+      setMensajeEstado('');
+    }
+  };
+
+  // CORREO CON PDF: Comparte el archivo PDF directamente por Correo
+  const handleEnviarCorreoConPDF = async () => {
+    setGenerandoPdf(true);
+    setMensajeEstado('Preparando informe PDF para Correo...');
+    try {
+      const res = await generarPdfBlobYArchivo();
+      if (!res) return;
+      const { pdf, pdfFile, fileName } = res;
+
+      const destinatario = productor.email || 'h7coordinador@gmail.com';
+      const cc = 'h7coordinador@gmail.com';
+      const asunto = `Informe Agronómico Oficial - ${finca.nombre || 'Finca'} - Ing. Ricardo Barquero`;
+      const cuerpo = `Estimado(a) ${productor.nombre || 'Productor'}:\n\n` +
+        `Adjunto el informe de asesoría agronómica correspondiente a la visita del ${visita.fecha} en la finca ${finca.nombre || ''}.\n\n` +
+        `Atentamente,\n` +
+        `Ing. Agr. Ricardo Manuel Barquero Chacón\n` +
+        `Colegiado No. 5896 • Ingeniero Agrónomo\n` +
+        `Tel: +506 8894-5662 | Coronado, San José, Costa Rica`;
+
+      // En móviles con soporte de archivos nativos
+      if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+        await navigator.share({
+          files: [pdfFile],
+          title: asunto,
+          text: cuerpo
+        });
+      } else {
+        // En PC: descargar el archivo PDF y abrir el correo
+        pdf.save(fileName);
+        window.location.href = `mailto:${destinatario}?cc=${cc}&subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
+
+        setModalDescargaInfo({
+          abierto: true,
+          archivo: fileName,
+          destino: 'correo'
+        });
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error('Error enviando por correo:', err);
+      }
+    } finally {
+      setGenerandoPdf(false);
+      setMensajeEstado('');
     }
   };
 
@@ -251,32 +419,6 @@ export default function ReportModule({ visita, onOpenAi }) {
     }
   };
 
-  // Compartir por WhatsApp al Productor
-  const handleCompartirWhatsApp = () => {
-    const telefonoLimpio = (productor.telefono || '').replace(/[^0-9]/g, '');
-    const texto = encodeURIComponent(generarTextoCompletoWhatsApp());
-    const url = telefonoLimpio 
-      ? `https://api.whatsapp.com/send?phone=${telefonoLimpio}&text=${texto}`
-      : `https://api.whatsapp.com/send?text=${texto}`;
-    window.open(url, '_blank');
-  };
-
-  // Enviar por Correo Oficial
-  const handleEnviarCorreo = () => {
-    const destinatario = productor.email || 'h7coordinador@gmail.com';
-    const cc = 'h7coordinador@gmail.com';
-    const asunto = encodeURIComponent(`Informe Agronómico Oficial - ${finca.nombre || 'Finca'} - Ing. Ricardo Barquero`);
-    const cuerpo = encodeURIComponent(
-      `Estimado(a) ${productor.nombre || 'Productor'}:\n\n` +
-      `Adjunto el informe de asesoría agronómica correspondiente a la visita del ${visita.fecha} en la finca ${finca.nombre || ''}.\n\n` +
-      `Atentamente,\n` +
-      `Ing. Agr. Ricardo Manuel Barquero Chacón\n` +
-      `Colegiado No. 5896 • Ingeniero Agrónomo\n` +
-      `Tel: +506 8894-5662 | Coronado, San José, Costa Rica`
-    );
-    window.location.href = `mailto:${destinatario}?cc=${cc}&subject=${asunto}&body=${cuerpo}`;
-  };
-
   return (
     <div className="space-y-4">
       
@@ -312,7 +454,7 @@ export default function ReportModule({ visita, onOpenAi }) {
             <span>{vistaModo === 'digital' ? 'Informe Digital para el Productor' : 'Informe Oficial de Finca (A4)'}</span>
           </h2>
           <p className="text-xs text-slate-500">
-            {vistaModo === 'digital' ? 'Diseñado para lectura ágil en teléfono celular y envío directo por WhatsApp.' : 'Formato de página completa homologado para exportar a PDF e imprimir.'}
+            {vistaModo === 'digital' ? 'Diseñado para lectura ágil en teléfono celular y envío directo con PDF adjunto.' : 'Formato de página completa homologado para exportar a PDF e imprimir.'}
           </p>
         </div>
 
@@ -335,57 +477,66 @@ export default function ReportModule({ visita, onOpenAi }) {
             </select>
           </div>
 
+          {/* Botón Principal: Compartir PDF Nativo Adjunto */}
+          <button
+            onClick={handleCompartirPDFNativo}
+            disabled={generandoPdf}
+            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition flex items-center gap-1.5 shadow-md active:scale-95 disabled:opacity-50"
+            title="Compartir el informe en PDF como archivo adjunto por WhatsApp, Correo o Guardar en Archivos"
+          >
+            <Paperclip className="w-4 h-4" />
+            <span>📲 Compartir PDF</span>
+          </button>
+
+          {/* Botón WhatsApp con PDF */}
+          <button
+            onClick={handleCompartirWhatsAppConPDF}
+            disabled={generandoPdf}
+            className="px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs font-bold transition flex items-center gap-1.5 shadow-xs active:scale-95 disabled:opacity-50"
+            title="Enviar informe PDF adjunto por WhatsApp"
+          >
+            <Share2 className="w-3.5 h-3.5 text-emerald-700" />
+            <span>WhatsApp + PDF</span>
+          </button>
+
+          {/* Botón Correo con PDF */}
+          <button
+            onClick={handleEnviarCorreoConPDF}
+            disabled={generandoPdf}
+            className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 text-xs font-bold transition flex items-center gap-1.5 shadow-xs active:scale-95 disabled:opacity-50"
+            title="Enviar informe por Correo con PDF adjunto"
+          >
+            <Mail className="w-3.5 h-3.5 text-slate-700" />
+            <span>Correo + PDF</span>
+          </button>
+
+          {/* Botón Guardar en Expediente */}
           <button
             onClick={handleGuardarEnExpediente}
-            className="px-3.5 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-black transition flex items-center gap-1.5 shadow-xs active:scale-95"
+            className="px-3 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs active:scale-95"
             title="Guardar este informe en el expediente permanente del productor"
           >
-            <FolderOpen className="w-4 h-4" />
-            <span>{guardadoEnExpediente ? '✅ ¡Guardado en Expediente!' : '💾 Guardar en Expediente'}</span>
+            <FolderOpen className="w-3.5 h-3.5" />
+            <span>{guardadoEnExpediente ? '✅ Guardado' : '💾 Expediente'}</span>
           </button>
 
-          <button
-            onClick={handleImprimirNativo}
-            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs active:scale-95"
-            title="Imprimir o Guardar en PDF de forma nativa"
-          >
-            <Printer className="w-4 h-4" />
-            <span>Imprimir / PDF</span>
-          </button>
-
+          {/* Botón Descargar PDF */}
           <button
             onClick={handleDescargarPDF}
             disabled={generandoPdf}
-            className="px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs active:scale-95"
+            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition flex items-center gap-1 shadow-xs active:scale-95"
+            title="Descargar archivo PDF al dispositivo"
           >
             <Download className="w-4 h-4" />
-            <span>{generandoPdf ? 'Generando...' : 'Descargar Archivo'}</span>
           </button>
 
+          {/* Botón Imprimir */}
           <button
-            onClick={handleCopiarTextoWhatsApp}
-            className="px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold transition flex items-center gap-1 shadow-xs active:scale-95"
-            title="Copiar reporte completo para pegar en WhatsApp"
+            onClick={handleImprimirNativo}
+            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition flex items-center gap-1 shadow-xs active:scale-95"
+            title="Imprimir o Guardar en PDF de forma nativa"
           >
-            <Check className={`w-4 h-4 ${copiadoWhatsapp ? 'text-emerald-700' : 'hidden'}`} />
-            <span>{copiadoWhatsapp ? '¡Copiado!' : '📋 Copiar p/ WhatsApp'}</span>
-          </button>
-
-          <button
-            onClick={handleCompartirWhatsApp}
-            className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1 shadow-xs active:scale-95"
-            title="Abrir WhatsApp y enviar reporte"
-          >
-            <Share2 className="w-4 h-4" />
-            <span>WhatsApp</span>
-          </button>
-
-          <button
-            onClick={handleEnviarCorreo}
-            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition active:scale-95"
-            title="Enviar por correo electrónico"
-          >
-            <Mail className="w-4 h-4" />
+            <Printer className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -413,22 +564,45 @@ export default function ReportModule({ visita, onOpenAi }) {
             </div>
           </div>
 
-          {/* Botones de Guardar en Expediente y Compartir por WhatsApp */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {/* Botones Principales de Envío y Guardado */}
+          <div className="space-y-2">
+            {/* Botón Destacado: Compartir con PDF Adjunto (Abre WhatsApp/Mail nativo con el archivo adjunto) */}
             <button
-              onClick={handleGuardarEnExpediente}
-              className="py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-300 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-xs"
+              onClick={handleCompartirPDFNativo}
+              disabled={generandoPdf}
+              className="w-full py-3.5 bg-gradient-to-r from-emerald-700 to-teal-700 hover:from-emerald-800 hover:to-teal-800 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2 shadow-lg transition active:scale-98 disabled:opacity-50"
             >
-              <FolderOpen className="w-4 h-4 text-purple-700" />
-              <span>{guardadoEnExpediente ? '✅ ¡Guardado en Expediente!' : '💾 Guardar en Expediente'}</span>
+              <Paperclip className="w-4 h-4" />
+              <span>📲 Compartir Reporte con PDF Adjunto (WhatsApp / Correo)</span>
             </button>
-            <button
-              onClick={handleCompartirWhatsApp}
-              className="py-2.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow transition"
-            >
-              <Share2 className="w-3.5 h-3.5" />
-              <span>Enviar por WhatsApp</span>
-            </button>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <button
+                onClick={handleCompartirWhatsAppConPDF}
+                disabled={generandoPdf}
+                className="py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-xs disabled:opacity-50"
+              >
+                <Share2 className="w-3.5 h-3.5 text-emerald-700" />
+                <span>WhatsApp + PDF</span>
+              </button>
+              
+              <button
+                onClick={handleEnviarCorreoConPDF}
+                disabled={generandoPdf}
+                className="py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-xs disabled:opacity-50"
+              >
+                <Mail className="w-3.5 h-3.5 text-slate-700" />
+                <span>Correo + PDF</span>
+              </button>
+
+              <button
+                onClick={handleGuardarEnExpediente}
+                className="py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-300 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-xs"
+              >
+                <FolderOpen className="w-3.5 h-3.5 text-purple-700" />
+                <span>{guardadoEnExpediente ? '✅ Guardado' : '💾 Guardar Expediente'}</span>
+              </button>
+            </div>
           </div>
 
           {/* Tarjeta de Clima Acumulado y Análisis Epidemiológico */}
@@ -1148,6 +1322,77 @@ export default function ReportModule({ visita, onOpenAi }) {
         </div>
 
       </div>
+
+      {/* ========================================================= */}
+      {/* MODAL SPINNER DE GENERACIÓN DE PDF */}
+      {/* ========================================================= */}
+      {generandoPdf && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 shadow-2xl flex items-center gap-4 border border-slate-200 max-w-sm w-full animate-slideUp">
+            <div className="w-8 h-8 border-3 border-emerald-700 border-t-transparent rounded-full animate-spin shrink-0"></div>
+            <div>
+              <h4 className="font-extrabold text-sm text-slate-900">{mensajeEstado || 'Generando informe PDF...'}</h4>
+              <p className="text-xs text-slate-500 mt-0.5">Adjuntando fotos y cuadros técnicos en alta resolución.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL INFORMATIVO PARA DESCARGA DE PDF EN PC / WEB */}
+      {/* ========================================================= */}
+      {modalDescargaInfo.abierto && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-5 space-y-4 shadow-2xl border border-slate-200 animate-slideUp">
+            <div className="flex items-center justify-between border-b pb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">📎</span>
+                <h4 className="font-extrabold text-sm sm:text-base text-slate-900">
+                  Informe PDF Listo para Adjuntar
+                </h4>
+              </div>
+              <button 
+                onClick={() => setModalDescargaInfo({ abierto: false, archivo: '', destino: '' })}
+                className="p-1 rounded-xl hover:bg-slate-100 text-slate-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3.5 text-xs text-emerald-950 space-y-1.5">
+              <div className="flex items-center gap-1.5 font-bold">
+                <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                <span>Archivo PDF generado y guardado en su equipo:</span>
+              </div>
+              <p className="font-mono bg-white px-2 py-1 rounded border border-emerald-300 text-[11px] truncate">
+                {modalDescargaInfo.archivo}
+              </p>
+            </div>
+
+            <div className="text-xs text-slate-600 space-y-2 leading-relaxed">
+              <p>
+                {modalDescargaInfo.destino === 'whatsapp' ? (
+                  <>
+                    Se abrió la conversación de WhatsApp con el resumen de la visita. Para que el cliente reciba el informe oficial completo, presione el icono de <strong>clip (📎) ➔ Documento</strong> y seleccione el archivo PDF descargado.
+                  </>
+                ) : (
+                  <>
+                    Se abrió su cliente de correo con el texto del reporte. Para que el cliente reciba el informe oficial, presione el icono de <strong>clip (📎 Adjuntar archivo)</strong> y elija el archivo descargado.
+                  </>
+                )}
+              </p>
+            </div>
+
+            <button
+              onClick={() => setModalDescargaInfo({ abierto: false, archivo: '', destino: '' })}
+              className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-xs shadow-xs transition active:scale-98"
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
