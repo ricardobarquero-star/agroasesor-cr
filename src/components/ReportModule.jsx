@@ -10,6 +10,7 @@ import { storageService } from '../services/storageService';
 import { calcularDosisDual } from '../utils/doseCalculator';
 import { agroEpidemiologyService } from '../services/agroEpidemiologyService';
 import { calcularNutrientesTotales } from '../services/nutritionCalculatorService';
+import { digitalReportService } from '../services/digitalReportService';
 
 export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab }) {
   const reportRef = useRef(null);
@@ -271,6 +272,27 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
     }];
   })();
 
+  // Datos consolidados para generación de Reporte Web Digital Autónomo (.html)
+  const obtenerDatosReporteDigital = () => ({
+    visita,
+    productor,
+    finca,
+    lote,
+    filtroLote,
+    perfilIngeniero,
+    hallazgosFiltrados,
+    medicionesSuelo,
+    recFertirriegoFiltradas,
+    recPlaguicidasFiltradas,
+    analisisClimaIa,
+    estadisticasClima,
+    analisisEpidemiologico,
+    altitudFinca,
+    tempFinca,
+    humedadFinca,
+    lluvia7d
+  });
+
   // Conteo total de páginas del informe oficial
   const totalPaginas = 1 + paginasHallazgos.length + paginasSemanales.length;
 
@@ -304,7 +326,12 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
     container.style.zIndex = '-9999';
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 250));
+      // Esperar resolución completa de fuentes web y estilos computados
+      if (document.fonts && document.fonts.ready) {
+        await document.fonts.ready;
+      }
+      void container.offsetHeight; // Forzar reflow en el navegador
+      await new Promise(resolve => setTimeout(resolve, 450));
 
       const pdf = new jsPDF('p', 'mm', 'letter');
       const pageWidth = pdf.internal.pageSize.getWidth();   // ~215.9 mm
@@ -329,6 +356,13 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
             pdf.addPage('letter', 'p');
           }
           const pageEl = pageElements[i];
+          // Asegurar que todas las imágenes de la página hayan terminado de cargar
+          const imgs = Array.from(pageEl.querySelectorAll('img'));
+          await Promise.all(imgs.map(img => {
+            if (img.complete) return Promise.resolve();
+            return new Promise(res => { img.onload = res; img.onerror = res; });
+          }));
+
           const canvas = await html2canvas(pageEl, {
             scale: 2.8, // 300 DPI de definición vectorial para textos e imágenes nítidas
             useCORS: true,
@@ -423,6 +457,68 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
     } finally {
       setGenerandoPdf(false);
       setMensajeEstado('');
+    }
+  };
+
+  // COMPARTIR INFORME WEB DIGITAL (.HTML) POR WHATSAPP (OPCIÓN 2)
+  const handleCompartirReporteHtmlWhatsApp = async () => {
+    try {
+      setGenerandoPdf(true);
+      setMensajeEstado('Generando Informe Web Digital interactivo...');
+      const { file, fileName } = digitalReportService.generarReporteHtmlBlob(obtenerDatosReporteDigital());
+      const telefonoLimpio = (productor.telefono || '').replace(/[^0-9]/g, '');
+      const nombreFinca = finca.nombre || 'Finca';
+      const fecha = visita?.fecha || '';
+      
+      const textoMensaje = `🌱 *AGROASESOR PRO CR - INFORME WEB DIGITAL INTERACTIVO*\n` +
+        `━━━━━━━━━━━━━━━━━━━━━\n` +
+        `👨‍🌾 *Productor:* ${productor.nombre || 'Productor'}\n` +
+        `🏡 *Finca:* ${nombreFinca} (${fecha})\n` +
+        `📱 Abre el archivo adjunto *${fileName}* directamente en tu teléfono (Chrome o Safari) para ver el informe interactivo con fotos HD, agroclima y recetas de campo.\n` +
+        `👨‍💼 *Asesor:* Ing. Ricardo M. Barquero Chacón (Col. 5896)`;
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: `Informe Digital - ${nombreFinca}`,
+          text: textoMensaje
+        });
+      } else {
+        // En PC o navegador sin soporte nativo de compartir archivos: descargar el .html y abrir WhatsApp
+        digitalReportService.descargarReporteHtml(obtenerDatosReporteDigital());
+        await navigator.clipboard.writeText(textoMensaje).catch(() => {});
+        const url = telefonoLimpio 
+          ? `https://api.whatsapp.com/send?phone=${telefonoLimpio}&text=${encodeURIComponent(textoMensaje)}`
+          : `https://api.whatsapp.com/send?text=${encodeURIComponent(textoMensaje)}`;
+        window.open(url, '_blank');
+
+        setModalDescargaInfo({
+          abierto: true,
+          archivo: fileName,
+          destino: 'whatsapp-html'
+        });
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error('Error compartiendo informe web digital:', err);
+      }
+    } finally {
+      setGenerandoPdf(false);
+      setMensajeEstado('');
+    }
+  };
+
+  // DESCARGAR INFORME WEB DIGITAL (.HTML)
+  const handleDescargarReporteHtml = () => {
+    try {
+      const fileName = digitalReportService.descargarReporteHtml(obtenerDatosReporteDigital());
+      setModalDescargaInfo({
+        abierto: true,
+        archivo: fileName,
+        destino: 'html'
+      });
+    } catch (err) {
+      console.error('Error descargando reporte HTML:', err);
     }
   };
 
@@ -751,6 +847,28 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
             </select>
           </div>
 
+          {/* Botón Principal Opción 2: Compartir Informe Web Digital (.html) por WhatsApp */}
+          <button
+            onClick={handleCompartirReporteHtmlWhatsApp}
+            disabled={generandoPdf}
+            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition flex items-center gap-1.5 shadow-md active:scale-95 disabled:opacity-50"
+            title="Compartir Informe Web Digital interactivo (.html) para abrir directamente en el teléfono del productor"
+          >
+            <Share2 className="w-4 h-4" />
+            <span>📲 Compartir Web (.html)</span>
+          </button>
+
+          {/* Botón Descargar Informe Web Digital (.html) */}
+          <button
+            onClick={handleDescargarReporteHtml}
+            disabled={generandoPdf}
+            className="px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs font-bold transition flex items-center gap-1.5 shadow-xs active:scale-95 disabled:opacity-50"
+            title="Descargar archivo .html interactivo"
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-700" />
+            <span>Web (.html)</span>
+          </button>
+
           {/* Botón Principal: Compartir PDF Nativo Adjunto */}
           <button
             onClick={handleCompartirPDFNativo}
@@ -823,6 +941,40 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
       {vistaModo === 'digital' && (
         <div className="space-y-4 max-w-xl mx-auto px-3 sm:px-4 py-1 mobile-view-container no-print font-body">
           
+          {/* BANNER DE ACCIÓN DESTACADA: ENVIAR REPORTE WEB DIGITAL DIRECTO AL PRODUCTOR */}
+          <div className="bg-gradient-to-r from-emerald-800 to-emerald-950 text-white p-4 rounded-2xl shadow-sm border border-emerald-700/50 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="space-y-0.5 text-center sm:text-left">
+              <div className="flex items-center justify-center sm:justify-start gap-2">
+                <span className="text-xl">📱</span>
+                <h3 className="font-headline font-bold text-sm sm:text-base text-white">
+                  Informe Web Digital para Teléfono (.html)
+                </h3>
+              </div>
+              <p className="text-xs text-emerald-200">
+                Diseñado para lectura ágil sin zoom, fotos HD y doble dosis de campo.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                onClick={handleCompartirReporteHtmlWhatsApp}
+                disabled={generandoPdf}
+                className="flex-1 sm:flex-initial px-4 py-2.5 bg-[#25d366] hover:bg-[#20bd5a] text-slate-950 font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50 cursor-pointer"
+              >
+                <Share2 className="w-4 h-4 text-slate-950" />
+                <span>Enviar por WhatsApp</span>
+              </button>
+              <button
+                onClick={handleDescargarReporteHtml}
+                disabled={generandoPdf}
+                className="px-3 py-2.5 bg-white/15 hover:bg-white/25 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 active:scale-95 disabled:opacity-50 cursor-pointer"
+                title="Descargar archivo .html"
+              >
+                <Download className="w-4 h-4" />
+                <span>.html</span>
+              </button>
+            </div>
+          </div>
+
           {/* TARJETA DE IDENTIFICACIÓN PARA EL PRODUCTOR */}
           <div className="bg-white rounded-2xl p-4 border border-[#dae2fd] shadow-sm space-y-2">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
@@ -2320,9 +2472,17 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
 
             <div className="text-xs text-slate-600 space-y-2 leading-relaxed">
               <p>
-                {modalDescargaInfo.destino === 'whatsapp' ? (
+                {modalDescargaInfo.destino === 'whatsapp-html' ? (
                   <>
-                    Se abrió la conversación de WhatsApp con el resumen de la visita?. Para que el cliente reciba el informe oficial completo, presione el icono de <strong>clip (📎) ➔ Documento</strong> y seleccione el archivo PDF descargado.
+                    Se abrió la conversación de WhatsApp con el productor. Para que el cliente reciba el <strong>Informe Web Digital interactivo</strong>, presione el icono de <strong>clip (📎) ➔ Documento</strong> y seleccione el archivo <strong>{modalDescargaInfo.archivo}</strong> descargado. Al tocarlo en su celular, se abrirá directamente como una aplicación web nativa optimizada.
+                  </>
+                ) : modalDescargaInfo.destino === 'html' ? (
+                  <>
+                    El archivo <strong>{modalDescargaInfo.archivo}</strong> se descargó exitosamente en su dispositivo. Puede abrirlo con cualquier navegador web o compartirlo por WhatsApp para lectura móvil sin necesidad de zoom.
+                  </>
+                ) : modalDescargaInfo.destino === 'whatsapp' ? (
+                  <>
+                    Se abrió la conversación de WhatsApp con el resumen de la visita. Para que el cliente reciba el informe oficial completo, presione el icono de <strong>clip (📎) ➔ Documento</strong> y seleccione el archivo PDF descargado.
                   </>
                 ) : (
                   <>
