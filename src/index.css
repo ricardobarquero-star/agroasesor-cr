@@ -64,15 +64,14 @@
   max-width: 816px !important;
   min-width: 816px !important;
   min-height: 1056px !important;
-  max-height: 1056px !important;
   box-shadow: none !important;
   border: none !important;
   border-radius: 0 !important;
   margin: 0 !important;
-  padding: 28px 36px 24px 36px !important;
+  padding: 24px 34px 22px 34px !important;
   box-sizing: border-box !important;
   background-color: #ffffff !important;
-  overflow: hidden !important;
+  overflow: visible !important;
 }
 
 /* Contenedores de fotografías científicas en HD (Formato Revista) */

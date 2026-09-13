@@ -1,8 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { 
   FileText, Download, Share2, Mail, CheckCircle2, 
-  CloudRain, Sparkles, Printer, Filter, FolderOpen, 
-  Activity, Paperclip, X, ZoomIn
+  Printer, Filter, FolderOpen, Paperclip, X
 } from 'lucide-react';
 import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
@@ -10,6 +9,7 @@ import { crAgroDatabase } from '../data/crAgroDatabase';
 import { storageService } from '../services/storageService';
 import { calcularDosisDual } from '../utils/doseCalculator';
 import { agroEpidemiologyService } from '../services/agroEpidemiologyService';
+import { calcularNutrientesTotales } from '../services/nutritionCalculatorService';
 
 export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab }) {
   const reportRef = useRef(null);
@@ -163,23 +163,116 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
     return { ...semana, aplicaciones: appsFiltradas };
   }).filter(semana => semana.sinAplicacion || (semana.aplicaciones && semana.aplicaciones.length > 0));
 
-  // Agrupación y paginación inteligente de recomendaciones (Estrictamente 1 página por semana)
+  // Agrupación de semanas con prescripción técnica
   const semanasFert = recFertirriegoFiltradas.map(s => s.semana || 1);
   const semanasPlag = recPlaguicidasFiltradas.map(s => s.semana || 1);
   const todasSemanas = Array.from(new Set([...semanasFert, ...semanasPlag])).sort((a, b) => a - b);
   const semanasParaReporte = todasSemanas.length > 0 ? todasSemanas : [1];
 
-  // Paginación inteligente de hallazgos para formato Revista Científica (proporción HD nativa sin recortes)
-  const chunkHallazgos = (items) => {
-    if (items.length <= 4) {
-      return [items];
+  // Paginación inteligente de hallazgos para formato Revista Científica (CERO CORTES Y HD NATIVO)
+  const paginasHallazgos = (() => {
+    const items = hallazgosFiltrados;
+    const tieneSuelo = medicionesSuelo.length > 0;
+    
+    // Si hay mediciones de suelo, la primera página solo tiene espacio para 2 hallazgos cómodos
+    if (tieneSuelo) {
+      if (items.length <= 2) {
+        return [items];
+      }
+      const paginas = [items.slice(0, 2)];
+      let restante = items.slice(2);
+      while (restante.length > 0) {
+        paginas.push(restante.slice(0, 4));
+        restante = restante.slice(4);
+      }
+      return paginas;
+    } else {
+      // Sin suelo: cuadrícula 2x2 de hasta 4 especímenes por página
+      if (items.length <= 4) {
+        return [items];
+      }
+      const paginas = [];
+      let restante = [...items];
+      while (restante.length > 0) {
+        paginas.push(restante.slice(0, 4));
+        restante = restante.slice(4);
+      }
+      return paginas;
     }
-    return [items.slice(0, 2), items.slice(2, 6)];
-  };
-  const paginasHallazgos = chunkHallazgos(hallazgosFiltrados);
+  })();
+
+  // Paginación inteligente de prescripciones semanales para garantizar CERO CORTES de tablas o textos
+  const paginasSemanales = (() => {
+    const paginas = [];
+    
+    semanasParaReporte.forEach((semNum) => {
+      const fertSemana = recFertirriegoFiltradas.find(s => s.semana === semNum);
+      const plagSemana = recPlaguicidasFiltradas.find(s => s.semana === semNum);
+
+      const numEventosFert = fertSemana?.eventos?.length || 0;
+      const totalLineasFert = (fertSemana?.eventos || []).reduce((acc, ev) => 
+        acc + (ev.lineasTanqueA?.length || 0) + (ev.lineasTanqueB?.length || 0) + (ev.productos?.length || 0), 0);
+      
+      const numAppsPlag = plagSemana?.aplicaciones?.length || 0;
+      const totalLineasPlag = (plagSemana?.aplicaciones || []).reduce((acc, app) => 
+        acc + (app.ordenMezcla?.length || 0), 0);
+
+      // Si una semana tiene tanto fertirriego denso como múltiples aplicaciones con muchas líneas,
+      // se divide en 2 sub-páginas semanales dedicadas con encabezado completo repetido para evitar cualquier corte.
+      const esMuyExtensa = (totalLineasFert > 4 && totalLineasPlag > 2) || (numEventosFert >= 2 && numAppsPlag >= 2) || (totalLineasPlag >= 6);
+
+      if (esMuyExtensa) {
+        // Sub-página 1: Fertirriego y Nutrición
+        paginas.push({
+          semana: semNum,
+          subTipo: 'fertirriego',
+          tituloSubSeccion: 'A. Programa Nutricional y Fertirriego',
+          fertSemana,
+          plagSemana: null,
+          esParteDeDivision: true,
+          parteNum: 1,
+          totalPartes: 2
+        });
+        // Sub-página 2: Fitosanitarios
+        paginas.push({
+          semana: semNum,
+          subTipo: 'fitosanitarios',
+          tituloSubSeccion: 'B. Programa Fitosanitario Foliar Segregado',
+          fertSemana: null,
+          plagSemana,
+          esParteDeDivision: true,
+          parteNum: 2,
+          totalPartes: 2
+        });
+      } else {
+        // Página combinada estándar (la gran mayoría de las semanas)
+        paginas.push({
+          semana: semNum,
+          subTipo: 'mixto',
+          tituloSubSeccion: null,
+          fertSemana,
+          plagSemana,
+          esParteDeDivision: false,
+          parteNum: 1,
+          totalPartes: 1
+        });
+      }
+    });
+
+    return paginas.length > 0 ? paginas : [{
+      semana: 1,
+      subTipo: 'mixto',
+      tituloSubSeccion: null,
+      fertSemana: null,
+      plagSemana: null,
+      esParteDeDivision: false,
+      parteNum: 1,
+      totalPartes: 1
+    }];
+  })();
 
   // Conteo total de páginas del informe oficial
-  const totalPaginas = 1 + paginasHallazgos.length + semanasParaReporte.length;
+  const totalPaginas = 1 + paginasHallazgos.length + paginasSemanales.length;
 
   // Generar Blob y File del PDF asegurando captura página-por-página en 300 DPI (CERO CORTES)
   const generarPdfBlobYArchivo = async () => {
@@ -1136,6 +1229,56 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                       )}
                     </div>
                   ))}
+
+                  {/* BALANCE NUTRICIONAL ESTEQUIOMÉTRICO (STITCH STYLE) */}
+                  {(() => {
+                    const lineas = (s.eventos || []).flatMap(ev => [
+                      ...(ev.lineasTanqueA || []),
+                      ...(ev.lineasTanqueB || []),
+                      ...(ev.productos || [])
+                    ]);
+                    const m = calcularNutrientesTotales(lineas);
+                    if (!m || (m.nTotalKg <= 0 && m.p2o5Kg <= 0 && m.k2oKg <= 0)) return null;
+                    return (
+                      <div className="bg-[#faf8ff] p-3 rounded-xl border border-[#eaedff] space-y-2">
+                        <div className="flex items-center justify-between text-xs font-headline font-bold text-[#00652c]">
+                          <span className="flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[16px] text-[#416900]">balance</span>
+                            <span>Aporte Nutricional Elemental Calculado:</span>
+                          </span>
+                          <span className="font-mono text-[11px] font-bold text-[#005b8c] bg-[#e2e7ff] px-2 py-0.5 rounded-full">
+                            K:N = {m.relacionKN || 'Equilibrado'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 text-center font-mono text-xs">
+                          <div className="bg-white p-2 rounded-lg border border-slate-200">
+                            <span className="text-slate-500 block text-[10px] font-body">N Total</span>
+                            <strong className="text-[#00652c] font-black">{m.nTotalKg} kg</strong>
+                          </div>
+                          <div className="bg-white p-2 rounded-lg border border-slate-200">
+                            <span className="text-slate-500 block text-[10px] font-body">P₂O₅</span>
+                            <strong className="text-amber-900 font-black">{m.p2o5Kg} kg</strong>
+                          </div>
+                          <div className="bg-white p-2 rounded-lg border border-slate-200">
+                            <span className="text-slate-500 block text-[10px] font-body">K₂O</span>
+                            <strong className="text-purple-900 font-black">{m.k2oKg} kg</strong>
+                          </div>
+                          <div className="bg-white p-2 rounded-lg border border-slate-200">
+                            <span className="text-slate-500 block text-[10px] font-body">CaO</span>
+                            <strong className="text-blue-900 font-black">{m.caoKg} kg</strong>
+                          </div>
+                          <div className="bg-white p-2 rounded-lg border border-slate-200">
+                            <span className="text-slate-500 block text-[10px] font-body">MgO</span>
+                            <strong className="text-emerald-900 font-black">{m.mgoKg} kg</strong>
+                          </div>
+                          <div className="bg-white p-2 rounded-lg border border-slate-200">
+                            <span className="text-slate-500 block text-[10px] font-body">Azufre (S)</span>
+                            <strong className="text-yellow-900 font-black">{m.sKg} kg</strong>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               ))}
             </div>
@@ -1543,6 +1686,11 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
         {/* ========================================================= */}
         {paginasHallazgos.map((grupoHallazgos, pIdx) => {
           const numPaginaActual = 2 + pIdx;
+          // Cálculo dinámico acumulado del índice de figuras sin saltos
+          let figureOffset = 0;
+          for (let k = 0; k < pIdx; k++) {
+            figureOffset += paginasHallazgos[k].length;
+          }
           return (
             <div key={`hallazgos-page-${pIdx}`} className={`report-editorial-page page-${numPaginaActual} bg-[#ffffff]`}>
               <div className="space-y-2.5">
@@ -1650,7 +1798,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                   {grupoHallazgos.length > 0 ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 print-grid-2 gap-2.5">
                       {grupoHallazgos.map((h, hIdx) => {
-                        const figureIndex = (pIdx === 0 ? 0 : 2) + hIdx + 1;
+                        const figureIndex = figureOffset + hIdx + 1;
                         const esCritico = h.severidad?.toLowerCase().includes('alta') || h.severidad?.toLowerCase().includes('crítica');
                         const esOptimo = h.severidad?.toLowerCase().includes('baja') || h.severidad?.toLowerCase().includes('leve');
 
@@ -1780,18 +1928,30 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
         })}
 
         {/* ========================================================= */}
-        {/* PÁGINAS SEMANALES DEDICADAS DE RECOMENDACIONES (1 POR SEMANA) */}
+        {/* PÁGINAS SEMANALES DEDICADAS DE RECOMENDACIONES (INTELIGENTES) */}
         {/* ========================================================= */}
-        {semanasParaReporte.map((semNum, sIdx) => {
+        {paginasSemanales.map((pagSem, sIdx) => {
           const numPaginaActual = 1 + paginasHallazgos.length + sIdx + 1;
-          const fertSemana = recFertirriegoFiltradas.find(s => s.semana === semNum);
-          const plagSemana = recPlaguicidasFiltradas.find(s => s.semana === semNum);
-          const esUltimaSemana = sIdx === semanasParaReporte.length - 1;
+          const semNum = pagSem.semana;
+          const fertSemana = pagSem.fertSemana;
+          const plagSemana = pagSem.plagSemana;
+          const esUltimaSemana = sIdx === paginasSemanales.length - 1;
+
+          // Cálculo estequiométrico elemental para esta prescripción semanal
+          const lineasFertSemana = (fertSemana?.eventos || []).flatMap(ev => [
+            ...(ev.lineasTanqueA || []),
+            ...(ev.lineasTanqueB || []),
+            ...(ev.productos || [])
+          ]);
+          const metricasNutricionales = calcularNutrientesTotales(lineasFertSemana);
+
+          const renderFertirriego = pagSem.subTipo === 'fertirriego' || pagSem.subTipo === 'mixto';
+          const renderFitosanitarios = pagSem.subTipo === 'fitosanitarios' || pagSem.subTipo === 'mixto';
 
           return (
-            <div key={`semana-page-${semNum}`} className={`report-editorial-page page-${numPaginaActual} bg-[#ffffff]`}>
+            <div key={`semana-page-${semNum}-${sIdx}`} className={`report-editorial-page page-${numPaginaActual} bg-[#ffffff]`}>
               <div className="space-y-2.5">
-                {/* Header Semanal de Alta Gama */}
+                {/* Header Semanal de Alta Gama Stitch */}
                 <div className="border-b-2 border-[#00652c] pb-2 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="w-7 h-7 rounded-xl bg-[#00652c] text-white flex items-center justify-center font-mono font-bold text-xs shadow-xs">
@@ -1799,19 +1959,26 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                     </span>
                     <div>
                       <h3 className="font-headline font-bold text-xs sm:text-sm text-[#131b2e] uppercase tracking-wide">
-                        Prescripción Técnica Integral • Semana {semNum}
+                        Prescripción Técnica • Semana {semNum}
+                        {pagSem.esParteDeDivision && (
+                          <span className="text-[#005b8c] font-mono text-xs normal-case ml-2">
+                            (Parte {pagSem.parteNum} de {pagSem.totalPartes}: {pagSem.subTipo === 'fertirriego' ? 'Nutrición y Fertirriego' : 'Sanidad Foliar'})
+                          </span>
+                        )}
                       </h3>
                       <span className="font-mono text-[9.5px] font-bold text-[#00652c] block">
-                        Nutrición, Fertirriego y Manejo Fitosanitario Segregado con Doble Dosis (Litro / 200 L)
+                        {renderFertirriego && renderFitosanitarios 
+                          ? 'Nutrición, Fertirriego y Manejo Fitosanitario Segregado con Doble Dosis (L / 200 L)'
+                          : (renderFertirriego ? 'Programa Nutricional, Fertirriego y Aportes Elementales' : 'Manejo Fitosanitario Foliar Segregado con Doble Dosis (L / 200 L)')}
                       </span>
-                      {(fertSemana?.etapaFenologica || fertSemana?.objetivoFertilizacion) && (
+                      {((fertSemana?.etapaFenologica || fertSemana?.objetivoFertilizacion) || (plagSemana?.etapaFenologica)) && (
                         <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                          {fertSemana.etapaFenologica && (
+                          {(fertSemana?.etapaFenologica || plagSemana?.etapaFenologica) && (
                             <span className="text-[8.5px] font-mono font-bold bg-[#d3ffd5] text-[#005323] px-1.5 py-0.2 rounded border border-[#79db8d]">
-                              🌿 Etapa: {fertSemana.etapaFenologica}
+                              🌿 Etapa: {fertSemana?.etapaFenologica || plagSemana?.etapaFenologica}
                             </span>
                           )}
-                          {fertSemana.objetivoFertilizacion && (
+                          {fertSemana?.objetivoFertilizacion && (
                             <span className="text-[8.5px] font-mono font-bold bg-[#e2e7ff] text-[#004b73] px-1.5 py-0.2 rounded border border-[#dae2fd]">
                               🎯 Meta: {fertSemana.objetivoFertilizacion}
                             </span>
@@ -1827,192 +1994,232 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                 </div>
 
                 {/* SECCIÓN A: NUTRICIÓN Y FERTIRRIEGO DE LA SEMANA */}
-                <div className="bg-[#f2f3ff] border border-[#dae2fd] rounded-xl p-2.5 space-y-1.5">
-                  <div className="flex items-center justify-between border-b border-[#dae2fd] pb-1">
-                    <span className="font-headline font-bold text-[#00652c] text-xs flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[16px] text-[#005b8c]">water_drop</span>
-                      A. Programa Nutricional y Fertirriego — Semana {semNum}
-                    </span>
-                    <span className="font-mono text-[9px] font-bold text-[#005b8c] bg-[#e2e7ff] px-2 py-0.2 rounded">
-                      Sales Solubles y Enmiendas
-                    </span>
-                  </div>
+                {renderFertirriego && (
+                  <div className="bg-[#f2f3ff] border border-[#dae2fd] rounded-xl p-2.5 space-y-1.5">
+                    <div className="flex items-center justify-between border-b border-[#dae2fd] pb-1">
+                      <span className="font-headline font-bold text-[#00652c] text-xs flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[16px] text-[#005b8c]">water_drop</span>
+                        A. Programa Nutricional y Fertirriego — Semana {semNum}
+                      </span>
+                      <span className="font-mono text-[9px] font-bold text-[#005b8c] bg-[#e2e7ff] px-2 py-0.2 rounded">
+                        Sales Solubles y Enmiendas
+                      </span>
+                    </div>
 
-                  {fertSemana && fertSemana.eventos && fertSemana.eventos.length > 0 ? (
-                    <div className="space-y-1.5">
-                      {fertSemana.eventos.map((ev, eIdx) => (
-                        <div key={eIdx} className="bg-white rounded-lg border border-[#eaedff] p-2 text-xs space-y-1.5">
-                          <div className="flex items-center justify-between border-b border-slate-100 pb-0.5">
-                            <div className="flex items-center gap-1 font-headline font-bold text-slate-800">
-                              <span>{ev.modalidadIcono || '💧'}</span>
-                              <span>{ev.nombreEvento || ev.modalidadNombre || 'Fertirriego'}</span>
-                              <span className="font-mono text-[9px] font-bold px-1.5 py-0.2 rounded bg-[#d3ffd5] text-[#005323] border border-[#79db8d]">
-                                {ev.alcance || 'Toda la Finca'}
-                              </span>
+                    {fertSemana && fertSemana.eventos && fertSemana.eventos.length > 0 ? (
+                      <div className="space-y-1.5">
+                        {fertSemana.eventos.map((ev, eIdx) => (
+                          <div key={eIdx} className="bg-white rounded-lg border border-[#eaedff] p-2 text-xs space-y-1.5">
+                            <div className="flex items-center justify-between border-b border-slate-100 pb-0.5">
+                              <div className="flex items-center gap-1 font-headline font-bold text-slate-800">
+                                <span>{ev.modalidadIcono || '💧'}</span>
+                                <span>{ev.nombreEvento || ev.modalidadNombre || 'Fertirriego'}</span>
+                                <span className="font-mono text-[9px] font-bold px-1.5 py-0.2 rounded bg-[#d3ffd5] text-[#005323] border border-[#79db8d]">
+                                  {ev.alcance || 'Toda la Finca'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1 font-mono text-[9.5px]">
+                                {ev.conductividadObjetivo && (
+                                  <span className="font-bold text-[#00652c] bg-[#d3ffd5] px-1.5 py-0.2 rounded border border-[#79db8d]">
+                                    CE: {ev.conductividadObjetivo}
+                                  </span>
+                                )}
+                                {ev.phObjetivo && (
+                                  <span className="font-bold text-[#005b8c] bg-[#e2e7ff] px-1.5 py-0.2 rounded border border-[#dae2fd]">
+                                    pH: {ev.phObjetivo}
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            <div className="flex items-center gap-1 font-mono text-[9.5px]">
-                              {ev.conductividadObjetivo && (
-                                <span className="font-bold text-[#00652c] bg-[#d3ffd5] px-1.5 py-0.2 rounded border border-[#79db8d]">
-                                  CE: {ev.conductividadObjetivo}
-                                </span>
-                              )}
-                              {ev.phObjetivo && (
-                                <span className="font-bold text-[#005b8c] bg-[#e2e7ff] px-1.5 py-0.2 rounded border border-[#dae2fd]">
-                                  pH: {ev.phObjetivo}
-                                </span>
-                              )}
+
+                            {/* Tanque A y Tanque B */}
+                            {ev.lineasTanqueA && ev.lineasTanqueB ? (
+                              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                                <div className="bg-[#e2e7ff]/50 p-1.5 rounded border border-[#dae2fd] space-y-0.5">
+                                  <strong className="font-headline text-[#004b73] block text-[9.5px] font-bold border-b border-[#dae2fd] pb-0.5">
+                                    🔵 TANQUE A (Calcio y Nitratos):
+                                  </strong>
+                                  {ev.lineasTanqueA.map((l, lIdx) => (
+                                    <div key={lIdx} className="flex justify-between text-slate-800 font-mono py-0.2">
+                                      <span className="font-body text-[9.5px]">{l.producto}</span>
+                                      <strong className="text-[#004b73] ml-1">{l.dosis} {l.unidad}</strong>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="bg-amber-50/60 p-1.5 rounded border border-amber-200 space-y-0.5">
+                                  <strong className="font-headline text-amber-900 block text-[9.5px] font-bold border-b border-amber-200 pb-0.5">
+                                    🟡 TANQUE B (Fósforo, Sulfatos y Micros):
+                                  </strong>
+                                  {ev.lineasTanqueB.map((l, lIdx) => (
+                                    <div key={lIdx} className="flex justify-between text-slate-800 font-mono py-0.2">
+                                      <span className="font-body text-[9.5px]">{l.producto}</span>
+                                      <strong className="text-amber-950 ml-1">{l.dosis} {l.unidad}</strong>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="bg-[#faf8ff] p-1.5 rounded border border-[#eaedff] space-y-0.5 text-[10px]">
+                                {(ev.productos || []).map((l, lIdx) => (
+                                  <div key={lIdx} className="flex justify-between py-0.5 border-b border-slate-100 last:border-0 font-mono">
+                                    <span className="font-body text-slate-800">{l.producto}</span>
+                                    <strong className="text-[#00652c] ml-1">{l.dosis} {l.unidad}</strong>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {ev.observacionesPie && (
+                              <p className="font-body text-[9.5px] text-slate-500 italic pt-0.5">
+                                Instrucción: {ev.observacionesPie}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+
+                        {/* RESUMEN ESTEQUIOMÉTRICO ELEMENTAL DE APORTE */}
+                        {metricasNutricionales && (metricasNutricionales.nTotalKg > 0 || metricasNutricionales.p2o5Kg > 0 || metricasNutricionales.k2oKg > 0) && (
+                          <div className="bg-white p-1.5 rounded-lg border border-[#eaedff] space-y-1">
+                            <div className="flex items-center justify-between text-[9px] font-headline font-bold text-[#00652c]">
+                              <span>⚖️ Aporte Elemental Estequiométrico:</span>
+                              <span className="font-mono text-[#005b8c]">Relación K:N = {metricasNutricionales.relacionKN || 'Equilibrado'}</span>
+                            </div>
+                            <div className="grid grid-cols-6 gap-1 text-center font-mono text-[9px]">
+                              <div className="bg-[#faf8ff] p-1 rounded border border-[#dae2fd]">
+                                <span className="text-slate-400 block text-[8px]">N Total</span>
+                                <strong className="text-[#00652c]">{metricasNutricionales.nTotalKg} kg</strong>
+                              </div>
+                              <div className="bg-[#faf8ff] p-1 rounded border-[#dae2fd] border">
+                                <span className="text-slate-400 block text-[8px]">P₂O₅</span>
+                                <strong className="text-amber-900">{metricasNutricionales.p2o5Kg} kg</strong>
+                              </div>
+                              <div className="bg-[#faf8ff] p-1 rounded border-[#dae2fd] border">
+                                <span className="text-slate-400 block text-[8px]">K₂O</span>
+                                <strong className="text-purple-900">{metricasNutricionales.k2oKg} kg</strong>
+                              </div>
+                              <div className="bg-[#faf8ff] p-1 rounded border-[#dae2fd] border">
+                                <span className="text-slate-400 block text-[8px]">CaO</span>
+                                <strong className="text-blue-900">{metricasNutricionales.caoKg} kg</strong>
+                              </div>
+                              <div className="bg-[#faf8ff] p-1 rounded border-[#dae2fd] border">
+                                <span className="text-slate-400 block text-[8px]">MgO</span>
+                                <strong className="text-emerald-900">{metricasNutricionales.mgoKg} kg</strong>
+                              </div>
+                              <div className="bg-[#faf8ff] p-1 rounded border-[#dae2fd] border">
+                                <span className="text-slate-400 block text-[8px]">S</span>
+                                <strong className="text-yellow-900">{metricasNutricionales.sKg} kg</strong>
+                              </div>
                             </div>
                           </div>
-
-                          {/* Tanque A y Tanque B */}
-                          {ev.lineasTanqueA && ev.lineasTanqueB ? (
-                            <div className="grid grid-cols-2 gap-2 text-[10px]">
-                              <div className="bg-[#e2e7ff]/50 p-1.5 rounded border border-[#dae2fd] space-y-0.5">
-                                <strong className="font-headline text-[#004b73] block text-[9.5px] font-bold border-b border-[#dae2fd] pb-0.5">
-                                  🔵 TANQUE A (Calcio y Nitratos):
-                                </strong>
-                                {ev.lineasTanqueA.map((l, lIdx) => (
-                                  <div key={lIdx} className="flex justify-between text-slate-800 font-mono py-0.2">
-                                    <span className="font-body text-[9.5px]">{l.producto}</span>
-                                    <strong className="text-[#004b73] ml-1">{l.dosis} {l.unidad}</strong>
-                                  </div>
-                                ))}
-                              </div>
-                              <div className="bg-amber-50/60 p-1.5 rounded border border-amber-200 space-y-0.5">
-                                <strong className="font-headline text-amber-900 block text-[9.5px] font-bold border-b border-amber-200 pb-0.5">
-                                  🟡 TANQUE B (Fósforo, Sulfatos y Micros):
-                                </strong>
-                                {ev.lineasTanqueB.map((l, lIdx) => (
-                                  <div key={lIdx} className="flex justify-between text-slate-800 font-mono py-0.2">
-                                    <span className="font-body text-[9.5px]">{l.producto}</span>
-                                    <strong className="text-amber-950 ml-1">{l.dosis} {l.unidad}</strong>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="bg-[#faf8ff] p-1.5 rounded border border-[#eaedff] space-y-0.5 text-[10px]">
-                              {(ev.productos || []).map((l, lIdx) => (
-                                <div key={lIdx} className="flex justify-between py-0.5 border-b border-slate-100 last:border-0 font-mono">
-                                  <span className="font-body text-slate-800">{l.producto}</span>
-                                  <strong className="text-[#00652c] ml-1">{l.dosis} {l.unidad}</strong>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {ev.observacionesPie && (
-                            <p className="font-body text-[9.5px] text-slate-500 italic pt-0.5">
-                              Instrucción: {ev.observacionesPie}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-[10.5px] text-slate-500 italic bg-white p-2 rounded-lg border border-[#eaedff]">
-                      Nutrición edáfica continua. No se programan cambios en la solución madre esta semana.
-                    </p>
-                  )}
-                </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-[10.5px] text-slate-500 italic bg-white p-2 rounded-lg border border-[#eaedff]">
+                        Nutrición edáfica continua. No se programan cambios en la solución madre esta semana.
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* SECCIÓN B: MANEJO FITOSANITARIO FOLIAR SEGREGADO */}
-                <div className="bg-[#faf8ff] border border-[#dae2fd] rounded-xl p-2.5 space-y-1.5">
-                  <div className="flex items-center justify-between border-b border-[#dae2fd] pb-1">
-                    <span className="font-headline font-bold text-[#131b2e] text-xs flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[16px] text-[#00652c]">shield</span>
-                      B. Programa Fitosanitario Foliar Segregado — Semana {semNum}
-                    </span>
-                    <span className="font-mono text-[9px] font-bold text-[#416900] bg-[#acf847]/30 px-2 py-0.2 rounded">
-                      Rotación FRAC / IRAC & Dosis Doble (L / 200L)
-                    </span>
-                  </div>
-
-                  {plagSemana && plagSemana.sinAplicacion ? (
-                    <div className="bg-[#d3ffd5]/40 border border-[#79db8d] rounded-lg p-2.5 flex items-start gap-2 text-xs text-[#005323]">
-                      <span className="material-symbols-outlined text-[18px] text-[#00652c] shrink-0 mt-0.5">check_circle</span>
-                      <div>
-                        <strong className="block font-headline font-bold text-[#005323]">Sin Aplicación Fitosanitaria Requerida:</strong>
-                        <span className="font-body text-[10.5px]">
-                          {plagSemana.motivoSinAplicacion || 'Poblaciones fitófagas y fúngicas por debajo del umbral económico. Mantener monitoreo semanal sin intervención química.'}
-                        </span>
-                      </div>
+                {renderFitosanitarios && (
+                  <div className="bg-[#faf8ff] border border-[#dae2fd] rounded-xl p-2.5 space-y-1.5">
+                    <div className="flex items-center justify-between border-b border-[#dae2fd] pb-1">
+                      <span className="font-headline font-bold text-[#131b2e] text-xs flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[16px] text-[#00652c]">shield</span>
+                        B. Programa Fitosanitario Foliar Segregado — Semana {semNum}
+                      </span>
+                      <span className="font-mono text-[9px] font-bold text-[#416900] bg-[#acf847]/30 px-2 py-0.2 rounded">
+                        Rotación FRAC / IRAC & Dosis Doble (L / 200L)
+                      </span>
                     </div>
-                  ) : plagSemana && plagSemana.aplicaciones && plagSemana.aplicaciones.length > 0 ? (
-                    <div className="space-y-2">
-                      {plagSemana.aplicaciones.map((app, aIdx) => (
-                        <div key={aIdx} className="bg-white rounded-lg border border-[#eaedff] p-2 text-xs space-y-1.5">
-                          <div className="flex items-center justify-between border-b border-slate-100 pb-0.5">
-                            <div className="flex items-center gap-1.5">
-                              <span className={`px-2 py-0.2 rounded font-mono text-[8.5px] font-bold text-white ${
-                                app.tipoMezcla === 'fungicida_foliar' ? 'bg-[#00652c]' : 'bg-[#005b8c]'
-                              }`}>
-                                {app.tipoMezcla === 'fungicida_foliar' ? 'MEZCLA 1 (Fungicida + Foliar)' : 'MEZCLA 2 (Insecticida + Acaricida)'}
-                              </span>
-                              <strong className="font-headline text-[#131b2e] text-[11px]">{app.nombre}</strong>
-                            </div>
-                            <span className="text-slate-500 font-mono text-[9.5px]">Tanque: {app.volumenTanque}</span>
-                          </div>
 
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-xs text-left">
-                              <thead>
-                                <tr className="bg-[#eaedff] text-[#131b2e] font-headline border-b border-[#dae2fd] text-[9.5px]">
-                                  <th className="py-1 px-1.5 font-bold w-6 text-center">Paso</th>
-                                  <th className="py-1 px-1.5 font-bold">Insumo Comercial</th>
-                                  <th className="py-1 px-1.5 font-bold">FRAC / IRAC</th>
-                                  <th className="py-1 px-1.5 font-bold text-center text-[#005b8c] bg-[#e2e7ff]/70 border-x border-[#dae2fd]">Dosis / Litro</th>
-                                  <th className="py-1 px-1.5 font-bold text-center text-[#00652c] bg-[#d3ffd5]/60 border-r border-[#79db8d]">Dosis / Estañón 200 L</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-[#eaedff] font-mono text-[9.5px]">
-                                {(app.ordenMezcla || []).map((l, lIdx) => {
-                                  const dual = calcularDosisDual(l.dosis || '');
-                                  const dLitro = l.dosisLitro || dual.dosisLitro;
-                                  const dEstanon = l.dosisEstanon || dual.dosisEstanon;
-                                  return (
-                                    <tr key={lIdx} className="hover:bg-slate-50/50">
-                                      <td className="py-1 px-1.5 text-center font-bold text-slate-400">
-                                        {lIdx + 1}
-                                      </td>
-                                      <td className="py-1 px-1.5 font-headline font-bold text-[#131b2e]">
-                                        <span>{l.producto}</span>
-                                        {l.registroSfe && (
-                                          <span className="block font-mono text-[8px] font-bold text-[#00652c]">
-                                            🏛️ {l.registroSfe}
-                                          </span>
-                                        )}
-                                      </td>
-                                      <td className="py-1 px-1.5 font-bold text-[#005b8c]">
-                                        {l.fracIrac || 'N/A'}
-                                      </td>
-                                      <td className="py-1 px-1.5 font-bold text-[#005b8c] text-center bg-[#e2e7ff]/30 border-x border-[#dae2fd] whitespace-nowrap">
-                                        {dLitro}
-                                      </td>
-                                      <td className="py-1 px-1.5 font-black text-[#00652c] text-center bg-[#d3ffd5]/30 border-r border-[#79db8d] whitespace-nowrap">
-                                        {dEstanon}
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-
-                          {app.observacionesPie && (
-                            <p className="font-body text-[9.5px] text-slate-500 italic pt-0.5 border-t border-slate-100">
-                              Instrucción: {app.observacionesPie}
-                            </p>
-                          )}
+                    {plagSemana && plagSemana.sinAplicacion ? (
+                      <div className="bg-[#d3ffd5]/40 border border-[#79db8d] rounded-lg p-2.5 flex items-start gap-2 text-xs text-[#005323]">
+                        <span className="material-symbols-outlined text-[18px] text-[#00652c] shrink-0 mt-0.5">check_circle</span>
+                        <div>
+                          <strong className="block font-headline font-bold text-[#005323]">Sin Aplicación Fitosanitaria Requerida:</strong>
+                          <span className="font-body text-[10.5px]">
+                            {plagSemana.motivoSinAplicacion || 'Poblaciones fitófagas y fúngicas por debajo del umbral económico. Mantener monitoreo semanal sin intervención química.'}
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-[10.5px] text-slate-500 italic bg-white p-2 rounded-lg border border-[#eaedff]">
-                      No se han programado aplicaciones fitosanitarias químicas para esta semana.
-                    </p>
-                  )}
-                </div>
+                      </div>
+                    ) : plagSemana && plagSemana.aplicaciones && plagSemana.aplicaciones.length > 0 ? (
+                      <div className="space-y-2">
+                        {plagSemana.aplicaciones.map((app, aIdx) => (
+                          <div key={aIdx} className="bg-white rounded-lg border border-[#eaedff] p-2 text-xs space-y-1.5">
+                            <div className="flex items-center justify-between border-b border-slate-100 pb-0.5">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`px-2 py-0.2 rounded font-mono text-[8.5px] font-bold text-white ${
+                                  app.tipoMezcla === 'fungicida_foliar' ? 'bg-[#00652c]' : 'bg-[#005b8c]'
+                                }`}>
+                                  {app.tipoMezcla === 'fungicida_foliar' ? 'MEZCLA 1 (Fungicida + Foliar)' : 'MEZCLA 2 (Insecticida + Acaricida)'}
+                                </span>
+                                <strong className="font-headline text-[#131b2e] text-[11px]">{app.nombre}</strong>
+                              </div>
+                              <span className="text-slate-500 font-mono text-[9.5px]">Tanque: {app.volumenTanque}</span>
+                            </div>
+
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs text-left">
+                                <thead>
+                                  <tr className="bg-[#eaedff] text-[#131b2e] font-headline border-b border-[#dae2fd] text-[9.5px]">
+                                    <th className="py-1 px-1.5 font-bold w-6 text-center">Paso</th>
+                                    <th className="py-1 px-1.5 font-bold">Insumo Comercial</th>
+                                    <th className="py-1 px-1.5 font-bold">FRAC / IRAC</th>
+                                    <th className="py-1 px-1.5 font-bold text-center text-[#005b8c] bg-[#e2e7ff]/70 border-x border-[#dae2fd]">Dosis / Litro</th>
+                                    <th className="py-1 px-1.5 font-bold text-center text-[#00652c] bg-[#d3ffd5]/60 border-r border-[#79db8d]">Dosis / Estañón 200 L</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-[#eaedff] font-mono text-[9.5px]">
+                                  {(app.ordenMezcla || []).map((l, lIdx) => {
+                                    const dual = calcularDosisDual(l.dosis || '');
+                                    const dLitro = l.dosisLitro || dual.dosisLitro;
+                                    const dEstanon = l.dosisEstanon || dual.dosisEstanon;
+                                    return (
+                                      <tr key={lIdx} className="hover:bg-slate-50/50">
+                                        <td className="py-1 px-1.5 text-center font-bold text-slate-400">
+                                          {lIdx + 1}
+                                        </td>
+                                        <td className="py-1 px-1.5 font-headline font-bold text-[#131b2e]">
+                                          <span>{l.producto}</span>
+                                          {l.registroSfe && (
+                                            <span className="block font-mono text-[8px] font-bold text-[#00652c]">
+                                              🏛️ {l.registroSfe}
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td className="py-1 px-1.5 font-bold text-[#005b8c]">
+                                          {l.fracIrac || 'N/A'}
+                                        </td>
+                                        <td className="py-1 px-1.5 font-bold text-[#005b8c] text-center bg-[#e2e7ff]/30 border-x border-[#dae2fd] whitespace-nowrap">
+                                          {dLitro}
+                                        </td>
+                                        <td className="py-1 px-1.5 font-black text-[#00652c] text-center bg-[#d3ffd5]/30 border-r border-[#79db8d] whitespace-nowrap">
+                                          {dEstanon}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+
+                            {app.observacionesPie && (
+                              <p className="font-body text-[9.5px] text-slate-500 italic pt-0.5 border-t border-slate-100">
+                                Instrucción: {app.observacionesPie}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[10.5px] text-slate-500 italic bg-white p-2 rounded-lg border border-[#eaedff]">
+                        No se han programado aplicaciones fitosanitarias químicas para esta semana.
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* MARCO LEGAL Y FIRMA DEL INGENIERO (EN LA ÚLTIMA PÁGINA) */}
                 {esUltimaSemana && (
