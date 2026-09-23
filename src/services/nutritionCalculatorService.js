@@ -79,6 +79,35 @@ export const FERTILIZANTES_QUIMICA = {
     tanqueRecomendado: 'B',
     tipo: 'urea'
   },
+  'potaplus': {
+    nombre: 'PotaPlus (Meristem 0-0-25)',
+    alias: ['potaplus', 'pota plus', 'potaplus meristem', 'potasio meristem', 'pota-plus'],
+    nTotal: 0, nNitrico: 0, nAmoniacal: 0, p2o5: 0, k2o: 25.0, cao: 0, mgo: 0, s: 0,
+    tanqueRecomendado: 'B',
+    tipo: 'potasio_organico',
+    fabricante: 'Meristem'
+  },
+  'kts': {
+    nombre: 'Tiosulfato de Potasio (KTS 0-0-25 + 17S)',
+    alias: ['kts', 'tiosulfato de potasio', 'tiosulfato potasio', 'k-ts'],
+    nTotal: 0, nNitrico: 0, nAmoniacal: 0, p2o5: 0, k2o: 25.0, cao: 0, mgo: 0, s: 17.0,
+    tanqueRecomendado: 'B',
+    tipo: 'sulfato_potasio'
+  },
+  'acido nitrico': {
+    nombre: 'Ácido Nítrico 60% (Corrector pH y fuente Nitrato)',
+    alias: ['ácido nítrico', 'acido nitrico', 'hno3', 'nitrico'],
+    nTotal: 13.0, nNitrico: 13.0, nAmoniacal: 0, p2o5: 0, k2o: 0, cao: 0, mgo: 0, s: 0,
+    tanqueRecomendado: 'A',
+    tipo: 'acido_nitrico'
+  },
+  'rootex': {
+    nombre: 'Rootex (Enraizante y Fósforo asimilable)',
+    alias: ['rootex', 'enraizante rootex', 'cosmocel rootex'],
+    nTotal: 7.0, nNitrico: 0, nAmoniacal: 7.0, p2o5: 47.0, k2o: 6.0, cao: 0, mgo: 0, s: 0,
+    tanqueRecomendado: 'B',
+    tipo: 'fosfato_amonio'
+  },
 
   // --- MICROELEMENTOS ---
   'quelato hierro eddha': {
@@ -150,18 +179,83 @@ export const OBJETIVOS_FERTILIZACION = [
   'Alineación de conductividad eléctrica (CE) y pH en rizosfera'
 ];
 
+// Registro dinámico en memoria para productos auto-aprendidos o descubiertos por IA
+export const FERTILIZANTES_DINAMICOS = new Map();
+
+export function registrarFertilizanteDinamico(nombreOObjeto, datosOpcionales = null) {
+  if (!nombreOObjeto) return;
+  let fert = {};
+  if (typeof nombreOObjeto === 'string') {
+    fert = { nombre: nombreOObjeto, ...(datosOpcionales || {}) };
+  } else {
+    fert = { ...nombreOObjeto, ...(datosOpcionales || {}) };
+  }
+  const key = (fert.nombre || '').toLowerCase().trim();
+  if (!key) return;
+  FERTILIZANTES_DINAMICOS.set(key, {
+    ...fert,
+    alias: Array.from(new Set([key, ...(fert.alias || [])]))
+  });
+}
+
+export const buscarRiquezaFertilizante = (nombreProducto) => identificarFertilizante(nombreProducto);
+
 /**
  * Busca las propiedades químicas de un fertilizante por nombre comercial
+ * Consulta base de datos oficial, registro dinámico y catálogo personalizado de localStorage
  */
 export function identificarFertilizante(nombreProducto) {
   if (!nombreProducto || typeof nombreProducto !== 'string') return null;
   const lower = nombreProducto.toLowerCase().trim();
 
-  // Búsqueda directa por alias
+  // 1. Búsqueda en catálogo base oficial
   for (const key of Object.keys(FERTILIZANTES_QUIMICA)) {
     const fert = FERTILIZANTES_QUIMICA[key];
-    if (fert.alias.some(a => lower.includes(a))) {
+    if (fert.alias.some(a => lower.includes(a) || a.includes(lower))) {
       return fert;
+    }
+  }
+
+  // 2. Búsqueda en registro dinámico en memoria
+  for (const fert of FERTILIZANTES_DINAMICOS.values()) {
+    if (fert.alias && fert.alias.some(a => lower.includes(a) || a.includes(lower))) {
+      return fert;
+    }
+  }
+
+  // 3. Búsqueda en catálogo personalizado guardado en localStorage
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const rawCat = localStorage.getItem('agroasesor_custom_catalog_v2');
+      if (rawCat) {
+        const cat = JSON.parse(rawCat);
+        const customFert = (cat.fertilizantes || []).find(f => {
+          const nom = (f.nombreComercial || f.nombre || '').toLowerCase();
+          return nom && (lower.includes(nom) || nom.includes(lower));
+        });
+        if (customFert) {
+          return {
+            nombre: customFert.nombreComercial || customFert.nombre,
+            alias: [lower],
+            nTotal: Number(customFert.nTotal || customFert.n || 0),
+            nNitrico: Number(customFert.nNitrico || 0),
+            nAmoniacal: Number(customFert.nAmoniacal || 0),
+            p2o5: Number(customFert.p2o5 || customFert.p || 0),
+            k2o: Number(customFert.k2o || customFert.k || 0),
+            cao: Number(customFert.cao || customFert.ca || 0),
+            mgo: Number(customFert.mgo || customFert.mg || 0),
+            s: Number(customFert.s || 0),
+            fe: Number(customFert.fe || 0),
+            zn: Number(customFert.zn || 0),
+            mn: Number(customFert.mn || 0),
+            b: Number(customFert.b || 0),
+            tanqueRecomendado: customFert.tanqueRecomendado || (customFert.cao > 0 ? 'A' : 'B'),
+            tipo: customFert.tipo || 'fertilizante_personalizado'
+          };
+        }
+      }
+    } catch {
+      // Ignorar errores de acceso a localStorage
     }
   }
 
@@ -294,38 +388,75 @@ export function calcularNutrientesTotales(lineasProductos = []) {
 /**
  * Audita incompatibilidades fisicoquímicas en tanques de fertirriego
  */
-export function auditarIncompatibilidadQuimica({ modalidad, lineasA = [], lineasB = [], lineasProductos = [] }) {
+/**
+ * Audita incompatibilidades fisicoquímicas en tanques de fertirriego
+ * IMPORTANTE: Evalúa cada aplicación/tanque por separado. Eventos en días distintos
+ * (ej: Lunes vs Jueves) NO se mezclan en el sistema de riego y se analizan individualmente.
+ */
+export function auditarIncompatibilidadQuimica({ modalidad, lineasA = [], lineasB = [], lineasProductos = [], eventos = null }) {
   const alertas = [];
   const advertencias = [];
 
+  // Si se pasa una lista de eventos semanales, auditar cada evento por separado
+  if (eventos && Array.isArray(eventos) && eventos.length > 0) {
+    eventos.forEach((ev, idx) => {
+      const nombreEv = ev.nombreEvento || ev.modalidadNombre || `Aplicación ${idx + 1}`;
+      const modEv = ev.modalidad || 'tanque_directo';
+      const lA = ev.lineasTanqueA || [];
+      const lB = ev.lineasTanqueB || [];
+      const lP = ev.productos || [];
+
+      const res = auditarIncompatibilidadQuimica({
+        modalidad: modEv,
+        lineasA: lA,
+        lineasB: lB,
+        lineasProductos: lP
+      });
+
+      res.alertas.forEach(a => alertas.push(`[${nombreEv}] ${a}`));
+      res.advertencias.forEach(w => advertencias.push(`[${nombreEv}] ${w}`));
+    });
+
+    return {
+      incompatible: alertas.length > 0,
+      alertas,
+      advertencias
+    };
+  }
+
+  // Evaluación de un evento individual
   if (modalidad === 'dosatron') {
     // 1. Incompatibilidad de Calcio con Sulfatos o Fosfatos en Tanque A
     const nombresA = lineasA.map(l => (l.producto || '').toLowerCase()).join(' ');
-    const tieneCalcioEnA = nombresA.includes('calcinit') || nombresA.includes('calcio');
+    const tieneCalcioEnA = nombresA.includes('calcinit') || nombresA.includes('calcio') || nombresA.includes('cal');
     const tieneFosfatoEnA = nombresA.includes('mkp') || nombresA.includes('fosfato') || nombresA.includes('map') || nombresA.includes('ácido fosfórico') || nombresA.includes('acido fosforico');
     const tieneSulfatoEnA = nombresA.includes('sulfato') || nombresA.includes('solusop') || nombresA.includes('epsom');
 
     if (tieneCalcioEnA && tieneSulfatoEnA) {
-      alertas.push('🚨 PRECIPITACIÓN CRÍTICA EN TANQUE A: Se detectó Calcio (Calcinit) mezclado con Sulfatos. Esto formará Yeso insoluble (CaSO4) obturando irreversiblemente los goteros.');
+      alertas.push('🚨 PRECIPITACIÓN CRÍTICA EN TANQUE A: Se detectó Calcio (Calcinit) mezclado con Sulfatos en el mismo tanque concentrado. Se formará Yeso insoluble (CaSO4) que obstruirá goteros.');
     }
     if (tieneCalcioEnA && tieneFosfatoEnA) {
       alertas.push('🚨 PRECIPITACIÓN CRÍTICA EN TANQUE A: Se detectó Calcio mezclado con Fosfatos (MKP/MAP). Se precipitará Fosfato Dicálcico insoluble.');
     }
 
-    // 2. Incompatibilidad en Tanque B (Ácidos muy concentrados con Quelatos)
+    // 2. Incompatibilidad en Tanque B
     const nombresB = lineasB.map(l => (l.producto || '').toLowerCase()).join(' ');
+    const tieneCalcioEnB = nombresB.includes('calcinit') || nombresB.includes('calcio');
+    if (tieneCalcioEnB) {
+      alertas.push('⚠️ CALCIO EN TANQUE B: El Nitrato de Calcio debe ubicarse exclusivamente en Tanque A para evitar precipitaciones con los sulfatos y fosfatos del Tanque B.');
+    }
     if ((nombresB.includes('ácido') || nombresB.includes('acido')) && (nombresB.includes('eddha') || nombresB.includes('edta'))) {
-      advertencias.push('⚠️ RIESGO DE RUPTURA DE QUELATOS EN TANQUE B: No vierta ácido fosfórico puro directamente sobre polvos de quelatos de hierro; diluya primero el ácido en agua antes de incorporar microelementos.');
+      advertencias.push('⚠️ RIESGO DE RUPTURA DE QUELATOS EN TANQUE B: Disuelva primero el ácido en el volumen de agua antes de incorporar quelatos de hierro.');
     }
   } else {
-    // Modalidad tanque directo o venturi único
+    // Modalidad tanque directo, drench o venturi único (una sola mezcla preparada)
     const nombresUnicos = lineasProductos.map(l => (l.producto || '').toLowerCase()).join(' ');
     const tieneCalcio = nombresUnicos.includes('calcinit') || nombresUnicos.includes('calcio');
     const tieneFosfato = nombresUnicos.includes('mkp') || nombresUnicos.includes('fosfato') || nombresUnicos.includes('map');
     const tieneSulfato = nombresUnicos.includes('sulfato') || nombresUnicos.includes('solusop') || nombresUnicos.includes('epsom');
 
     if (tieneCalcio && (tieneSulfato || tieneFosfato)) {
-      alertas.push('⚠️ PRECAUCIÓN DE SOLUBILIDAD EN TANQUE ÚNICO: Al preparar mezclas directas de Calcio con Sulfatos/Fosfatos, mantenga una alta dilución (concentración < 1.5 g/L en tanque final) para evitar precipitados insolubles.');
+      alertas.push('⚠️ SOLUBILIDAD EN TANQUE ÚNICO: Al preparar mezclas directas con Calcio y Sulfatos/Fosfatos en el mismo tanque, asegure una dilución alta (< 1.5 g/L en solución final de riego) para evitar sedimentaciones.');
     }
   }
 
@@ -333,6 +464,150 @@ export function auditarIncompatibilidadQuimica({ modalidad, lineasA = [], lineas
     incompatible: alertas.length > 0,
     alertas,
     advertencias
+  };
+}
+
+/**
+ * Cálculos especializados para inyección proporcional con Dosatron / Venturi
+ * Permite al agrónomo determinar la concentración en tanque madre según la relación de inyección
+ */
+export function calcularInyeccionDosatron({
+  volumenTanqueMadreLitros = 1000,
+  relacionInyeccion = '1:100', // '1:100' (1%), '1:200' (0.5%), '1:50' (2%), '1:25' (4%)
+  lineasTanqueA = [],
+  lineasTanqueB = []
+}) {
+  // Extraer factor de dilución
+  let factorDilucion = 100;
+  if (relacionInyeccion.includes('1:200')) factorDilucion = 200;
+  else if (relacionInyeccion.includes('1:50')) factorDilucion = 50;
+  else if (relacionInyeccion.includes('1:25')) factorDilucion = 25;
+  else if (relacionInyeccion.includes('1:100')) factorDilucion = 100;
+
+  // Masa total de sales en Tanque A (kg)
+  const kgTanqueA = lineasTanqueA.reduce((acc, l) => acc + normalizarDosisAKg(l.dosis, l.unidad), 0);
+  // Masa total de sales en Tanque B (kg)
+  const kgTanqueB = lineasTanqueB.reduce((acc, l) => acc + normalizarDosisAKg(l.dosis, l.unidad), 0);
+
+  // Concentración de la solución madre (kg / 1000 L o g/L)
+  const concMadreA_gL = volumenTanqueMadreLitros > 0 ? (kgTanqueA * 1000) / volumenTanqueMadreLitros : 0;
+  const concMadreB_gL = volumenTanqueMadreLitros > 0 ? (kgTanqueB * 1000) / volumenTanqueMadreLitros : 0;
+
+  // Concentración final que llega al cultivo en gotero (g/L en agua de riego)
+  const concRiegoA_gL = concMadreA_gL / factorDilucion;
+  const concRiegoB_gL = concMadreB_gL / factorDilucion;
+  const concTotalRiego_gL = concRiegoA_gL + concRiegoB_gL;
+
+  // Estimación de Conductividad Eléctrica (CE) aportada por sales solubles (promedio ~1.0 - 1.2 mS/cm por g/L)
+  const ceEstimadaGotero = parseFloat((concTotalRiego_gL * 1.15).toFixed(2));
+
+  // Verificación de solubilidad máxima en tanque madre (límite recomendado: 120-150 kg / 1000 L a 20°C)
+  const limiteMaxKg = (volumenTanqueMadreLitros / 1000) * 150;
+  const saturoTanqueA = kgTanqueA > limiteMaxKg;
+  const saturoTanqueB = kgTanqueB > limiteMaxKg;
+
+  const alertas = [];
+  if (saturoTanqueA) {
+    alertas.push(`⚠️ Saturación Tanque A: La masa total (${kgTanqueA.toFixed(1)} kg en ${volumenTanqueMadreLitros} L) supera la solubilidad recomendada (máx ${limiteMaxKg} kg). Podría precipitar en el fondo del tanque madre.`);
+  }
+  if (saturoTanqueB) {
+    alertas.push(`⚠️ Saturación Tanque B: La masa total (${kgTanqueB.toFixed(1)} kg en ${volumenTanqueMadreLitros} L) supera la solubilidad recomendada (máx ${limiteMaxKg} kg).`);
+  }
+
+  return {
+    factorDilucion,
+    kgTanqueA: parseFloat(kgTanqueA.toFixed(2)),
+    kgTanqueB: parseFloat(kgTanqueB.toFixed(2)),
+    concMadreA_gL: parseFloat(concMadreA_gL.toFixed(1)),
+    concMadreB_gL: parseFloat(concMadreB_gL.toFixed(1)),
+    concTotalRiego_gL: parseFloat(concTotalRiego_gL.toFixed(2)),
+    ceEstimadaGotero,
+    saturoTanqueA,
+    saturoTanqueB,
+    alertas
+  };
+}
+
+/**
+ * Propuesta preliminar de IA para formulación de Tanque A y B con Dosatron
+ * Basada en etapa, cultivo, capacidad de tanque y relación de inyección
+ */
+export function proponerFormulaDosatron({
+  cultivo = 'Fresa',
+  etapaFenologica = 'Llenado, engrose y calibre de fruto',
+  objetivoFertilizacion = 'Llenado y calibre de fruto',
+  volumenTanqueMadreLitros = 1000,
+  relacionInyeccion = '1:100'
+}) {
+  const e = (etapaFenologica || '').toLowerCase();
+  const o = (objetivoFertilizacion || '').toLowerCase();
+
+  // Factor de escala según volumen del tanque madre (referencia estándar: 1000 Litros)
+  const factorVolumen = volumenTanqueMadreLitros / 1000.0;
+
+  const baseReturn = {
+    cultivo,
+    relacionInyeccion,
+    volumenTanqueMadreLitros
+  };
+
+  // 1. Etapa de Llenado / Engrose de Fruto (Dominancia K y balance Ca)
+  if (e.includes('llenado') || o.includes('llenado') || e.includes('engrose') || o.includes('calibre')) {
+    return {
+      ...baseReturn,
+      objetivo: 'Llenado de fruto y calibre comercial con alta demanda de Potasio',
+      ceEsperada: '1.6 - 1.9 mS/cm',
+      lineasTanqueA: [
+        { producto: 'Nitrato de Calcio (Calcinit)', dosis: (25 * factorVolumen).toFixed(1), unidad: `kg / tanque ${volumenTanqueMadreLitros} L` },
+        { producto: 'Nitrato de Potasio (Multi-K / Krista K)', dosis: (15 * factorVolumen).toFixed(1), unidad: `kg / tanque ${volumenTanqueMadreLitros} L` },
+        { producto: 'Quelato de Hierro Fe-EDDHA 6%', dosis: (500 * factorVolumen).toFixed(0), unidad: `g / tanque ${volumenTanqueMadreLitros} L` }
+      ],
+      lineasTanqueB: [
+        { producto: 'Sulfato de Potasio (SoluSOP)', dosis: (25 * factorVolumen).toFixed(1), unidad: `kg / tanque ${volumenTanqueMadreLitros} L` },
+        { producto: 'Fosfato Monopotásico (MKP 0-52-34)', dosis: (10 * factorVolumen).toFixed(1), unidad: `kg / tanque ${volumenTanqueMadreLitros} L` },
+        { producto: 'Sulfato de Magnesio (Sal de Epsom)', dosis: (12 * factorVolumen).toFixed(1), unidad: `kg / tanque ${volumenTanqueMadreLitros} L` },
+        { producto: 'Ácido Fosfórico 85%', dosis: (2 * factorVolumen).toFixed(1), unidad: `L / tanque ${volumenTanqueMadreLitros} L` }
+      ],
+      justificacion: `Fórmula para ${cultivo} (inyección ${relacionInyeccion}) con relación K:N = 1.8 adecuada para llenado de fruto, asegurando Calcio estructural para firmeza y Magnesio para fotosíntesis continua.`
+    };
+  }
+
+  // 2. Etapa de Floración / Cuaje (Demanda P, B y relación equilibrada)
+  if (e.includes('floraci') || o.includes('floraci') || e.includes('cuaj') || o.includes('cuaje')) {
+    return {
+      ...baseReturn,
+      objetivo: 'Inducción floral, fertilidad de polen y cuaje de botón',
+      ceEsperada: '1.4 - 1.7 mS/cm',
+      lineasTanqueA: [
+        { producto: 'Nitrato de Calcio (Calcinit)', dosis: (20 * factorVolumen).toFixed(1), unidad: `kg / tanque ${volumenTanqueMadreLitros} L` },
+        { producto: 'Nitrato de Potasio (Multi-K / Krista K)', dosis: (10 * factorVolumen).toFixed(1), unidad: `kg / tanque ${volumenTanqueMadreLitros} L` },
+        { producto: 'Quelato de Hierro Fe-EDDHA 6%', dosis: (400 * factorVolumen).toFixed(0), unidad: `g / tanque ${volumenTanqueMadreLitros} L` }
+      ],
+      lineasTanqueB: [
+        { producto: 'Fosfato Monopotásico (MKP 0-52-34)', dosis: (18 * factorVolumen).toFixed(1), unidad: `kg / tanque ${volumenTanqueMadreLitros} L` },
+        { producto: 'Sulfato de Potasio (SoluSOP)', dosis: (15 * factorVolumen).toFixed(1), unidad: `kg / tanque ${volumenTanqueMadreLitros} L` },
+        { producto: 'Sulfato de Magnesio (Sal de Epsom)', dosis: (10 * factorVolumen).toFixed(1), unidad: `kg / tanque ${volumenTanqueMadreLitros} L` },
+        { producto: 'Boro soluble (Solubor 20.5% B)', dosis: (150 * factorVolumen).toFixed(0), unidad: `g / tanque ${volumenTanqueMadreLitros} L` }
+      ],
+      justificacion: `Refuerzo para ${cultivo} (inyección ${relacionInyeccion}) de Fósforo (MKP) y Boro para inducir diferenciación de primordios florales y viabilidad de tubo polínico sin exceso de nitrógeno libre.`
+    };
+  }
+
+  // 3. Etapa de Enraizamiento / Establecimiento / Vegetativo
+  return {
+    ...baseReturn,
+    objetivo: 'Desarrollo radicular, emisión de pelos absorbentes y crecimiento vegetativo',
+    ceEsperada: '1.2 - 1.5 mS/cm',
+    lineasTanqueA: [
+      { producto: 'Nitrato de Calcio (Calcinit)', dosis: (18 * factorVolumen).toFixed(1), unidad: `kg / tanque ${volumenTanqueMadreLitros} L` },
+      { producto: 'Quelato de Hierro Fe-EDDHA 6%', dosis: (350 * factorVolumen).toFixed(0), unidad: `g / tanque ${volumenTanqueMadreLitros} L` }
+    ],
+    lineasTanqueB: [
+      { producto: 'Fosfato Monoamónico (MAP 12-61-0)', dosis: (15 * factorVolumen).toFixed(1), unidad: `kg / tanque ${volumenTanqueMadreLitros} L` },
+      { producto: 'Fosfato Monopotásico (MKP 0-52-34)', dosis: (10 * factorVolumen).toFixed(1), unidad: `kg / tanque ${volumenTanqueMadreLitros} L` },
+      { producto: 'Sulfato de Magnesio (Sal de Epsom)', dosis: (10 * factorVolumen).toFixed(1), unidad: `kg / tanque ${volumenTanqueMadreLitros} L` }
+    ],
+    justificacion: `Aporte para ${cultivo} (inyección ${relacionInyeccion}) dominante de Fósforo asimilable para el desarrollo del sistema radicular junto con Calcio en Tanque A para división celular de meristemas.`
   };
 }
 

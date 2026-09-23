@@ -10,7 +10,9 @@ import { storageService } from './storageService';
 import { 
   calcularNutrientesTotales, 
   auditarIncompatibilidadQuimica, 
-  auditarObjetivoFenologico 
+  auditarObjetivoFenologico,
+  registrarFertilizanteDinamico,
+  buscarRiquezaFertilizante
 } from './nutritionCalculatorService';
 
 // Modelos ordenados por prioridad (incorporando soporte oficial para claves AQ.Ab y modelos 3.8 / 3.6 flash)
@@ -624,6 +626,228 @@ Por favor, en 3 viñetas agronómicas muy claras y concisas:
       }
     } catch (e) {
       console.warn('Fallo enriquecimiento con Gemini en nutrición, retornando cálculo estequiométrico local:', e);
+    }
+
+    return resultadoLocal;
+  },
+
+  /**
+   * Búsqueda o inferencia con IA de la composición N-P-K-Ca-Mg-S-micros de un producto nuevo/manual
+   */
+  async buscarOInferirComposicionFertilizante(nombreProducto) {
+    if (!nombreProducto || typeof nombreProducto !== 'string') return null;
+    const nombreLimpio = nombreProducto.trim();
+    if (nombreLimpio.length < 2) return null;
+
+    // 1. Revisar si ya existe en catálogo estático o dinámico
+    const existente = buscarRiquezaFertilizante(nombreLimpio);
+    if (existente && existente.nombre !== 'Desconocido / Personalizado') {
+      return {
+        ...existente,
+        origen: 'Catálogo de Nutrición Registrado'
+      };
+    }
+
+    // Heurística offline preliminar en caso de que no haya conexión
+    const inferenciaOffline = () => {
+      const s = nombreLimpio.toLowerCase();
+      // Detectar N-P-K tipo 10-30-10, 0-0-25, etc.
+      const matchNpk = s.match(/(\d+)[-\s]+(\d+)[-\s]+(\d+)/);
+      if (matchNpk) {
+        return {
+          nTotal: parseFloat(matchNpk[1]) || 0,
+          p2o5: parseFloat(matchNpk[2]) || 0,
+          k2o: parseFloat(matchNpk[3]) || 0,
+          cao: s.includes('ca') ? 5 : 0,
+          mgo: s.includes('mg') ? 3 : 0,
+          s: s.includes('s') || s.includes('sulfa') ? 5 : 0,
+          fe: 0, zn: 0, mn: 0, b: 0
+        };
+      }
+      if (s.includes('potaplus') || s.includes('pota plus')) {
+        return { nTotal: 0, p2o5: 0, k2o: 25, cao: 0, mgo: 0, s: 0, fe: 0, zn: 0, mn: 0, b: 0 };
+      }
+      if (s.includes('rootex')) {
+        return { nTotal: 7, p2o5: 47, k2o: 6, cao: 0, mgo: 0, s: 0, fe: 0.1, zn: 0.2, mn: 0, b: 0.02 };
+      }
+      if (s.includes('kts') || s.includes('tiosulfato')) {
+        return { nTotal: 0, p2o5: 0, k2o: 25, cao: 0, mgo: 0, s: 17, fe: 0, zn: 0, mn: 0, b: 0 };
+      }
+      if (s.includes('boro') || s.includes('solubor')) {
+        return { nTotal: 0, p2o5: 0, k2o: 0, cao: 0, mgo: 0, s: 0, fe: 0, zn: 0, mn: 0, b: 20.5 };
+      }
+      return { nTotal: 5, p2o5: 5, k2o: 5, cao: 0, mgo: 0, s: 0, fe: 0, zn: 0, mn: 0, b: 0 };
+    };
+
+    const apiKey = this.getApiKey();
+    if (!apiKey || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+      const localData = inferenciaOffline();
+      registrarFertilizanteDinamico(nombreLimpio, localData);
+      return {
+        nombre: nombreLimpio,
+        ...localData,
+        origen: 'Inferencia Agronómica Local (Offline)'
+      };
+    }
+
+    try {
+      const prompt = `Actúa como químico agrónomo y formulador de fertilizantes en Costa Rica.
+Analiza el siguiente insumo o fertilizante comercial: "${nombreLimpio}".
+Identifica o estima su riqueza nutricional en % p/p o % p/v para fertirriego o nutrición foliar.
+Responde ÚNICAMENTE un JSON con este formato exacto (sin markdown extra, solo el objeto JSON):
+{
+  "nombre": "${nombreLimpio}",
+  "nTotal": 0.0,
+  "nNitrico": 0.0,
+  "nAmoniacal": 0.0,
+  "nUreico": 0.0,
+  "p2o5": 0.0,
+  "k2o": 0.0,
+  "cao": 0.0,
+  "mgo": 0.0,
+  "s": 0.0,
+  "fe": 0.0,
+  "zn": 0.0,
+  "mn": 0.0,
+  "b": 0.0,
+  "fabricante": "Nombre fabricante",
+  "descripcion": "Descripción concisa del producto"
+}`;
+
+      const requestBody = { contents: [{ parts: [{ text: prompt }] }] };
+      const res = await llamarApiGeminiConCascada({ key: apiKey, requestBody });
+      if (res.exito && res.texto) {
+        // Extraer bloque json
+        const jsonMatch = res.texto.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          const composicion = {
+            nTotal: parseFloat(parsed.nTotal) || 0,
+            nNitrico: parseFloat(parsed.nNitrico) || 0,
+            nAmoniacal: parseFloat(parsed.nAmoniacal) || 0,
+            nUreico: parseFloat(parsed.nUreico) || 0,
+            p2o5: parseFloat(parsed.p2o5) || 0,
+            k2o: parseFloat(parsed.k2o) || 0,
+            cao: parseFloat(parsed.cao) || 0,
+            mgo: parseFloat(parsed.mgo) || 0,
+            s: parseFloat(parsed.s) || 0,
+            fe: parseFloat(parsed.fe) || 0,
+            zn: parseFloat(parsed.zn) || 0,
+            mn: parseFloat(parsed.mn) || 0,
+            b: parseFloat(parsed.b) || 0
+          };
+          registrarFertilizanteDinamico(nombreLimpio, composicion);
+          return {
+            nombre: nombreLimpio,
+            ...composicion,
+            fabricante: parsed.fabricante || '',
+            descripcion: parsed.descripcion || '',
+            origen: `Google Gemini (${res.modeloUsado})`
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('Error buscando fertilizante con IA:', err);
+    }
+
+    const localData = inferenciaOffline();
+    registrarFertilizanteDinamico(nombreLimpio, localData);
+    return {
+      nombre: nombreLimpio,
+      ...localData,
+      origen: 'Inferencia Agronómica Local'
+    };
+  },
+
+  /**
+   * Análisis por IA de CADA aplicación individual de fertilización (Tanque Directo o Dosatron)
+   * Evalúa cumplimiento del objetivo para la etapa fenológica, sugerencias de dosis y justificación técnica.
+   * IMPORTANTE: No mezcla eventos de diferentes días en la auditoría química.
+   */
+  async analizarAplicacionFertilizacionIndividual({
+    aplicacion,
+    cultivo = 'Fresa',
+    etapaFenologica = 'Llenado, engrose y calibre de fruto',
+    volumenTanqueMadre = 1000,
+    relacionInyeccion = '1:100'
+  }) {
+    if (!aplicacion) return null;
+
+    // Extraer líneas de productos que se mezclan en ESTA aplicación específica
+    let lineas = [];
+    if (aplicacion.modalidad === 'dosatron') {
+      lineas = [
+        ...(aplicacion.lineasTanqueA || []).map(l => ({ ...l, tanque: 'A' })),
+        ...(aplicacion.lineasTanqueB || []).map(l => ({ ...l, tanque: 'B' }))
+      ];
+    } else {
+      lineas = aplicacion.lineasProductos || [];
+    }
+
+    const metricas = calcularNutrientesTotales(lineas);
+    const compatibilidad = auditarIncompatibilidadQuimica(lineas);
+    const fenologia = auditarObjetivoFenologico({
+      cultivo,
+      etapaFenologica,
+      objetivoFertilizacion: aplicacion.objetivo || '',
+      metricas
+    });
+
+    const resultadoLocal = {
+      aplicacionId: aplicacion.id,
+      nombreAplicacion: aplicacion.nombre || 'Aplicación',
+      dia: aplicacion.dia || '',
+      objetivo: aplicacion.objetivo || 'Nutrición balanceada',
+      modalidad: aplicacion.modalidad || 'tanque_directo',
+      metricas,
+      compatibilidad,
+      fenologia,
+      sugerencias: fenologia.sugerencias || [],
+      justificacion: fenologia.justificacion || 'Formulación adaptada al objetivo programado.',
+      origen: 'Bioquímica Agronómica Local (CR)'
+    };
+
+    const apiKey = this.getApiKey();
+    if (!apiKey || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+      return resultadoLocal;
+    }
+
+    try {
+      const prompt = `Actúa como especialista senior en Fertirriego y Nutrición Vegetal en Costa Rica para el Ing. Ricardo Barquero.
+Audita esta aplicación de fertilización INDIVIDUAL (se realiza en el día "${aplicacion.dia || 'programado'}", NO se mezcla con otras aplicaciones de la semana):
+
+- Cultivo: ${cultivo}
+- Etapa Fenológica: ${etapaFenologica}
+- Día y Evento: ${aplicacion.nombre || 'Aplicación'} (${aplicacion.dia || 'Día único'})
+- Modalidad: ${aplicacion.modalidad === 'dosatron' ? `Dosatron (Tanque Madre ${volumenTanqueMadre} L, Inyección ${relacionInyeccion})` : `Tanque Directo (${aplicacion.volumenAguaLitros || 'N/A'} L de agua)`}
+- Objetivo de la Aplicación: "${aplicacion.objetivo || 'Nutrición y balance'}"
+- Insumos de la Aplicación:
+${lineas.map(l => `  • ${l.producto}: ${l.dosis} ${l.unidad || 'kg'}${l.tanque ? ` (Tanque ${l.tanque})` : ''}`).join('\n')}
+
+Estequiometría de esta aplicación:
+- N Total: ${metricas.nTotalKg.toFixed(2)} kg (K:N = ${metricas.relacionKN})
+- P2O5: ${metricas.p2o5Kg.toFixed(2)} kg
+- K2O: ${metricas.k2oKg.toFixed(2)} kg
+- CaO: ${metricas.caoKg.toFixed(2)} kg
+- MgO: ${metricas.mgoKg.toFixed(2)} kg
+- S: ${metricas.sKg.toFixed(2)} kg
+
+Por favor proporciona un dictamen agronómico conciso en 3 secciones:
+1. **Cumplimiento del Objetivo**: ¿Esta aplicación logrará el objetivo ("${aplicacion.objetivo}") para la etapa de "${etapaFenologica}"? (Sí / Parcialmente / No, con explicación agronómica de 2 líneas).
+2. **Sugerencias de Ajuste y Dosis**: Qué concentraciones o dosis sugiere modificar para esta aplicación específica.
+3. **Justificación Técnica y Compatibilidad**: Justificación agronómica del ajuste, confirmando que NO hay incompatibilidades ni taponamiento de goteros en esta mezcla.`;
+
+      const requestBody = { contents: [{ parts: [{ text: prompt }] }] };
+      const res = await llamarApiGeminiConCascada({ key: apiKey, requestBody });
+      if (res.exito && res.texto) {
+        return {
+          ...resultadoLocal,
+          analisisIa: res.texto,
+          origen: `Google Gemini (${res.modeloUsado}) [En vivo]`
+        };
+      }
+    } catch (e) {
+      console.warn('Fallo auditoría IA individual de aplicación:', e);
     }
 
     return resultadoLocal;

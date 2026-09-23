@@ -56,7 +56,7 @@ export function generarHtmlReporte(datos = {}) {
   const emailIngeniero = perfilIngeniero?.email || 'h7coordinador@gmail.com';
   const ubicacionIngeniero = perfilIngeniero?.ubicacion || 'Coronado, San José, Costa Rica';
 
-  // Renderizar hallazgos fotográficos HD
+  // Renderizar hallazgos fotográficos en formato Revista Científica (2 columnas, sin barras negras)
   const renderHallazgos = () => {
     if (!hallazgosFiltrados || hallazgosFiltrados.length === 0) {
       return `
@@ -66,64 +66,67 @@ export function generarHtmlReporte(datos = {}) {
       `;
     }
 
-    return hallazgosFiltrados.map((h, idx) => {
-      const severidad = (h.severidad || 'Media').toLowerCase();
-      let badgeCls = 'badge-mod';
-      let sevLabel = 'Moderada';
-      if (severidad.includes('alt') || severidad.includes('crít') || severidad.includes('crit')) {
-        badgeCls = 'badge-crit';
-        sevLabel = 'Alta / Crítica';
-      } else if (severidad.includes('baj') || severidad.includes('lev')) {
-        badgeCls = 'badge-leve';
-        sevLabel = 'Leve / Preventiva';
-      }
+    return `
+      <div class="findings-magazine-grid">
+        ${hallazgosFiltrados.map((h, idx) => {
+          const severidad = (h.severidad || 'Media').toLowerCase();
+          let badgeCls = 'badge-mod';
+          let sevLabel = 'Moderada';
+          if (severidad.includes('alt') || severidad.includes('crít') || severidad.includes('crit')) {
+            badgeCls = 'badge-crit';
+            sevLabel = 'Alta / Crítica';
+          } else if (severidad.includes('baj') || severidad.includes('lev')) {
+            badgeCls = 'badge-leve';
+            sevLabel = 'Leve / Preventiva';
+          }
 
-      const fotoSrc = h.fotoUrl || h.foto || '';
+          const fotoSrc = h.fotoAnotada || h.fotoUrl || h.foto || '';
 
-      return `
-        <article class="card finding-card">
-          <div class="finding-header">
-            <div class="finding-meta">
-              <span class="specimen-pill">Espécimen #${idx + 1}</span>
-              <span class="category-tag">${escapeHtml(h.categoria || 'Fitopatología')}</span>
-            </div>
-            <span class="badge ${badgeCls}">${sevLabel}</span>
-          </div>
-
-          <h3 class="finding-title">${escapeHtml(h.titulo || 'Hallazgo de campo')}</h3>
-
-          ${fotoSrc ? `
-            <div class="photo-box" onclick="abrirModalFoto('${escapeHtml(fotoSrc)}', '${escapeHtml(h.titulo || 'Evidencia')}')">
-              <img src="${escapeHtml(fotoSrc)}" alt="${escapeHtml(h.titulo || 'Evidencia')}" loading="lazy" />
-              <div class="photo-overlay">
-                <span class="zoom-icon">🔍 Toca para ampliar HD</span>
-              </div>
-            </div>
-          ` : ''}
-
-          <div class="finding-body">
-            ${h.loteNombre ? `<p class="finding-location">📍 <strong>Ubicación:</strong> ${escapeHtml(h.loteNombre)}</p>` : ''}
-            <p class="finding-desc">${escapeHtml(h.descripcion || 'Sin descripción adicional.')}</p>
-
-            ${(h.organoAfectado || h.agenteCausal) ? `
-              <div class="spec-grid">
-                ${h.organoAfectado ? `<div><span class="lbl">Órgano:</span> <strong>${escapeHtml(h.organoAfectado)}</strong></div>` : ''}
-                ${h.agenteCausal ? `<div><span class="lbl">Agente causal:</span> <strong>${escapeHtml(h.agenteCausal)}</strong></div>` : ''}
-              </div>
-            ` : ''}
-
-            ${(h.analisisIa || h.recomendacionIa) ? `
-              <div class="ai-advice">
-                <div class="ai-advice-title">
-                  <span>🤖 Criterio & Recomendación Técnica:</span>
+          return `
+            <article class="card finding-card">
+              <div class="finding-header">
+                <div class="finding-meta">
+                  <span class="specimen-pill">Figura ${idx + 1}</span>
+                  <span class="category-tag">${escapeHtml(h.categoria || 'Fitopatología')}</span>
                 </div>
-                <p>${escapeHtml(h.analisisIa || h.recomendacionIa)}</p>
+                <span class="badge ${badgeCls}">${sevLabel}</span>
               </div>
-            ` : ''}
-          </div>
-        </article>
-      `;
-    }).join('');
+
+              ${fotoSrc ? `
+                <div class="photo-box" onclick="abrirModalFoto('${escapeHtml(fotoSrc)}', '${escapeHtml(h.titulo || 'Evidencia')}')">
+                  <img src="${escapeHtml(fotoSrc)}" alt="${escapeHtml(h.titulo || 'Evidencia')}" loading="lazy" />
+                  <div class="photo-overlay">
+                    <span class="zoom-icon">🔍 Toca para ampliar HD</span>
+                  </div>
+                </div>
+              ` : ''}
+
+              <div class="finding-body">
+                <h3 class="finding-title">${escapeHtml(h.titulo || 'Hallazgo de campo')}</h3>
+                ${h.loteNombre ? `<p class="finding-location">📍 <strong>Ubicación:</strong> ${escapeHtml(h.loteNombre)}</p>` : ''}
+                <p class="finding-desc">${escapeHtml(h.descripcion || 'Sin descripción adicional.')}</p>
+
+                ${(h.organoAfectado || h.agenteCausal) ? `
+                  <div class="spec-grid">
+                    ${h.organoAfectado ? `<div><span class="lbl">Órgano:</span> <strong>${escapeHtml(h.organoAfectado)}</strong></div>` : ''}
+                    ${h.agenteCausal ? `<div><span class="lbl">Agente causal:</span> <strong>${escapeHtml(h.agenteCausal)}</strong></div>` : ''}
+                  </div>
+                ` : ''}
+
+                ${(h.analisisIa || h.recomendacionIa) ? `
+                  <div class="ai-advice">
+                    <div class="ai-advice-title">
+                      <span>✨ Criterio & Recomendación Técnica:</span>
+                    </div>
+                    <p>${escapeHtml(h.analisisIa || h.recomendacionIa)}</p>
+                  </div>
+                ` : ''}
+              </div>
+            </article>
+          `;
+        }).join('')}
+      </div>
+    `;
   };
 
   // Renderizar mediciones de suelo
@@ -168,18 +171,18 @@ export function generarHtmlReporte(datos = {}) {
     `;
   };
 
-  // Renderizar Fertirriego y Nutrición
+  // Renderizar Fertirriego y Nutrición con Aporte Elemental Acumulado y Segregación por Día
   const renderFertirriego = () => {
     if (!recFertirriegoFiltradas || recFertirriegoFiltradas.length === 0) return '';
     return `
       <section class="section-block">
         <div class="section-head">
           <h2 class="section-title">💧 Programa Nutricional y Fertirriego</h2>
-          <span class="section-sub">Soluciones nutritivas segregadas por tanque</span>
+          <span class="section-sub">Soluciones segregadas por día y evento nutricional</span>
         </div>
 
         ${recFertirriegoFiltradas.map(s => {
-          // Balance estequiométrico
+          // Balance estequiométrico total semanal acumulado
           const todasLineas = (s.eventos || []).flatMap(ev => [
             ...(ev.lineasTanqueA || []),
             ...(ev.lineasTanqueB || []),
@@ -191,22 +194,32 @@ export function generarHtmlReporte(datos = {}) {
           return `
             <div class="card week-card">
               <div class="week-header">
-                <h3 class="week-title">Semana ${s.semana}</h3>
+                <div>
+                  <h3 class="week-title">Semana ${s.semana}</h3>
+                  ${s.etapaFenologica ? `<div class="stage-tag">🌱 Etapa: ${escapeHtml(s.etapaFenologica)}</div>` : ''}
+                </div>
                 <span class="week-tag">Fertirriego</span>
               </div>
 
               ${(s.eventos || []).map(ev => `
                 <div class="event-block">
                   <div class="event-header">
-                    <h4 class="event-name">${escapeHtml(ev.nombreEvento || ev.nombre || 'Aplicación Nutricional')}</h4>
+                    <div>
+                      <h4 class="event-name">${escapeHtml(ev.nombreEvento || ev.nombre || 'Aplicación Nutricional')}</h4>
+                      <div class="event-pills-row">
+                        ${ev.dia ? `<span class="event-day-pill">📅 ${escapeHtml(ev.dia)}</span>` : ''}
+                        ${ev.objetivo ? `<span class="event-obj-pill">🎯 ${escapeHtml(ev.objetivo)}</span>` : ''}
+                      </div>
+                    </div>
                     <span class="event-scope">${escapeHtml(ev.alcance || 'Finca')}</span>
                   </div>
 
                   <div class="event-meta-chips">
-                    ${ev.volumenLitros ? `<span>💧 ${ev.volumenLitros} Litros</span>` : ''}
-                    ${ev.phSolucion ? `<span>🧪 pH: ${ev.phSolucion}</span>` : ''}
-                    ${ev.ceSolucion ? `<span>⚡ CE: ${ev.ceSolucion} mS/cm</span>` : ''}
-                    ${ev.diasAplicacion ? `<span>📅 Días: ${escapeHtml(ev.diasAplicacion)}</span>` : ''}
+                    ${ev.modalidadNombre ? `<span>⚙️ ${escapeHtml(ev.modalidadNombre)}</span>` : ''}
+                    ${ev.volumenTanqueMadreLitros ? `<span>🛢️ Tanque Madre: ${ev.volumenTanqueMadreLitros} L</span>` : ''}
+                    ${ev.relacionInyeccion ? `<span>💉 Inyección: ${escapeHtml(ev.relacionInyeccion)}</span>` : ''}
+                    ${ev.conductividadObjetivo ? `<span>⚡ CE: ${escapeHtml(ev.conductividadObjetivo)}</span>` : ''}
+                    ${ev.phObjetivo ? `<span>🧪 pH: ${escapeHtml(ev.phObjetivo)}</span>` : ''}
                   </div>
 
                   ${ev.lineasTanqueA?.length > 0 ? `
@@ -251,6 +264,13 @@ export function generarHtmlReporte(datos = {}) {
                     </div>
                   ` : ''}
 
+                  ${ev.analisisIa ? `
+                    <div class="event-ai-box">
+                      <strong class="event-ai-title">✨ Dictamen Técnico IA:</strong>
+                      <p class="event-ai-text">${escapeHtml(ev.analisisIa)}</p>
+                    </div>
+                  ` : ''}
+
                   ${ev.observacionesPie ? `
                     <p class="event-note"><em>Instrucción:</em> ${escapeHtml(ev.observacionesPie)}</p>
                   ` : ''}
@@ -260,33 +280,42 @@ export function generarHtmlReporte(datos = {}) {
               ${tieneBalance ? `
                 <div class="stoich-box">
                   <div class="stoich-head">
-                    <strong>⚖️ Aporte Nutricional Elemental Calculado</strong>
-                    <span class="kn-ratio">K:N = ${balance.relacionKN || 'Equilibrado'}</span>
+                    <div>
+                      <strong>⚖️ Aporte Elemental Acumulado de la Semana ${s.semana}</strong>
+                      <p class="stoich-sub">Suma estequiométrica total acumulada de todas las aplicaciones de la semana</p>
+                    </div>
+                    <span class="kn-ratio">Relación K:N = ${balance.relacionKN || 'Equilibrado'}</span>
                   </div>
                   <div class="stoich-grid">
                     <div class="stoich-cell">
                       <span class="s-elem">N Total</span>
                       <strong class="s-val n-col">${balance.nTotalKg} kg</strong>
+                      <span class="s-extra">Nítrico: ${balance.formasNitrogeno?.pctNitrico || 0}%</span>
                     </div>
                     <div class="stoich-cell">
                       <span class="s-elem">P₂O₅</span>
                       <strong class="s-val p-col">${balance.p2o5Kg} kg</strong>
+                      <span class="s-extra">Fosfato</span>
                     </div>
                     <div class="stoich-cell">
                       <span class="s-elem">K₂O</span>
                       <strong class="s-val k-col">${balance.k2oKg} kg</strong>
+                      <span class="s-extra">Potasio</span>
                     </div>
                     <div class="stoich-cell">
                       <span class="s-elem">CaO</span>
                       <strong class="s-val ca-col">${balance.caoKg} kg</strong>
+                      <span class="s-extra">Calcio</span>
                     </div>
                     <div class="stoich-cell">
                       <span class="s-elem">MgO</span>
                       <strong class="s-val mg-col">${balance.mgoKg} kg</strong>
+                      <span class="s-extra">Magnesio</span>
                     </div>
                     <div class="stoich-cell">
                       <span class="s-elem">Azufre (S)</span>
                       <strong class="s-val s-col">${balance.sKg} kg</strong>
+                      <span class="s-extra">Sulfatos</span>
                     </div>
                   </div>
                 </div>
@@ -843,12 +872,26 @@ export function generarHtmlReporte(datos = {}) {
       margin-bottom: 10px;
     }
 
-    /* Contenedor fotográfico HD */
+    /* Cuadrícula de Revista Científica para Hallazgos (2 columnas en tablet/desktop) */
+    .findings-magazine-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    @media (min-width: 600px) {
+      .findings-magazine-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    /* Contenedor fotográfico HD con fondo claro sin barras negras */
     .photo-box {
       position: relative;
       width: 100%;
-      height: 220px;
-      background: #0f172a;
+      height: 230px;
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
       border-radius: var(--radius-md);
       overflow: hidden;
       margin-bottom: 12px;
@@ -859,13 +902,79 @@ export function generarHtmlReporte(datos = {}) {
     }
 
     .photo-box img {
-      max-width: 100%;
-      max-height: 100%;
-      width: auto;
-      height: auto;
-      object-fit: contain;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
       display: block;
       transition: transform 0.2s ease;
+    }
+
+    .event-pills-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .event-day-pill {
+      font-size: 11px;
+      font-weight: 700;
+      color: #1e40af;
+      background: #dbeafe;
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+
+    .event-obj-pill {
+      font-size: 11px;
+      font-weight: 700;
+      color: #065f46;
+      background: #d1fae5;
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+
+    .stage-tag {
+      font-size: 12px;
+      font-weight: 600;
+      color: #047857;
+      margin-top: 2px;
+    }
+
+    .event-ai-box {
+      margin-top: 10px;
+      padding: 10px 12px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 10px;
+      font-size: 12px;
+      color: #1e3a8a;
+    }
+
+    .event-ai-title {
+      display: block;
+      margin-bottom: 4px;
+      color: #1d4ed8;
+    }
+
+    .event-ai-text {
+      white-space: pre-line;
+      line-height: 1.45;
+      color: #334155;
+    }
+
+    .stoich-sub {
+      font-size: 11px;
+      color: #64748b;
+      font-weight: normal;
+      margin-top: 2px;
+    }
+
+    .s-extra {
+      display: block;
+      font-size: 9.5px;
+      color: #64748b;
+      margin-top: 2px;
     }
     .photo-box:hover img { transform: scale(1.02); }
 

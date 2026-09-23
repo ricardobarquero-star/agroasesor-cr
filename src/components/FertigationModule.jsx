@@ -1,19 +1,14 @@
 import React, { useState } from 'react';
 import { 
-  Droplet, Plus, Trash2, AlertTriangle, Sparkles, Check, 
-  Layers, FlaskConical, HelpCircle, ChevronDown, Calendar,
-  Sliders, Gauge, Sprout, ArrowRight, BookOpen, Search, X,
-  MapPin, CheckCircle2, Edit3, List
+  Plus, Trash2, AlertTriangle, Sparkles, Check, 
+  Calendar, Sliders, X, MapPin, Edit3, List
 } from 'lucide-react';
-import { crAgroDatabase } from '../data/crAgroDatabase';
 import { storageService } from '../services/storageService';
 import { geminiService } from '../services/geminiService';
 import { 
   ETAPAS_FENOLOGICAS, 
-  OBJETIVOS_FERTILIZACION, 
-  calcularNutrientesTotales, 
-  auditarIncompatibilidadQuimica, 
-  auditarObjetivoFenologico 
+  OBJETIVOS_FERTILIZACION,
+  proponerFormulaDosatron
 } from '../services/nutritionCalculatorService';
 
 // Modalidades oficiales solicitadas por el Ing. Agr. Ricardo Barquero
@@ -121,8 +116,6 @@ const MODALIDADES = [
 export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) {
   const [semanaActiva, setSemanaActiva] = useState(1);
   const [mostrarModalEvento, setMostrarModalEvento] = useState(false);
-  const [filtroCategoriaFert, setFiltroCategoriaFert] = useState('todos');
-  const [investigandoFertIdx, setInvestigandoFertIdx] = useState(null);
   const [eventoEditandoId, setEventoEditandoId] = useState(null); // null = nuevo, string = editando
   const [modalidadSeleccionada, setModalidadSeleccionada] = useState('dosatron');
   const [auditandoNutricion, setAuditandoNutricion] = useState(false);
@@ -131,6 +124,14 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
   
   // Campos del evento
   const [nombreEvento, setNombreEvento] = useState('');
+  const [diaAplicacion, setDiaAplicacion] = useState('Lunes');
+  const [objetivoAplicacion, setObjetivoAplicacion] = useState('Llenado y engrose de fruto');
+  const [esObjetivoManual, setEsObjetivoManual] = useState(false);
+  const [volumenTanqueMadre, setVolumenTanqueMadre] = useState(1000);
+  const [relacionInyeccion, setRelacionInyeccion] = useState('1:100');
+  const [analizandoEventoIa, setAnalizandoEventoIa] = useState(false);
+  const [resultadoAnalisisEventoIa, setResultadoAnalisisEventoIa] = useState(null);
+  const [productoInvestigadoMsg, setProductoInvestigadoMsg] = useState(null);
   const [alcanceEvento, setAlcanceEvento] = useState('Toda la Finca');
   const [conductividad, setConductividad] = useState('1.5');
   const [ph, setPh] = useState('5.8');
@@ -193,6 +194,13 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
     setModalidadSeleccionada(modId);
     setNombreEvento('');
     setAlcanceEvento('Toda la Finca');
+    setDiaAplicacion('Lunes');
+    setObjetivoAplicacion(recomendacionSemana.objetivoFertilizacion || 'Llenado y engrose de fruto');
+    setEsObjetivoManual(false);
+    setVolumenTanqueMadre(1000);
+    setRelacionInyeccion('1:100');
+    setResultadoAnalisisEventoIa(null);
+    setProductoInvestigadoMsg(null);
     setObservaciones('');
     
     // Iniciar con 1 fila limpia con selector desplegable listo
@@ -215,6 +223,13 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
     setModalidadSeleccionada(ev.modalidad || 'dosatron');
     setNombreEvento(ev.nombreEvento || '');
     setAlcanceEvento(ev.alcance || 'Toda la Finca');
+    setDiaAplicacion(ev.dia || 'Lunes');
+    setObjetivoAplicacion(ev.objetivo || recomendacionSemana.objetivoFertilizacion || 'Llenado y engrose de fruto');
+    setEsObjetivoManual(false);
+    setVolumenTanqueMadre(ev.volumenTanqueMadreLitros || 1000);
+    setRelacionInyeccion(ev.relacionInyeccion || '1:100');
+    setResultadoAnalisisEventoIa(ev.analisisIa ? { analisisIa: ev.analisisIa } : null);
+    setProductoInvestigadoMsg(null);
     setConductividad(ev.conductividadObjetivo ? ev.conductividadObjetivo.replace(' mS/cm', '').trim() : '');
     setPh(ev.phObjetivo || '');
     setObservaciones(ev.observacionesPie || '');
@@ -261,6 +276,79 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
     setLineas(nuevas);
   };
 
+  // Auto-búsqueda e inferencia agronómica de producto nuevo
+  const handleInvestigarProductoNuevo = async (nombreProd) => {
+    if (!nombreProd || nombreProd.trim().length < 2) return;
+    setProductoInvestigadoMsg({ estado: 'buscando', texto: `Buscando riqueza técnica de "${nombreProd}"...` });
+    try {
+      const res = await geminiService.buscarOInferirComposicionFertilizante(nombreProd);
+      if (res) {
+        setProductoInvestigadoMsg({
+          estado: 'exito',
+          texto: `✅ Registrado en catálogo: ${res.nombre} (N:${res.nTotal}% P:${res.p2o5}% K:${res.k2o}% Ca:${res.cao}% Mg:${res.mgo}% S:${res.s}%)`
+        });
+      }
+    } catch (err) {
+      console.warn('Error investigando producto:', err);
+      setProductoInvestigadoMsg(null);
+    }
+  };
+
+  // Proponer fórmula para Dosatron con IA
+  const handleProponerFormulaDosatronIa = () => {
+    const prop = proponerFormulaDosatron({
+      cultivo: visita.lote?.cultivoNombre || 'Fresa',
+      etapaFenologica: recomendacionSemana.etapaFenologica || 'Llenado, engrose y calibre de fruto',
+      objetivoFertilizacion: objetivoAplicacion,
+      volumenTanqueMadreLitros: Number(volumenTanqueMadre) || 1000,
+      relacionInyeccion: relacionInyeccion
+    });
+
+    if (prop) {
+      setLineasTanqueA(prop.lineasTanqueA.map(l => ({ ...l, esManual: false })));
+      setLineasTanqueB(prop.lineasTanqueB.map(l => ({ ...l, esManual: false })));
+      if (prop.ceEsperada && !conductividad) {
+        setConductividad(prop.ceEsperada.split(' ')[0]);
+      }
+      setResultadoAnalisisEventoIa({
+        origen: 'Propuesta Preliminar Dosatron (Ing. Barquero / IA)',
+        analisisIa: `Fórmula propuesta para ${prop.cultivo} (${prop.objetivo}).\n\n• Tanque A: Nitratos y Calcio asimilable.\n• Tanque B: Fosfatos, Sulfatos y Magnesio.\n• Justificación: ${prop.justificacion}`
+      });
+    }
+  };
+
+  // Analizar aplicación individual con IA
+  const handleAnalizarAplicacionIndividual = async () => {
+    setAnalizandoEventoIa(true);
+    try {
+      const appTemp = {
+        id: eventoEditandoId || 'temp',
+        nombre: nombreEvento || modalidadActualConfig.nombre,
+        dia: diaAplicacion,
+        objetivo: objetivoAplicacion,
+        modalidad: modalidadSeleccionada,
+        lineasProductos,
+        lineasTanqueA,
+        lineasTanqueB,
+        volumenAguaLitros: modalidadSeleccionada === 'tanque_directo' ? 1000 : null
+      };
+
+      const res = await geminiService.analizarAplicacionFertilizacionIndividual({
+        aplicacion: appTemp,
+        cultivo: visita.lote?.cultivoNombre || 'Fresa',
+        etapaFenologica: recomendacionSemana.etapaFenologica || 'Llenado, engrose y calibre de fruto',
+        volumenTanqueMadre: Number(volumenTanqueMadre) || 1000,
+        relacionInyeccion: relacionInyeccion
+      });
+
+      setResultadoAnalisisEventoIa(res);
+    } catch (err) {
+      console.error('Error analizando aplicación con IA:', err);
+    } finally {
+      setAnalizandoEventoIa(false);
+    }
+  };
+
   // Guardar nuevo evento / cuadro en la semana activa
   const handleGuardarEvento = (e) => {
     e.preventDefault();
@@ -285,7 +373,12 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
       modalidad: modalidadSeleccionada,
       modalidadNombre: modalidadActualConfig.nombre,
       modalidadIcono: modalidadActualConfig.icono,
-      nombreEvento: nombreEvento || `${modalidadActualConfig.nombre} (${(recomendacionSemana.eventos || []).length + 1})`,
+      nombreEvento: nombreEvento || `${modalidadActualConfig.nombre} - ${diaAplicacion} (${(recomendacionSemana.eventos || []).length + 1})`,
+      dia: diaAplicacion,
+      objetivo: objetivoAplicacion,
+      volumenTanqueMadreLitros: modalidadSeleccionada === 'dosatron' ? Number(volumenTanqueMadre) || 1000 : null,
+      relacionInyeccion: modalidadSeleccionada === 'dosatron' ? relacionInyeccion : null,
+      analisisIa: resultadoAnalisisEventoIa?.analisisIa || null,
       alcance: alcanceEvento,
       sistema: modalidadActualConfig.subtitulo,
       conductividadObjetivo: modalidadSeleccionada !== 'granular' && conductividad ? `${conductividad} mS/cm` : null,
@@ -353,10 +446,11 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
         if (ev.productos) todasLineasProd.push(...ev.productos);
       });
 
+      // Se envían los eventos estructurados para auditar cada evento por separado (sin falsas incompatibilidades cruzadas de días distintos)
       const res = await geminiService.auditarNutricionFertirriego({
         cultivo: visita.lote?.cultivoNombre || 'Cultivo',
-        etapaFenologica: recomendacionSemana.etapaFenologica || 'Planta saliendo de cosecha / Recuperación',
-        objetivoFertilizacion: recomendacionSemana.objetivoFertilizacion || 'Promoción de floración y fertilidad de polen',
+        etapaFenologica: recomendacionSemana.etapaFenologica || 'Llenado, engrose y calibre de fruto',
+        objetivoFertilizacion: recomendacionSemana.objetivoFertilizacion || 'Llenado de fruto y calibre comercial',
         semana: semanaActiva,
         modalidad: eventosDeSemana[0]?.modalidad || 'dosatron',
         lineasA: todasLineasA,
@@ -653,7 +747,7 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
             <div className="space-y-1">
               {resultadoAuditoriaNutricional.compatibilidad.advertencias.map((adv, aIdx) => (
                 <div key={aIdx} className="bg-amber-50 p-2 rounded-xl border border-amber-200 text-xs text-amber-950 flex items-start gap-2">
-                  <span className="material-symbols-outlined text-[16px] text-amber-600 shrink-0">info</span>
+                  <span className="shrink-0 text-amber-600 text-sm">⚠️</span>
                   <span>{adv}</span>
                 </div>
               ))}
@@ -664,7 +758,7 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
           <div className="bg-[#f2f3ff] p-3 rounded-xl border border-[#dae2fd] text-xs space-y-2">
             <div className="flex items-center justify-between border-b border-[#dae2fd] pb-1">
               <span className="font-headline font-bold text-[#00652c] flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[16px]">psychology</span>
+                <span className="shrink-0 text-sm">🧠</span>
                 <span>Evaluación de la Curva de Absorción ({recomendacionSemana.etapaFenologica || 'Etapa Actual'} • {recomendacionSemana.objetivoFertilizacion || 'Objetivo'}):</span>
               </span>
             </div>
@@ -746,6 +840,11 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                   <div>
                     <div className="flex flex-wrap items-center gap-1.5">
                       <h4 className="font-bold text-slate-900 text-sm sm:text-base">{ev.nombreEvento}</h4>
+                      {ev.dia && (
+                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
+                          📅 {ev.dia}
+                        </span>
+                      )}
                       <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
                         {ev.modalidadNombre || ev.modalidad}
                       </span>
@@ -754,7 +853,14 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                         {ev.alcance || 'Toda la Finca'}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-500 mt-0.5">{ev.sistema}</p>
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                      <p className="text-xs text-slate-500">{ev.sistema}</p>
+                      {ev.objetivo && (
+                        <span className="text-xs text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
+                          🎯 Objetivo: {ev.objetivo}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -841,6 +947,16 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                 </div>
               )}
 
+              {ev.analisisIa && (
+                <div className="bg-blue-50/70 p-3 rounded-xl border border-blue-200 text-xs text-slate-700 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-blue-900">
+                    <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Dictamen y Análisis IA de esta Aplicación:</span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 whitespace-pre-line leading-relaxed">{ev.analisisIa}</p>
+                </div>
+              )}
+
               {ev.observacionesPie && (
                 <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs text-slate-600 flex items-start gap-1.5">
                   <span className="font-bold text-slate-700 shrink-0">Instrucciones:</span>
@@ -899,7 +1015,7 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                     type="text"
                     value={nombreEvento}
                     onChange={(e) => setNombreEvento(e.target.value)}
-                    placeholder={`Ej: ${modalidadActualConfig.nombre} - Desarrollo`}
+                    placeholder={`Ej: ${modalidadActualConfig.nombre} - ${diaAplicacion}`}
                     className="w-full text-xs font-medium border border-slate-300 rounded-xl p-2.5 focus:ring-2 focus:ring-blue-500 outline-none"
                   />
                 </div>
@@ -922,6 +1038,147 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                   </select>
                 </div>
               </div>
+
+              {/* DÍA Y OBJETIVO DE LA APLICACIÓN (COMBOBOX) */}
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1">
+                      📅 Día Programado
+                    </label>
+                    <select
+                      value={diaAplicacion}
+                      onChange={(e) => setDiaAplicacion(e.target.value)}
+                      className="w-full text-xs font-bold border border-slate-300 rounded-xl p-2 bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="Lunes">Lunes</option>
+                      <option value="Martes">Martes</option>
+                      <option value="Miércoles">Miércoles</option>
+                      <option value="Jueves">Jueves</option>
+                      <option value="Viernes">Viernes</option>
+                      <option value="Sábado">Sábado</option>
+                      <option value="Domingo">Domingo</option>
+                      <option value="Lunes y Jueves">Lunes y Jueves (Frecuencia 2x)</option>
+                      <option value="Martes y Viernes">Martes y Viernes (Frecuencia 2x)</option>
+                      <option value="Riego Diario">Riego Diario Continuo</option>
+                    </select>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      💡 Las aplicaciones en días distintos no se mezclan en el sistema.
+                    </p>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-slate-800">
+                        🎯 Objetivo de esta Aplicación
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setEsObjetivoManual(!esObjetivoManual)}
+                        className="text-[11px] font-bold text-blue-600 hover:text-blue-800 underline"
+                      >
+                        {esObjetivoManual ? 'Seleccionar de lista' : '✏️ Escribir objetivo manual'}
+                      </button>
+                    </div>
+
+                    {!esObjetivoManual ? (
+                      <select
+                        value={objetivoAplicacion}
+                        onChange={(e) => {
+                          if (e.target.value === '__custom__') {
+                            setEsObjetivoManual(true);
+                            setObjetivoAplicacion('');
+                          } else {
+                            setObjetivoAplicacion(e.target.value);
+                          }
+                        }}
+                        className="w-full text-xs font-bold border border-slate-300 rounded-xl p-2 bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="Llenado y engrose de fruto">Llenado, engrose y calibre de fruto comercial</option>
+                        <option value="Inducción floral y cuaje de botón">Inducción floral, viabilidad de polen y cuaje</option>
+                        <option value="Desarrollo radicular y pelos absorbentes">Desarrollo radicular y emisión de pelos absorbentes</option>
+                        <option value="Crecimiento vegetativo y área foliar">Crecimiento vegetativo, macollamiento y biomasa</option>
+                        <option value="Firmeza de pulpa y vida postcosecha">Firmeza de tejido celular, vida de anaquel y consistencia</option>
+                        <option value="Corrección de microelementos y balance">Corrección de clorosis y balance de micronutrientes</option>
+                        <option value="Sanidad del bulbo radicular">Sanidad del bulbo húmedo y choque bioestimulante</option>
+                        <option value="__custom__">✏️ [+ Escribir otro objetivo manual...]</option>
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={objetivoAplicacion}
+                        onChange={(e) => setObjetivoAplicacion(e.target.value)}
+                        placeholder="Escriba el objetivo agronómico específico para esta aplicación..."
+                        className="w-full text-xs font-semibold border border-blue-400 rounded-xl p-2 outline-none bg-white focus:ring-2 focus:ring-blue-500"
+                      />
+                    )}
+                  </div>
+                </div>
+
+                {/* PARÁMETROS ESPECÍFICOS PARA DOSATRON */}
+                {modalidadSeleccionada === 'dosatron' && (
+                  <div className="pt-2 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <span className="block text-[11px] font-bold text-slate-700">Capacidad Tanque Madre:</span>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            value={volumenTanqueMadre}
+                            onChange={(e) => setVolumenTanqueMadre(e.target.value)}
+                            className="w-20 text-xs font-bold text-center border border-slate-300 rounded-lg p-1.5 bg-white"
+                          />
+                          <span className="text-xs text-slate-600 font-semibold">Litros</span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="block text-[11px] font-bold text-slate-700">Relación Inyección:</span>
+                        <select
+                          value={relacionInyeccion}
+                          onChange={(e) => setRelacionInyeccion(e.target.value)}
+                          className="text-xs font-bold border border-slate-300 rounded-lg p-1.5 bg-white outline-none"
+                        >
+                          <option value="1:100">1:100 (1.0%)</option>
+                          <option value="1:50">1:50 (2.0%)</option>
+                          <option value="1:25">1:25 (4.0%)</option>
+                          <option value="1:200">1:200 (0.5%)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleProponerFormulaDosatronIa}
+                      className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold hover:from-blue-700 hover:to-indigo-700 shadow-sm flex items-center gap-1.5 transition active:scale-95"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>✨ Proponer Fórmula IA para Dosatron</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Banner de producto investigado con IA */}
+              {productoInvestigadoMsg && (
+                <div className={`p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 ${
+                  productoInvestigadoMsg.estado === 'exito' 
+                    ? 'bg-emerald-50 border-emerald-300 text-emerald-900' 
+                    : 'bg-blue-50 border-blue-300 text-blue-900 animate-pulse'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span className="font-semibold">{productoInvestigadoMsg.texto}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setProductoInvestigadoMsg(null)}
+                    className="text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
 
               {/* CE y pH si aplica */}
               {modalidadSeleccionada !== 'granular' && (
@@ -1014,17 +1271,29 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                             </div>
                           ) : (
                             <div className="flex-1 min-w-[180px] flex items-center gap-1">
-                              <input
-                                type="text"
-                                value={l.producto}
-                                onChange={(e) => {
-                                  const nuevo = [...lineasTanqueA];
-                                  nuevo[idx].producto = e.target.value;
-                                  setLineasTanqueA(nuevo);
-                                }}
-                                placeholder="Escriba nombre del producto"
-                                className="w-full text-xs font-semibold border border-blue-300 rounded-lg p-2 outline-none"
-                              />
+                              <div className="relative flex-1 flex items-center">
+                                <input
+                                  type="text"
+                                  value={l.producto}
+                                  onChange={(e) => {
+                                    const nuevo = [...lineasTanqueA];
+                                    nuevo[idx].producto = e.target.value;
+                                    setLineasTanqueA(nuevo);
+                                  }}
+                                  placeholder="Escriba nombre del insumo o fórmula manual..."
+                                  className="w-full text-xs font-semibold border border-blue-300 rounded-lg p-2 pr-8 outline-none"
+                                />
+                                {l.producto && l.producto.length > 2 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleInvestigarProductoNuevo(l.producto)}
+                                    className="absolute right-1.5 p-1 text-blue-600 hover:text-blue-800"
+                                    title="Auto-buscar riqueza técnica con IA"
+                                  >
+                                    <Sparkles className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1129,17 +1398,29 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                             </div>
                           ) : (
                             <div className="flex-1 min-w-[180px] flex items-center gap-1">
-                              <input
-                                type="text"
-                                value={l.producto}
-                                onChange={(e) => {
-                                  const nuevo = [...lineasTanqueB];
-                                  nuevo[idx].producto = e.target.value;
-                                  setLineasTanqueB(nuevo);
-                                }}
-                                placeholder="Escriba nombre del producto"
-                                className="w-full text-xs font-semibold border border-amber-300 rounded-lg p-2 outline-none"
-                              />
+                              <div className="relative flex-1 flex items-center">
+                                <input
+                                  type="text"
+                                  value={l.producto}
+                                  onChange={(e) => {
+                                    const nuevo = [...lineasTanqueB];
+                                    nuevo[idx].producto = e.target.value;
+                                    setLineasTanqueB(nuevo);
+                                  }}
+                                  placeholder="Escriba nombre del insumo o fórmula manual..."
+                                  className="w-full text-xs font-semibold border border-amber-300 rounded-lg p-2 pr-8 outline-none"
+                                />
+                                {l.producto && l.producto.length > 2 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleInvestigarProductoNuevo(l.producto)}
+                                    className="absolute right-1.5 p-1 text-amber-600 hover:text-amber-800"
+                                    title="Auto-buscar riqueza técnica con IA"
+                                  >
+                                    <Sparkles className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1220,28 +1501,40 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                               onChange={(e) => handleSeleccionarProductoEnLinea(e.target.value, lineasProductos, setLineasProductos, idx, todosFertilizantes)}
                               className="w-full text-xs font-bold text-slate-900 border border-slate-300 rounded-lg p-2 bg-slate-50 outline-none focus:ring-2 focus:ring-emerald-500"
                             >
+                              <option value="__manual__">✏️ [+ Escribir otro producto manual...]</option>
                               <option value="">-- Toque para desplegar catálogo ({todosFertilizantes.length} insumos) --</option>
                               {todosFertilizantes.map((p, i) => (
                                 <option key={i} value={p.nombreComercial}>
                                   {p.nombreComercial} ({p.categoria || ''})
                                 </option>
                               ))}
-                              <option value="__manual__">✏️ [+ Escribir otro producto manual...]</option>
                             </select>
                           </div>
                         ) : (
                           <div className="flex-1 min-w-[200px] flex items-center gap-1">
-                            <input
-                              type="text"
-                              value={l.producto}
-                              onChange={(e) => {
-                                const nuevo = [...lineasProductos];
-                                nuevo[idx].producto = e.target.value;
-                                setLineasProductos(nuevo);
-                              }}
-                              placeholder="Escriba nombre del producto o fórmula"
-                              className="w-full text-xs font-semibold border border-emerald-400 rounded-lg p-2 outline-none"
-                            />
+                            <div className="relative flex-1 flex items-center">
+                              <input
+                                type="text"
+                                value={l.producto}
+                                onChange={(e) => {
+                                  const nuevo = [...lineasProductos];
+                                  nuevo[idx].producto = e.target.value;
+                                  setLineasProductos(nuevo);
+                                }}
+                                placeholder="Escriba nombre del producto o fórmula manual..."
+                                className="w-full text-xs font-semibold border border-emerald-400 rounded-lg p-2 pr-8 outline-none"
+                              />
+                              {l.producto && l.producto.length > 2 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleInvestigarProductoNuevo(l.producto)}
+                                  className="absolute right-1.5 p-1 text-emerald-700 hover:text-emerald-900"
+                                  title="Auto-buscar riqueza técnica con IA"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                             <button
                               type="button"
                               onClick={() => {
@@ -1308,6 +1601,55 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                   placeholder="Ej: Mezclar primero en balde antes de verter al tanque. No aplicar bajo sol directo."
                   className="w-full text-xs border border-slate-300 rounded-xl p-2.5 focus:ring-2 focus:ring-blue-500 outline-none"
                 />
+              </div>
+
+              {/* SECCIÓN DE AUDITORÍA IA DE ESTA APLICACIÓN ESPECÍFICA */}
+              <div className="pt-2 border-t border-slate-200 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                    <Sparkles className="w-4 h-4 text-blue-600" />
+                    <span>Auditoría y Dictamen IA de esta Aplicación</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAnalizarAplicacionIndividual}
+                    disabled={analizandoEventoIa}
+                    className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold hover:bg-blue-100 flex items-center gap-1.5 transition active:scale-95"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                    <span>{analizandoEventoIa ? 'Analizando con IA...' : '✨ Analizar esta Aplicación'}</span>
+                  </button>
+                </div>
+
+                {resultadoAnalisisEventoIa && (
+                  <div className="bg-gradient-to-br from-blue-50/90 to-indigo-50/70 p-3 rounded-2xl border border-blue-200 text-xs text-slate-800 space-y-2">
+                    <div className="flex items-center justify-between font-bold text-blue-900 border-b border-blue-200/60 pb-1">
+                      <span>Dictamen Técnico ({resultadoAnalisisEventoIa.origen || 'IA Agronómica'})</span>
+                      <span className="text-[10px] text-blue-600 font-semibold">Criterio: Ing. Barquero (Colegiado 5896)</span>
+                    </div>
+
+                    {resultadoAnalisisEventoIa.analisisIa ? (
+                      <p className="text-xs whitespace-pre-line leading-relaxed text-slate-700">
+                        {resultadoAnalisisEventoIa.analisisIa}
+                      </p>
+                    ) : (
+                      <div className="space-y-1.5 text-xs">
+                        <p><strong>🎯 Objetivo:</strong> {resultadoAnalisisEventoIa.objetivo}</p>
+                        <p><strong>⚖️ Estado:</strong> {resultadoAnalisisEventoIa.justificacion}</p>
+                        {resultadoAnalisisEventoIa.sugerencias?.length > 0 && (
+                          <div>
+                            <strong>💡 Sugerencias:</strong>
+                            <ul className="list-disc pl-4 mt-0.5 space-y-0.5">
+                              {resultadoAnalisisEventoIa.sugerencias.map((s, i) => (
+                                <li key={i}>{s}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Botones de acción */}

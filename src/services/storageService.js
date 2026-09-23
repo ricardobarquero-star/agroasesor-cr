@@ -798,6 +798,66 @@ export const storageService = {
     return true;
   },
 
+  // ==========================================
+  // EXPEDIENTE E HISTORIAL DE INFORMES
+  // ==========================================
+  getHistorialReportes(clienteId = null) {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.REPORTES_EXPEDIENTE);
+      const todos = raw ? JSON.parse(raw) : [];
+      if (clienteId) {
+        return todos.filter(r => r.clienteId === clienteId);
+      }
+      return todos;
+    } catch (e) {
+      console.error('Error leyendo historial de reportes:', e);
+      return [];
+    }
+  },
+
+  guardarReporteEnExpediente(clienteId, nuevoReporte) {
+    try {
+      const reportes = this.getHistorialReportes();
+      const id = nuevoReporte.id || ('rep-' + Date.now());
+      const reporteCompleto = {
+        ...nuevoReporte,
+        id,
+        clienteId: clienteId || nuevoReporte.clienteId,
+        fechaGuardado: new Date().toISOString()
+      };
+      const idx = reportes.findIndex(r => r.id === id);
+      if (idx >= 0) {
+        reportes[idx] = reporteCompleto;
+      } else {
+        reportes.unshift(reporteCompleto);
+      }
+      // Mantener los últimos 60 reportes para no saturar almacenamiento
+      const limitado = reportes.slice(0, 60);
+      localStorage.setItem(STORAGE_KEYS.REPORTES_EXPEDIENTE, JSON.stringify(limitado));
+      return reporteCompleto;
+    } catch (e) {
+      console.error('Error guardando reporte en expediente:', e);
+      return null;
+    }
+  },
+
+  eliminarReporteDeExpediente(reporteId) {
+    try {
+      const reportes = this.getHistorialReportes();
+      const filtrados = reportes.filter(r => r.id !== reporteId);
+      localStorage.setItem(STORAGE_KEYS.REPORTES_EXPEDIENTE, JSON.stringify(filtrados));
+      return true;
+    } catch (e) {
+      console.error('Error eliminando reporte:', e);
+      return false;
+    }
+  },
+
+  obtenerReportePorId(reporteId) {
+    const reportes = this.getHistorialReportes();
+    return reportes.find(r => r.id === reporteId) || null;
+  },
+
   importarRespaldoJSON(jsonString) {
     try {
       const data = JSON.parse(jsonString);
@@ -808,6 +868,7 @@ export const storageService = {
       if (data.clientes) localStorage.setItem(STORAGE_KEYS.CLIENTES, JSON.stringify(data.clientes));
       if (data.visitas) localStorage.setItem(STORAGE_KEYS.VISITAS, JSON.stringify(data.visitas));
       if (data.catalogoPersonalizado) localStorage.setItem(STORAGE_KEYS.CATALOGO_PERSONALIZADO, JSON.stringify(data.catalogoPersonalizado));
+      if (data.reportesExpediente) localStorage.setItem(STORAGE_KEYS.REPORTES_EXPEDIENTE, JSON.stringify(data.reportesExpediente));
       return { exito: true };
     } catch (e) {
       return { exito: false, error: e.message };

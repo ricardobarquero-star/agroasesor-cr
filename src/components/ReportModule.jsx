@@ -1,7 +1,8 @@
 import React, { useRef, useState } from 'react';
 import { 
   FileText, Download, Share2, Mail, CheckCircle2, 
-  Printer, Filter, FolderOpen, Paperclip, X
+  Printer, Filter, FolderOpen, Paperclip, X,
+  BookOpen, Search, Trash2
 } from 'lucide-react';
 import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
@@ -11,6 +12,7 @@ import { calcularDosisDual } from '../utils/doseCalculator';
 import { agroEpidemiologyService } from '../services/agroEpidemiologyService';
 import { calcularNutrientesTotales } from '../services/nutritionCalculatorService';
 import { digitalReportService } from '../services/digitalReportService';
+import { photoStorageService } from '../services/photoStorageService';
 
 export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab }) {
   const reportRef = useRef(null);
@@ -19,6 +21,23 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
   const [guardadoEnExpediente, setGuardadoEnExpediente] = useState(false);
   const [modalDescargaInfo, setModalDescargaInfo] = useState({ abierto: false, archivo: '', destino: '' });
   const [modalFotoHd, setModalFotoHd] = useState(null);
+  const [mostrarModalHistorial, setMostrarModalHistorial] = useState(false);
+  const [filtroBusquedaHistorial, setFiltroBusquedaHistorial] = useState('');
+  const [listaReportesExpediente, setListaReportesExpediente] = useState(() => {
+    try {
+      return storageService.getHistorialReportes();
+    } catch {
+      return [];
+    }
+  });
+
+  const refrescarExpediente = () => {
+    try {
+      setListaReportesExpediente(storageService.getHistorialReportes());
+    } catch (e) {
+      console.warn('Error refrescando historial:', e);
+    }
+  };
   
   // Filtro de alcance para el reporte (Toda la Finca o Lote Específico)
   const [filtroLote, setFiltroLote] = useState('todos');
@@ -272,7 +291,42 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
     }];
   })();
 
-  // Datos consolidados para generación de Reporte Web Digital Autónomo (.html)
+  // Datos consolidados con fotos pre-resueltas en Base64 para Reporte Digital Autónomo
+  const obtenerDatosReporteDigitalAsync = async () => {
+    const hallazgosConFotos = await Promise.all((hallazgosFiltrados || []).map(async (h) => {
+      let f = h.fotoAnotada || h.fotoUrl || h.foto || '';
+      if ((!f || f.startsWith('blob:')) && h.id && photoStorageService) {
+        try {
+          const cached = await photoStorageService.obtenerFoto(h.id);
+          if (cached) f = cached;
+        } catch (e) {
+          console.warn('Error recuperando foto IndexedDB:', e);
+        }
+      }
+      return { ...h, fotoAnotada: f, fotoUrl: f, foto: f };
+    }));
+
+    return {
+      visita,
+      productor,
+      finca,
+      lote,
+      filtroLote,
+      perfilIngeniero,
+      hallazgosFiltrados: hallazgosConFotos,
+      medicionesSuelo,
+      recFertirriegoFiltradas,
+      recPlaguicidasFiltradas,
+      analisisClimaIa,
+      estadisticasClima,
+      analisisEpidemiologico,
+      altitudFinca,
+      tempFinca,
+      humedadFinca,
+      lluvia7d
+    };
+  };
+
   const obtenerDatosReporteDigital = () => ({
     visita,
     productor,
@@ -414,8 +468,11 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
     }
   };
 
-  // Guardar reporte en el expediente del cliente
-  const handleGuardarEnExpediente = () => {
+  // Guardar reporte en el expediente del cliente con persistencia garantizada
+  const handleGuardarEnExpediente = async () => {
+    const datosDigital = await obtenerDatosReporteDigitalAsync();
+    const { fileName } = digitalReportService.generarReporteHtmlBlob(datosDigital);
+
     const nuevoReporte = {
       id: 'rep-' + Date.now(),
       visitaId: visita?.id,
@@ -425,14 +482,18 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
       productorNombre: productor.nombre || 'Cliente',
       fecha: visita?.fecha || new Date().toISOString().split('T')[0],
       cultivoNombre: lote.cultivoNombre || 'Cultivo',
+      variedad: lote.variedad || '',
       alcance: filtroLote === 'todos' ? 'Toda la Finca' : `Lote: ${filtroLote}`,
       hallazgosCount: hallazgosFiltrados.length,
       fertirriegoCount: recFertirriegoFiltradas.length,
       plaguicidasCount: recPlaguicidasFiltradas.length,
       medicionesSueloCount: medicionesSuelo.length,
+      archivoNombre: fileName,
+      datosVisitaSnapshot: datosDigital,
       resumenWhatsApp: generarTextoCompletoWhatsApp()
     };
     storageService.guardarReporteEnExpediente(visita?.clienteId, nuevoReporte);
+    refrescarExpediente();
     setGuardadoEnExpediente(true);
     setTimeout(() => setGuardadoEnExpediente(false), 3500);
   };
@@ -460,12 +521,13 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
     }
   };
 
-  // COMPARTIR INFORME WEB DIGITAL (.HTML) POR WHATSAPP (OPCIÓN 2)
+  // COMPARTIR INFORME WEB DIGITAL (.HTML) POR WHATSAPP (OPCIÓN 2 - FOTOS HD INTEGRADAS)
   const handleCompartirReporteHtmlWhatsApp = async () => {
     try {
       setGenerandoPdf(true);
-      setMensajeEstado('Generando Informe Web Digital interactivo...');
-      const { file, fileName } = digitalReportService.generarReporteHtmlBlob(obtenerDatosReporteDigital());
+      setMensajeEstado('Generando Informe Web Digital con fotos HD...');
+      const datosDigital = await obtenerDatosReporteDigitalAsync();
+      const { file, fileName } = digitalReportService.generarReporteHtmlBlob(datosDigital);
       const telefonoLimpio = (productor.telefono || '').replace(/[^0-9]/g, '');
       const nombreFinca = finca.nombre || 'Finca';
       const fecha = visita?.fecha || '';
@@ -508,10 +570,13 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
     }
   };
 
-  // DESCARGAR INFORME WEB DIGITAL (.HTML)
-  const handleDescargarReporteHtml = () => {
+  // DESCARGAR INFORME WEB DIGITAL (.HTML - FOTOS HD INTEGRADAS)
+  const handleDescargarReporteHtml = async () => {
     try {
-      const fileName = digitalReportService.descargarReporteHtml(obtenerDatosReporteDigital());
+      setGenerandoPdf(true);
+      setMensajeEstado('Procesando fotos HD para reporte digital...');
+      const datosDigital = await obtenerDatosReporteDigitalAsync();
+      const fileName = digitalReportService.descargarReporteHtml(datosDigital);
       setModalDescargaInfo({
         abierto: true,
         archivo: fileName,
@@ -519,6 +584,9 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
       });
     } catch (err) {
       console.error('Error descargando reporte HTML:', err);
+    } finally {
+      setGenerandoPdf(false);
+      setMensajeEstado('');
     }
   };
 
@@ -905,11 +973,24 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
           {/* Botón Guardar en Expediente */}
           <button
             onClick={handleGuardarEnExpediente}
-            className="px-3 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs active:scale-95"
+            className="px-3 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs active:scale-95 cursor-pointer"
             title="Guardar este informe en el expediente permanente del productor"
           >
             <FolderOpen className="w-3.5 h-3.5" />
-            <span>{guardadoEnExpediente ? '✅ Guardado' : '💾 Expediente'}</span>
+            <span>{guardadoEnExpediente ? '✅ Guardado' : '💾 Guardar'}</span>
+          </button>
+
+          {/* Botón Consultar Expediente / Historial */}
+          <button
+            onClick={() => {
+              refrescarExpediente();
+              setMostrarModalHistorial(true);
+            }}
+            className="px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-xs font-bold transition flex items-center gap-1.5 shadow-xs active:scale-95 cursor-pointer"
+            title="Ver todos los informes guardados para consultar, descargar o compartir a posterior"
+          >
+            <BookOpen className="w-3.5 h-3.5 text-indigo-700" />
+            <span>📚 Historial ({listaReportesExpediente.length})</span>
           </button>
 
           {/* Botón Descargar PDF */}
@@ -1001,7 +1082,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
           {/* BANNER OFICIAL AGROIA VISION ACTIVO (LETRA LEGIBLE 14px-16px) */}
           <div className="bg-[#e2e7ff] rounded-2xl p-4 shadow-sm flex items-start gap-3 relative overflow-hidden border border-[#dae2fd]">
             <div className="w-11 h-11 rounded-2xl bg-[#00652c] text-white flex items-center justify-center font-bold text-2xl shadow-sm shrink-0 mt-0.5">
-              <span className="material-symbols-outlined text-[26px]">psychology</span>
+              <span>🧠</span>
             </div>
             <div className="flex flex-col min-w-0 flex-1">
               <div className="flex items-center gap-2">
@@ -1026,7 +1107,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
               disabled={generandoPdf}
               className="w-full min-h-[50px] py-3.5 px-4 bg-gradient-to-r from-[#00652c] to-[#15803d] hover:from-[#005323] hover:to-[#00652c] text-white rounded-2xl font-headline font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-md transition active:scale-98 disabled:opacity-50"
             >
-              <span className="material-symbols-outlined text-[20px]">send</span>
+              <span>📲</span>
               <span>Compartir Reporte Oficial con PDF Adjunto</span>
             </button>
 
@@ -1036,7 +1117,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                 disabled={generandoPdf}
                 className="min-h-[44px] py-2.5 px-3 bg-[#f2f3ff] hover:bg-[#e2e7ff] text-[#00652c] border border-[#dae2fd] rounded-xl font-headline font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition shadow-xs active:scale-95 disabled:opacity-50"
               >
-                <span className="material-symbols-outlined text-[18px]">share</span>
+                <span>📲</span>
                 <span>WhatsApp + PDF</span>
               </button>
               
@@ -1045,7 +1126,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                 disabled={generandoPdf}
                 className="min-h-[44px] py-2.5 px-3 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl font-headline font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition shadow-xs active:scale-95 disabled:opacity-50"
               >
-                <span className="material-symbols-outlined text-[18px]">mail</span>
+                <span>✉️</span>
                 <span>Correo + PDF</span>
               </button>
 
@@ -1054,7 +1135,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                 disabled={generandoPdf}
                 className="min-h-[44px] py-2.5 px-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-headline font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition shadow-xs col-span-2 sm:col-span-1 active:scale-95 disabled:opacity-50"
               >
-                <span className="material-symbols-outlined text-[18px]">download</span>
+                <span>📥</span>
                 <span>Descargar PDF</span>
               </button>
             </div>
@@ -1064,7 +1145,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
           <div className="bg-white p-4 rounded-2xl border border-[#dae2fd] shadow-sm space-y-3">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <h4 className="font-headline font-bold text-sm uppercase tracking-wider text-[#00652c] flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[20px]">satellite_alt</span>
+                <span>🛰️</span>
                 <span>Telemetría y Clima de la Finca</span>
               </h4>
               <span className="text-xs font-mono font-bold text-[#005b8c] bg-[#e2e7ff] px-2.5 py-0.5 rounded-full">
@@ -1095,7 +1176,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
             <div className="bg-[#f2f3ff] p-3.5 rounded-xl border border-[#e2e7ff] space-y-2.5">
               <div className="flex items-center justify-between border-b border-[#dae2fd] pb-1.5">
                 <span className="font-headline font-bold text-[#00652c] flex items-center gap-1.5 text-sm">
-                  <span className="material-symbols-outlined text-[18px] text-[#416900]">auto_awesome</span>
+                  <span>✨</span>
                   Observaciones y Diagnóstico de la I.A.:
                 </span>
                 <span className="text-xs font-mono font-bold text-[#00652c] bg-[#d3ffd5] px-2 py-0.5 rounded-full">
@@ -1129,7 +1210,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
             <div className="bg-white p-4 rounded-2xl border border-[#dae2fd] shadow-sm space-y-3">
               <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                 <h4 className="font-headline font-bold text-sm uppercase tracking-wider text-[#00652c] flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[20px]">science</span>
+                  <span>🔬</span>
                   <span>Mediciones de Suelo en Campo</span>
                 </h4>
                 <span className="text-xs font-mono font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full">
@@ -1176,16 +1257,18 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
               </span>
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {hallazgosFiltrados.map((h, idx) => {
               const esCritico = h.severidad?.toLowerCase().includes('alta') || h.severidad?.toLowerCase().includes('crítica');
               const esOptimo = h.severidad?.toLowerCase().includes('baja') || h.severidad?.toLowerCase().includes('leve');
+              const fotoSrc = h.fotoAnotada || h.fotoUrl || h.foto;
               
               return (
-                <div key={h.id || idx} className="stitch-finding-card flex flex-col overflow-hidden bg-white shadow-sm border border-[#dae2fd]">
-                  {/* Visor 4:3 con Foto y Bounding Box IA */}
+                <div key={h.id || idx} className="stitch-finding-card flex flex-col overflow-hidden bg-white shadow-sm border border-[#cbd5e1] rounded-2xl">
+                  {/* Visor 4:3 con Foto y Bounding Box IA sin barras negras */}
                   <div 
                     onClick={() => setModalFotoHd({
-                      url: h.fotoAnotada,
+                      url: fotoSrc,
                       figura: `Figura ${idx + 1}`,
                       titulo: h.titulo,
                       categoria: h.categoria,
@@ -1194,14 +1277,14 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                       fecha: h.fecha || visita?.fecha,
                       descripcion: h.descripcion
                     })}
-                    className="relative w-full aspect-[4/3] bg-[#0b1120] overflow-hidden cursor-pointer group"
+                    className="relative w-full aspect-[4/3] bg-slate-100 overflow-hidden cursor-pointer group border-b border-slate-200"
                     title="Toque para ampliar en pantalla completa"
                   >
-                    {h.fotoAnotada ? (
+                    {fotoSrc ? (
                       <img 
-                        src={h.fotoAnotada} 
+                        src={fotoSrc} 
                         alt={h.titulo} 
-                        className="w-full h-full object-contain block transition-transform duration-300 group-hover:scale-105" 
+                        className="w-full h-full object-cover block transition-transform duration-300 group-hover:scale-105" 
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-slate-400 font-mono text-sm">
@@ -1215,9 +1298,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                         ? 'bg-[#ffdad6]/95 text-[#93000a]' 
                         : (esOptimo ? 'bg-[#d3ffd5]/95 text-[#005323]' : 'bg-[#dae2fd]/95 text-[#004b73]')
                     }`}>
-                      <span className="material-symbols-outlined text-[16px]">
-                        {esCritico ? 'warning' : (esOptimo ? 'eco' : 'science')}
-                      </span>
+                      <span>{esCritico ? "⚠️" : (esOptimo ? "🌱" : "🔬")}</span>
                       <span className="font-mono text-xs">
                         FIG. {idx + 1} • {esCritico ? 'Foco Crítico' : (esOptimo ? 'Estado Óptimo' : 'Alerta')}
                       </span>
@@ -1228,9 +1309,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                       <span className="px-1.5 py-0.5 rounded bg-[#283044]/90 text-white font-mono text-[9px] self-start leading-none">
                         IA: Detección Activa (98%)
                       </span>
-                      <span className="material-symbols-outlined text-[#acf847] text-[16px] self-end animate-bounce">
-                        center_focus_strong
-                      </span>
+                      <span className="text-[#acf847] text-[11px] self-end font-mono font-bold">[🎯 REC]</span>
                     </div>
 
                     {/* Scrim Inferior con Gradiente Oscuro y Coordenadas GPS */}
@@ -1260,7 +1339,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                     {/* Tarjeta de Recomendación Inmediata IA */}
                     <div className="rounded-xl bg-[#f2f3ff] p-3 flex items-start gap-2.5 border border-[#e2e7ff]">
                       <div className="p-1.5 rounded-lg bg-[#acf847] text-[#416900] flex items-center justify-center shrink-0 mt-0.5">
-                        <span className="material-symbols-outlined text-[18px]">auto_awesome</span>
+                        <span>✨</span>
                       </div>
                       <div className="flex flex-col min-w-0">
                         <span className="font-mono text-xs text-[#416900] font-bold uppercase tracking-wider">
@@ -1276,7 +1355,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                     <div className="flex items-center justify-between pt-1 text-xs text-slate-500 font-mono border-t border-slate-100">
                       <span>{finca.nombre || 'Finca'} • Lote {h.loteNombre || '1'}</span>
                       <span className="text-[#005b8c] font-semibold flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[15px]">check_circle</span>
+                        <span>✅</span>
                         Ing. Barquero (Col. 5896)
                       </span>
                     </div>
@@ -1284,13 +1363,14 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                 </div>
               );
             })}
+            </div>
           </div>
 
           {/* PRESCRIPCIÓN SEMANAL DE FERTIRRIEGO Y NUTRICIÓN (FORMATO MÓVIL) */}
           {recFertirriegoFiltradas.length > 0 && (
             <div className="space-y-3">
               <h4 className="font-headline font-bold text-sm uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[18px] text-[#005b8c]">water_drop</span>
+                <span>💧</span>
                 <span>Programa de Nutrición y Fertirriego</span>
               </h4>
               {recFertirriegoFiltradas.map(s => (
@@ -1315,8 +1395,20 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
 
                   {(s.eventos || []).map((ev, i) => (
                     <div key={i} className="bg-[#faf8ff] p-3.5 rounded-xl border border-[#eaedff] space-y-2">
-                      <div className="flex justify-between items-center font-bold text-slate-900 text-sm">
-                        <span>{ev.nombreEvento || ev.nombre || 'Fertirriego'}</span>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 font-bold text-slate-900 text-sm">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span>{ev.nombreEvento || ev.nombre || 'Fertirriego'}</span>
+                          {ev.dia && (
+                            <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-bold">
+                              📅 {ev.dia}
+                            </span>
+                          )}
+                          {ev.objetivo && (
+                            <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                              🎯 {ev.objetivo}
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1 font-mono text-xs">
                           {ev.conductividadObjetivo && (
                             <span className="px-2 py-0.5 rounded bg-[#d3ffd5] text-[#005323] font-bold">
@@ -1374,6 +1466,13 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                         </div>
                       )}
 
+                      {ev.analisisIa && (
+                        <div className="p-2.5 rounded-xl bg-blue-50/70 border border-blue-200 text-xs text-slate-700">
+                          <strong className="text-blue-900 block font-bold mb-0.5">✨ Dictamen Técnico IA de esta Aplicación:</strong>
+                          <p className="whitespace-pre-line text-[11px] leading-relaxed">{ev.analisisIa}</p>
+                        </div>
+                      )}
+
                       {ev.observacionesPie && (
                         <p className="text-xs text-slate-500 italic pt-1 border-t border-slate-200">
                           Instrucción: {ev.observacionesPie}
@@ -1395,7 +1494,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                       <div className="bg-[#faf8ff] p-3 rounded-xl border border-[#eaedff] space-y-2">
                         <div className="flex items-center justify-between text-xs font-headline font-bold text-[#00652c]">
                           <span className="flex items-center gap-1">
-                            <span className="material-symbols-outlined text-[16px] text-[#416900]">balance</span>
+                            <span>⚖️</span>
                             <span>Aporte Nutricional Elemental Calculado:</span>
                           </span>
                           <span className="font-mono text-[11px] font-bold text-[#005b8c] bg-[#e2e7ff] px-2 py-0.5 rounded-full">
@@ -1440,7 +1539,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
           {recPlaguicidasFiltradas.length > 0 && (
             <div className="space-y-3">
               <h4 className="font-headline font-bold text-sm uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[18px] text-[#00652c]">shield</span>
+                <span>🛡️</span>
                 <span>Manejo Fitosanitario Foliar Segregado</span>
               </h4>
               {recPlaguicidasFiltradas.map(s => (
@@ -1456,7 +1555,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
 
                   {s.sinAplicacion ? (
                     <div className="p-3.5 bg-[#d3ffd5]/50 border border-[#79db8d] rounded-xl text-sm text-[#005323] font-medium flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[20px]">check_circle</span>
+                      <span>✅</span>
                       <span>No requiere aplicaciones fitosanitarias esta semana. Mantener monitoreo preventivo.</span>
                     </div>
                   ) : (
@@ -1596,7 +1695,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
             {/* RESUMEN EJECUTIVO PARA EL PRODUCTOR */}
             <div className="bg-[#f2f3ff] border border-[#dae2fd] rounded-xl p-2.5">
               <h3 className="font-headline font-bold text-[10.5px] uppercase tracking-wider text-[#00652c] mb-0.5 flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[16px] text-[#00652c]">task_alt</span>
+                <span>✅</span>
                 <span>Guía de Trabajo para el Productor:</span>
               </h3>
               <p className="font-body text-[10.5px] text-[#131b2e] leading-snug">
@@ -1744,7 +1843,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
             <div className="bg-[#f2f3ff] border border-[#dae2fd] rounded-xl p-2.5 text-xs space-y-2">
               <div className="flex items-center justify-between border-b border-[#dae2fd] pb-1">
                 <span className="font-headline font-bold text-[#00652c] flex items-center gap-1 text-[11px]">
-                  <span className="material-symbols-outlined text-[15px] text-[#416900]">auto_awesome</span>
+                  <span>✨</span>
                   3. Observaciones y Valoración I.A.: Factores Climáticos y Riesgos Fitosanitarios
                 </span>
                 <span className="font-mono text-[9px] font-bold text-[#00652c] bg-[#d3ffd5] border border-[#79db8d] px-1.5 py-0.2 rounded-full flex items-center gap-1">
@@ -1968,14 +2067,14 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                                 fecha: h.fecha || visita?.fecha,
                                 descripcion: h.descripcion
                               })}
-                              className="relative w-full aspect-[4/3] bg-[#0b1120] overflow-hidden cursor-pointer group"
+                              className="relative w-full aspect-[4/3] bg-slate-100 overflow-hidden cursor-pointer group"
                               title="Click para ampliar imagen en Alta Definición HD"
                             >
                               {h.fotoAnotada ? (
                                 <img 
                                   src={h.fotoAnotada} 
                                   alt={h.titulo} 
-                                  className="w-full h-full object-contain block transition-transform duration-300 group-hover:scale-105" 
+                                  className="w-full h-full object-cover block transition-transform duration-300 group-hover:scale-105" 
                                 />
                               ) : (
                                 <div className="w-full h-full flex items-center justify-center text-slate-400 font-mono text-xs">
@@ -1989,9 +2088,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                                   ? 'bg-[#ffdad6]/95 text-[#93000a]' 
                                   : (esOptimo ? 'bg-[#d3ffd5]/95 text-[#005323]' : 'bg-[#dae2fd]/95 text-[#004b73]')
                               }`}>
-                                <span className="material-symbols-outlined text-[12px]">
-                                  {esCritico ? 'warning' : (esOptimo ? 'eco' : 'science')}
-                                </span>
+                                <span>{esCritico ? "⚠️" : (esOptimo ? "🌱" : "🔬")}</span>
                                 <span className="font-mono text-[8.5px]">
                                   FIG. {figureIndex} • {esCritico ? 'Foco Crítico' : (esOptimo ? 'Óptimo' : 'Alerta')}
                                 </span>
@@ -2002,9 +2099,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                                 <span className="px-1 py-0.2 rounded bg-[#283044]/90 text-white font-mono text-[8px] self-start leading-none">
                                   IA: Patógeno (98%)
                                 </span>
-                                <span className="material-symbols-outlined text-[#acf847] text-[14px] self-end animate-bounce">
-                                  center_focus_strong
-                                </span>
+                                <span className="text-[#acf847] text-[11px] self-end font-mono font-bold">[🎯 REC]</span>
                               </div>
 
                               {/* Scrim Inferior con Coordenadas GPS */}
@@ -2036,7 +2131,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                               {/* Recomendación Inmediata IA */}
                               <div className="rounded-lg bg-[#f2f3ff] p-2 flex items-start gap-1.5 border border-[#e2e7ff]">
                                 <div className="p-0.5 rounded bg-[#acf847] text-[#416900] flex items-center justify-center shrink-0 mt-0.5">
-                                  <span className="material-symbols-outlined text-[13px]">auto_awesome</span>
+                                  <span>✨</span>
                                 </div>
                                 <div className="flex flex-col min-w-0">
                                   <span className="font-mono text-[8.5px] text-[#416900] font-bold uppercase tracking-wider">
@@ -2052,7 +2147,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                               <div className="flex items-center justify-between pt-0.5 text-[9px] text-slate-400 font-mono border-t border-slate-100">
                                 <span>{finca.nombre || 'Finca'}</span>
                                 <span className="text-[#005b8c] font-semibold flex items-center gap-0.5">
-                                  <span className="material-symbols-outlined text-[12px]">check_circle</span>
+                                  <span>✅</span>
                                   Validado por Ing. Barquero (Col. 5896)
                                 </span>
                               </div>
@@ -2150,7 +2245,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                   <div className="bg-[#f2f3ff] border border-[#dae2fd] rounded-xl p-2.5 space-y-1.5">
                     <div className="flex items-center justify-between border-b border-[#dae2fd] pb-1">
                       <span className="font-headline font-bold text-[#00652c] text-xs flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-[16px] text-[#005b8c]">water_drop</span>
+                        <span>💧</span>
                         A. Programa Nutricional y Fertirriego — Semana {semNum}
                       </span>
                       <span className="font-mono text-[9px] font-bold text-[#005b8c] bg-[#e2e7ff] px-2 py-0.2 rounded">
@@ -2278,7 +2373,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                   <div className="bg-[#faf8ff] border border-[#dae2fd] rounded-xl p-2.5 space-y-1.5">
                     <div className="flex items-center justify-between border-b border-[#dae2fd] pb-1">
                       <span className="font-headline font-bold text-[#131b2e] text-xs flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-[16px] text-[#00652c]">shield</span>
+                        <span>🛡️</span>
                         B. Programa Fitosanitario Foliar Segregado — Semana {semNum}
                       </span>
                       <span className="font-mono text-[9px] font-bold text-[#416900] bg-[#acf847]/30 px-2 py-0.2 rounded">
@@ -2288,7 +2383,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
 
                     {plagSemana && plagSemana.sinAplicacion ? (
                       <div className="bg-[#d3ffd5]/40 border border-[#79db8d] rounded-lg p-2.5 flex items-start gap-2 text-xs text-[#005323]">
-                        <span className="material-symbols-outlined text-[18px] text-[#00652c] shrink-0 mt-0.5">check_circle</span>
+                        <span>✅</span>
                         <div>
                           <strong className="block font-headline font-bold text-[#005323]">Sin Aplicación Fitosanitaria Requerida:</strong>
                           <span className="font-body text-[10.5px]">
@@ -2501,6 +2596,158 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
           </div>
         </div>
       )}
+      {/* MODAL HISTORIAL Y EXPEDIENTE DE INFORMES CONSULTABLES */}
+      {mostrarModalHistorial && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 overflow-y-auto no-print">
+          <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[90vh] flex flex-col">
+            
+            {/* Cabecera del Expediente */}
+            <div className="bg-indigo-900 text-white p-4 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <span className="text-2xl">📚</span>
+                <div>
+                  <h3 className="font-extrabold text-base sm:text-lg leading-tight">
+                    Expediente e Historial de Informes Agronómicos
+                  </h3>
+                  <p className="text-xs text-indigo-200">
+                    Informes guardados para consultar, re-descargar o re-compartir por WhatsApp
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setMostrarModalHistorial(false)}
+                className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 transition text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Barra de búsqueda y conteo */}
+            <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2 shrink-0">
+              <div className="relative w-full sm:w-72">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  value={filtroBusquedaHistorial}
+                  onChange={(e) => setFiltroBusquedaHistorial(e.target.value)}
+                  placeholder="Buscar por productor, finca o fecha..."
+                  className="w-full text-xs pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+                />
+              </div>
+              <span className="text-xs text-slate-500 font-medium">
+                Total informes guardados: <strong>{listaReportesExpediente.length}</strong>
+              </span>
+            </div>
+
+            {/* Lista de Informes */}
+            <div className="p-4 space-y-3 overflow-y-auto flex-1">
+              {(() => {
+                const term = filtroBusquedaHistorial.toLowerCase();
+                const filtrados = listaReportesExpediente.filter(r => 
+                  (r.productorNombre || '').toLowerCase().includes(term) ||
+                  (r.fincaNombre || '').toLowerCase().includes(term) ||
+                  (r.fecha || '').toLowerCase().includes(term) ||
+                  (r.cultivoNombre || '').toLowerCase().includes(term)
+                );
+
+                if (filtrados.length === 0) {
+                  return (
+                    <div className="py-12 text-center space-y-2 text-slate-500">
+                      <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto text-xl">
+                        📋
+                      </div>
+                      <p className="text-sm font-bold text-slate-700">No se encontraron informes guardados</p>
+                      <p className="text-xs text-slate-400">
+                        {filtroBusquedaHistorial ? 'No hay coincidencias con la búsqueda.' : 'Haga clic en "💾 Guardar" en la barra superior para agregar el informe actual al expediente.'}
+                      </p>
+                    </div>
+                  );
+                }
+
+                return filtrados.map(r => (
+                  <div key={r.id} className="bg-white p-3.5 rounded-2xl border border-slate-200 hover:border-indigo-300 transition shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold font-mono px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800 border border-indigo-200">
+                          📅 {r.fecha}
+                        </span>
+                        <h4 className="font-bold text-sm text-slate-900 truncate">
+                          {r.productorNombre}
+                        </h4>
+                      </div>
+                      <p className="text-xs text-slate-600">
+                        🏡 {r.fincaNombre} • <strong>{r.cultivoNombre}</strong> ({r.alcance || 'Toda la Finca'})
+                      </p>
+                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[11px] text-slate-500 font-mono">
+                        <span className="bg-slate-100 px-2 py-0.5 rounded">📸 {r.hallazgosCount || 0} hallazgos</span>
+                        <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded">💧 {r.fertirriegoCount || 0} sem. fert</span>
+                        <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded">🛡️ {r.plaguicidasCount || 0} sem. sanit</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                      <button
+                        onClick={() => {
+                          if (r.datosVisitaSnapshot) {
+                            digitalReportService.descargarReporteHtml(r.datosVisitaSnapshot);
+                          } else {
+                            handleDescargarReporteHtml();
+                          }
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-200 flex items-center gap-1 transition cursor-pointer"
+                        title="Descargar versión web digital autónoma (.html)"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>.html</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          if (r.resumenWhatsApp) {
+                            const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(r.resumenWhatsApp)}`;
+                            window.open(url, '_blank');
+                          } else {
+                            handleCompartirReporteHtmlWhatsApp();
+                          }
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl bg-[#25d366]/15 hover:bg-[#25d366]/25 text-emerald-900 text-xs font-bold border border-emerald-300 flex items-center gap-1 transition cursor-pointer"
+                        title="Re-compartir por WhatsApp"
+                      >
+                        <Share2 className="w-3.5 h-3.5 text-emerald-700" />
+                        <span>WhatsApp</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          if (confirm(`¿Eliminar del expediente el informe del ${r.fecha} (${r.fincaNombre})?`)) {
+                            storageService.eliminarReporteDeExpediente(r.id);
+                            refrescarExpediente();
+                          }
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                        title="Eliminar este informe del expediente"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+
+            {/* Pie del modal */}
+            <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
+              <button
+                onClick={() => setMostrarModalHistorial(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl transition cursor-pointer"
+              >
+                Cerrar Expediente
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ========================================================= */}
       {/* MODAL HD VISOR FOTOGRÁFICO CIENTÍFICO (REVISTA) */}
       {/* ========================================================= */}
