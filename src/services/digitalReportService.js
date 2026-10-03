@@ -6,7 +6,7 @@
  */
 
 import { calcularDosisDual } from '../utils/doseCalculator.js';
-import { calcularNutrientesTotales } from './nutritionCalculatorService.js';
+import { calcularNutrientesTotales, calcularDetalleCuadroFertilizacion } from './nutritionCalculatorService.js';
 
 /**
  * Escapa cadenas de texto para inserción segura en HTML
@@ -201,7 +201,15 @@ export function generarHtmlReporte(datos = {}) {
                 <span class="week-tag">Fertirriego</span>
               </div>
 
-              ${(s.eventos || []).map(ev => `
+              ${(s.eventos || []).map(ev => {
+                const volTanque = Number(ev.volumenTanqueDirectoLitros) || 1000;
+                const detalleGeneral = (ev.productos && ev.productos.length > 0) ? calcularDetalleCuadroFertilizacion(ev.productos, volTanque) : null;
+                const volMadre = Number(ev.volumenTanqueMadreLitros) || 1000;
+                const detalleA = (ev.lineasTanqueA && ev.lineasTanqueA.length > 0) ? calcularDetalleCuadroFertilizacion(ev.lineasTanqueA, volMadre) : null;
+                const detalleB = (ev.lineasTanqueB && ev.lineasTanqueB.length > 0) ? calcularDetalleCuadroFertilizacion(ev.lineasTanqueB, volMadre) : null;
+                const tieneSuplementos = detalleGeneral?.items.some(it => it.esSuplemento) || false;
+
+                return `
                 <div class="event-block">
                   <div class="event-header">
                     <div>
@@ -217,71 +225,224 @@ export function generarHtmlReporte(datos = {}) {
                   <div class="event-meta-chips">
                     ${ev.modalidadNombre ? `<span>⚙️ ${escapeHtml(ev.modalidadNombre)}</span>` : ''}
                     ${ev.volumenTanqueMadreLitros ? `<span>🛢️ Tanque Madre: ${ev.volumenTanqueMadreLitros} L</span>` : ''}
-                    ${ev.volumenTanqueDirectoLitros ? `<span>🛢️ Tanque Directo: ${ev.volumenTanqueDirectoLitros} L</span>` : ''}
+                    ${ev.volumenTanqueDirectoLitros ? `<span>🛢️ Tanque Seleccionado: ${ev.volumenTanqueDirectoLitros} L de Agua</span>` : ''}
                     ${ev.relacionInyeccion ? `<span>💉 Inyección: ${escapeHtml(ev.relacionInyeccion)}</span>` : ''}
-                    ${ev.conductividadObjetivo ? `<span>⚡ CE: ${escapeHtml(ev.conductividadObjetivo)}</span>` : ''}
+                    ${ev.conductividadObjetivo ? `<span>⚡ CE Esperada: ${escapeHtml(ev.conductividadObjetivo)}</span>` : ''}
                     ${ev.phObjetivo ? `<span>🧪 pH: ${escapeHtml(ev.phObjetivo)}</span>` : ''}
                   </div>
 
-                  ${ev.lineasTanqueA?.length > 0 ? `
-                    <div class="tank-box tank-a">
-                      <div class="tank-label">🔵 TANQUE A (Calcio, Nitratos y Quelatos Fe)</div>
-                      <ul class="tank-list">
-                        ${ev.lineasTanqueA.map(l => `
-                          <li>
-                            <strong>${escapeHtml(l.producto)}</strong>
-                            <span class="tank-dose">${escapeHtml(l.dosis)} ${escapeHtml(l.unidad || '')}</span>
-                          </li>
-                        `).join('')}
-                      </ul>
+                  <!-- CUADRO DE DOSIFICACIÓN PARA EL PRODUCTOR (TABLA ESTRUCTURADA) -->
+                  ${detalleGeneral ? `
+                    <div class="cuadro-fert-wrapper">
+                      <div class="cuadro-fert-header">
+                        <div class="cuadro-fert-title">
+                          <span>⚖️</span>
+                          <span>CUADRO DE PESAJE DE FERTILIZANTES Y SALES SOLUBLES</span>
+                        </div>
+                        <div class="cuadro-fert-volumen">
+                          🛢️ Cantidad de Agua: <strong>${volTanque.toLocaleString()} Litros</strong>
+                        </div>
+                      </div>
+
+                      <div class="table-responsive-container">
+                        <table class="cuadro-fert-tabla">
+                          <thead>
+                            <tr>
+                              <th style="min-width: 170px;">Sal / Fertilizante</th>
+                              <th style="min-width: 130px; text-align: center;">Gramos a Pesar (para ${volTanque.toLocaleString()} L)</th>
+                              <th style="min-width: 90px; text-align: center;">Concentración</th>
+                              <th style="min-width: 170px;">Aporte Principal / Función</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            ${detalleGeneral.items.map(it => `
+                              <tr>
+                                <td>
+                                  <div class="fert-name-cell">
+                                    <strong>${escapeHtml(it.producto)}</strong>
+                                    ${it.esSuplemento ? `<span class="badge-suplemento">🌿 Suplemento</span>` : ''}
+                                  </div>
+                                </td>
+                                <td style="text-align: center;">
+                                  <span class="dose-number-cell">${it.gramos.toLocaleString()} g</span>
+                                </td>
+                                <td style="text-align: center;">
+                                  <span class="dose-conc-cell">${it.concentracionGL} g/L</span>
+                                </td>
+                                <td>
+                                  <span class="fert-role-cell">${escapeHtml(it.aporte)}</span>
+                                </td>
+                              </tr>
+                            `).join('')}
+                          </tbody>
+                          <tfoot>
+                            <tr class="cuadro-fert-total-row">
+                              <td><strong>TOTAL DE SALES A DISOLVER</strong></td>
+                              <td style="text-align: center;">
+                                <strong class="total-grams-badge">${detalleGeneral.totalGramos.toLocaleString()} g</strong>
+                                <span class="total-kg-sub">(${detalleGeneral.totalKg} kg)</span>
+                              </td>
+                              <td style="text-align: center;">
+                                <strong>${detalleGeneral.concentracionTotalGL} g/L</strong>
+                              </td>
+                              <td>
+                                ${ev.conductividadObjetivo ? `<span>⚡ CE: <strong>${escapeHtml(ev.conductividadObjetivo)}</strong></span> ` : ''}
+                                ${ev.phObjetivo ? `<span>🧪 pH: <strong>${escapeHtml(ev.phObjetivo)}</strong></span>` : ''}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+
+                      <!-- ABAJO DEL CUADRO LAS OBSERVACIONES -->
+                      <div class="cuadro-observaciones">
+                        <div class="cuadro-obs-header">
+                          <span>📝</span> <strong>Observaciones Técnicas e Instrucciones de Preparación del Tanque para el Productor</strong>
+                        </div>
+
+                        <div class="orden-mezcla-card">
+                          <div class="orden-titulo">🔄 <strong>Orden Estricto de Disolución en Tanque (${volTanque.toLocaleString()} L de agua):</strong></div>
+                          <ol class="orden-lista">
+                            <li><strong>1. Llenado previo:</strong> Llenar el tanque con el 60% – 70% de agua limpia (aprox. ${Math.round(volTanque * 0.65).toLocaleString()} L) antes de incorporar las sales. Nunca verter fertilizantes en seco al fondo del tanque.</li>
+                            <li><strong>2. Fosfatos y Sulfatos primero:</strong> Disolver primero las fuentes de fósforo (MAP / MKP) y luego los sulfatos (Sulfato de Potasio SoluSOP y Sulfato de Magnesio Epsom). Agitar enérgicamente hasta disolución total.</li>
+                            <li><strong>3. Nitrato de Calcio de último:</strong> Con el agitador o retorno de bomba activo, incorporar el Calcinit (Nitrato de Calcio) de último para evitar precipitación de yeso. Completar con agua limpia hasta la marca de los ${volTanque.toLocaleString()} Litros.</li>
+                            ${tieneSuplementos ? '<li><strong>4. Suplementos / Biológicos:</strong> Agregar los productos biológicos (ej. <em>Trichoderma</em>, nematicidas o bioestimulantes) al final con el tanque a volumen completo y aplicar preferiblemente en las primeras horas de la mañana.</li>' : ''}
+                          </ol>
+                        </div>
+
+                        ${ev.observacionesPie ? `
+                          <div class="instruccion-productor-card">
+                            <strong>👨‍🌾 Indicación Agronómica para el Productor:</strong>
+                            <p>${escapeHtml(ev.observacionesPie)}</p>
+                          </div>
+                        ` : ''}
+
+                        ${ev.analisisIa ? `
+                          <div class="dictamen-ia-card">
+                            <strong>✨ Dictamen Técnico y Validación de Compatibilidad:</strong>
+                            <p>${escapeHtml(ev.analisisIa)}</p>
+                          </div>
+                        ` : ''}
+                      </div>
                     </div>
                   ` : ''}
 
-                  ${ev.lineasTanqueB?.length > 0 ? `
-                    <div class="tank-box tank-b">
-                      <div class="tank-label">🟡 TANQUE B (Fosfatos, Sulfatos y Magnesio)</div>
-                      <ul class="tank-list">
-                        ${ev.lineasTanqueB.map(l => `
-                          <li>
-                            <strong>${escapeHtml(l.producto)}</strong>
-                            <span class="tank-dose">${escapeHtml(l.dosis)} ${escapeHtml(l.unidad || '')}</span>
-                          </li>
-                        `).join('')}
-                      </ul>
-                    </div>
-                  ` : ''}
-
-                  ${ev.productos?.length > 0 ? `
-                    <div class="tank-box tank-general">
-                      <div class="tank-label">📦 INSUMOS DE APLICACIÓN DIRECTA ${ev.volumenTanqueDirectoLitros ? `(${ev.volumenTanqueDirectoLitros} L)` : ''}</div>
-                      <ul class="tank-list">
-                        ${ev.productos.map(l => {
-                          const esSuplemento = l.esSuplemento || /tricho|nemati|bioact|verango|nimitz|rootex|kelpak|humic|ácido h|organ/i.test(l.producto || '');
-                          return `
-                          <li>
-                            <div>
-                              <strong>${escapeHtml(l.producto)}</strong>
-                              ${esSuplemento ? `<span style="display:inline-block; font-size:10px; background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; padding:1px 6px; border-radius:10px; margin-left:6px; font-weight:600;">🌿 Suplemento / Biológico</span>` : ''}
+                  <!-- CASO DOSATRON (TANQUE A Y TANQUE B) -->
+                  ${(detalleA || detalleB) ? `
+                    <div class="grid-tanques-dual">
+                      ${detalleA ? `
+                        <div class="cuadro-fert-wrapper tank-a-wrapper">
+                          <div class="cuadro-fert-header tank-a-header">
+                            <div class="cuadro-fert-title">
+                              <span>🔵</span>
+                              <span>TANQUE A: CALCIO, NITRATOS Y QUELATOS</span>
                             </div>
-                            <span class="tank-dose">${escapeHtml(l.dosis)} ${escapeHtml(l.unidad || '')}</span>
-                          </li>
-                        `;}).join('')}
-                      </ul>
-                    </div>
-                  ` : ''}
+                            <div class="cuadro-fert-volumen">
+                              Tanque Concentrado: <strong>${volMadre.toLocaleString()} L</strong>
+                            </div>
+                          </div>
+                          <div class="table-responsive-container">
+                            <table class="cuadro-fert-tabla">
+                              <thead>
+                                <tr>
+                                  <th>Fertilizante</th>
+                                  <th style="text-align: center;">Cantidad a Pesar</th>
+                                  <th>Aporte Principal</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                ${detalleA.items.map(it => `
+                                  <tr>
+                                    <td><strong>${escapeHtml(it.producto)}</strong></td>
+                                    <td style="text-align: center;"><span class="dose-number-cell blue-dose">${it.gramos.toLocaleString()} g</span></td>
+                                    <td><span class="fert-role-cell">${escapeHtml(it.aporte)}</span></td>
+                                  </tr>
+                                `).join('')}
+                              </tbody>
+                              <tfoot>
+                                <tr class="cuadro-fert-total-row blue-total">
+                                  <td><strong>TOTAL TANQUE A</strong></td>
+                                  <td style="text-align: center;"><strong>${detalleA.totalGramos.toLocaleString()} g</strong> (${detalleA.totalKg} kg)</td>
+                                  <td>Concentración: ${detalleA.concentracionTotalGL} g/L</td>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          </div>
+                        </div>
+                      ` : ''}
 
-                  ${ev.analisisIa ? `
-                    <div class="event-ai-box">
-                      <strong class="event-ai-title">✨ Dictamen Técnico IA:</strong>
-                      <p class="event-ai-text">${escapeHtml(ev.analisisIa)}</p>
+                      ${detalleB ? `
+                        <div class="cuadro-fert-wrapper tank-b-wrapper">
+                          <div class="cuadro-fert-header tank-b-header">
+                            <div class="cuadro-fert-title">
+                              <span>🟡</span>
+                              <span>TANQUE B: FÓSFORO, SULFATOS Y MAGNESIO</span>
+                            </div>
+                            <div class="cuadro-fert-volumen">
+                              Tanque Concentrado: <strong>${volMadre.toLocaleString()} L</strong>
+                            </div>
+                          </div>
+                          <div class="table-responsive-container">
+                            <table class="cuadro-fert-tabla">
+                              <thead>
+                                <tr>
+                                  <th>Fertilizante</th>
+                                  <th style="text-align: center;">Cantidad a Pesar</th>
+                                  <th>Aporte Principal</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                ${detalleB.items.map(it => `
+                                  <tr>
+                                    <td><strong>${escapeHtml(it.producto)}</strong></td>
+                                    <td style="text-align: center;"><span class="dose-number-cell amber-dose">${it.gramos.toLocaleString()} g</span></td>
+                                    <td><span class="fert-role-cell">${escapeHtml(it.aporte)}</span></td>
+                                  </tr>
+                                `).join('')}
+                              </tbody>
+                              <tfoot>
+                                <tr class="cuadro-fert-total-row amber-total">
+                                  <td><strong>TOTAL TANQUE B</strong></td>
+                                  <td style="text-align: center;"><strong>${detalleB.totalGramos.toLocaleString()} g</strong> (${detalleB.totalKg} kg)</td>
+                                  <td>Concentración: ${detalleB.concentracionTotalGL} g/L</td>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          </div>
+                        </div>
+                      ` : ''}
                     </div>
-                  ` : ''}
 
-                  ${ev.observacionesPie ? `
-                    <p class="event-note"><em>Instrucción:</em> ${escapeHtml(ev.observacionesPie)}</p>
+                    <!-- OBSERVACIONES ABAJO DE LOS CUADROS EN DOSATRON -->
+                    <div class="cuadro-observaciones">
+                      <div class="cuadro-obs-header">
+                        <span>📝</span> <strong>Instrucciones de Inyección y Observaciones para el Productor</strong>
+                      </div>
+                      <div class="orden-mezcla-card">
+                        <div class="orden-titulo">💉 <strong>Inyección Proporcional Dual Dosatron (${escapeHtml(ev.relacionInyeccion || '1:100')}):</strong></div>
+                        <ol class="orden-lista">
+                          <li><strong>Calibración del Dosatron:</strong> Ajustar los inyectores a la tasa ${escapeHtml(ev.relacionInyeccion || '1:100')} (${ev.relacionInyeccion === '1:100' ? '1.0%' : 'según calibración'}).</li>
+                          <li><strong>Segregación Química:</strong> Nunca mezclar los concentrados de Tanque A y Tanque B en el mismo recipiente para evitar precipitados insolubles de sulfato de calcio (yeso) o fosfato tricálcico.</li>
+                          <li><strong>Orden en Tanque B:</strong> Disolver primero los fosfatos (MAP/MKP), luego los sulfatos y finalmente los micronutrientes quelatados.</li>
+                        </ol>
+                      </div>
+                      ${ev.observacionesPie ? `
+                        <div class="instruccion-productor-card">
+                          <strong>👨‍🌾 Indicación del Agrónomo:</strong>
+                          <p>${escapeHtml(ev.observacionesPie)}</p>
+                        </div>
+                      ` : ''}
+                      ${ev.analisisIa ? `
+                        <div class="dictamen-ia-card">
+                          <strong>✨ Dictamen Técnico y Compatibilidad:</strong>
+                          <p>${escapeHtml(ev.analisisIa)}</p>
+                        </div>
+                      ` : ''}
+                    </div>
                   ` : ''}
                 </div>
-              `).join('')}
+                `;
+              }).join('')}
 
               ${tieneBalance ? `
                 <div class="stoich-box">
@@ -1121,50 +1282,231 @@ export function generarHtmlReporte(datos = {}) {
       color: #334155;
     }
 
-    .tank-box {
+    /* Cuadro de Fertilización y Pesaje para el Productor */
+    .cuadro-fert-wrapper {
+      margin: 12px 0 16px 0;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      overflow: hidden;
       background: white;
-      border-radius: 10px;
-      padding: 10px;
-      margin-bottom: 8px;
-      border-left: 4px solid #cbd5e1;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
-    .tank-a { border-left-color: #2563eb; }
-    .tank-b { border-left-color: #eab308; }
-    .tank-general { border-left-color: #10b981; }
-
-    .tank-label {
-      font-size: 11px;
-      font-weight: 700;
-      margin-bottom: 6px;
-      color: #475569;
-    }
-
-    .tank-list {
-      list-style: none;
-    }
-    .tank-list li {
+    .cuadro-fert-header {
+      background: linear-gradient(135deg, #065f46 0%, #047857 100%);
+      color: white;
+      padding: 10px 14px;
       display: flex;
+      flex-wrap: wrap;
       justify-content: space-between;
       align-items: center;
-      padding: 4px 0;
-      border-bottom: 1px dashed #f1f5f9;
-      font-size: 13.5px;
+      gap: 8px;
     }
-    .tank-list li:last-child { border-bottom: none; }
-
-    .tank-dose {
-      font-family: 'Fira Code', monospace;
+    .cuadro-fert-title {
+      font-size: 13px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      letter-spacing: 0.3px;
+    }
+    .cuadro-fert-volumen {
+      background: rgba(255, 255, 255, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 12px;
       font-weight: 700;
-      color: var(--primary);
+      letter-spacing: 0.2px;
+    }
+    .table-responsive-container {
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .cuadro-fert-tabla {
+      width: 100%;
+      border-collapse: collapse;
       font-size: 12.5px;
     }
-
-    .event-note {
+    .cuadro-fert-tabla th {
+      background: #f1f5f9;
+      color: #334155;
+      font-weight: 800;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 9px 12px;
+      border-bottom: 2px solid #cbd5e1;
+      text-align: left;
+    }
+    .cuadro-fert-tabla td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #e2e8f0;
+      vertical-align: middle;
+      color: #1e293b;
+    }
+    .cuadro-fert-tabla tbody tr:nth-child(even) {
+      background: #f8fafc;
+    }
+    .cuadro-fert-tabla tbody tr:hover {
+      background: #f0fdf4;
+    }
+    .fert-name-cell {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+    }
+    .badge-suplemento {
+      font-size: 10px;
+      background: #dcfce7;
+      color: #15803d;
+      border: 1px solid #bbf7d0;
+      padding: 1px 7px;
+      border-radius: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .dose-number-cell {
+      font-family: 'Fira Code', monospace;
+      font-weight: 800;
+      font-size: 14px;
+      color: #065f46;
+      background: #dcfce7;
+      padding: 4px 10px;
+      border-radius: 8px;
+      display: inline-block;
+      border: 1px solid #86efac;
+      white-space: nowrap;
+    }
+    .blue-dose {
+      color: #1e40af;
+      background: #dbeafe;
+      border-color: #93c5fd;
+    }
+    .amber-dose {
+      color: #92400e;
+      background: #fef3c7;
+      border-color: #fcd34d;
+    }
+    .dose-conc-cell {
+      font-family: 'Fira Code', monospace;
+      font-size: 11.5px;
+      color: #475569;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .fert-role-cell {
+      font-size: 11.5px;
+      color: #475569;
+      line-height: 1.35;
+    }
+    .cuadro-fert-total-row {
+      background: #ecfdf5 !important;
+      border-top: 2px solid #059669;
+      font-weight: 800;
+      color: #065f46;
+    }
+    .cuadro-fert-total-row td {
+      padding: 11px 12px;
+      font-size: 12.5px;
+    }
+    .total-grams-badge {
+      font-size: 14.5px;
+      color: #065f46;
+      font-family: 'Fira Code', monospace;
+      font-weight: 800;
+    }
+    .total-kg-sub {
+      font-size: 11.5px;
+      color: #047857;
+      font-weight: 600;
+    }
+    .blue-total {
+      background: #eff6ff !important;
+      border-top: 2px solid #2563eb;
+      color: #1e40af;
+    }
+    .amber-total {
+      background: #fffbeb !important;
+      border-top: 2px solid #d97706;
+      color: #92400e;
+    }
+    .cuadro-observaciones {
+      background: #f8fafc;
+      border-top: 1px solid #cbd5e1;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .cuadro-obs-header {
       font-size: 12px;
-      color: #64748b;
-      margin-top: 8px;
-      padding-top: 6px;
-      border-top: 1px solid #e2e8f0;
+      font-weight: 800;
+      color: #1e293b;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .orden-mezcla-card {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-left: 4px solid #2563eb;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 12px;
+      color: #1e3a8a;
+    }
+    .orden-titulo {
+      margin-bottom: 6px;
+      font-size: 12px;
+      color: #1e40af;
+    }
+    .orden-lista {
+      margin: 0;
+      padding-left: 18px;
+      line-height: 1.5;
+    }
+    .orden-lista li {
+      margin-bottom: 4px;
+    }
+    .instruccion-productor-card {
+      background: #fefce8;
+      border: 1px solid #fef08a;
+      border-left: 4px solid #eab308;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: #713f12;
+      line-height: 1.4;
+    }
+    .dictamen-ia-card {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-left: 4px solid #16a34a;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: #14532d;
+      line-height: 1.4;
+    }
+    .grid-tanques-dual {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+    @media (min-width: 768px) {
+      .grid-tanques-dual {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+    .tank-a-header {
+      background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%) !important;
+    }
+    .tank-b-header {
+      background: linear-gradient(135deg, #b45309 0%, #d97706 100%) !important;
     }
 
     /* Balance Estequiométrico */

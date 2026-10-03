@@ -531,7 +531,7 @@ export {
   SUPLEMENTOS_FERTIRRIEGO_CR,
   escalarFormulaPorVolumen,
   reescalarLineasPorVolumen
-} from '../data/fertigationPrograms';
+} from '../data/fertigationPrograms.js';
 
 /**
  * Cálculos especializados para inyección proporcional con Dosatron / Venturi
@@ -752,4 +752,92 @@ export function auditarObjetivoFenologico({ cultivo = '', etapaFenologica = '', 
     sugerencias,
     observaciones
   };
+}
+
+/**
+ * Desglosa y calcula un cuadro detallado de fertilización para el productor
+ * indicando cada sal, gramos para la cantidad de agua seleccionada, concentración y aporte principal.
+ */
+export function calcularDetalleCuadroFertilizacion(lineas = [], volumenAguaLitros = 1000) {
+  const vol = Number(volumenAguaLitros) || 1000;
+  let totalGramos = 0;
+  const items = lineas.map(linea => {
+    const prodNombre = linea.producto || '';
+    const dosisStr = String(linea.dosis || '').replace(',', '.');
+    const match = dosisStr.match(/([0-9]+(\.[0-9]+)?)/);
+    let gramos = match ? parseFloat(match[1]) : 0;
+    
+    // Si la unidad está en kg, convertir a gramos
+    const unidadLower = (linea.unidad || '').toLowerCase();
+    if (unidadLower.includes('kg')) {
+      gramos = gramos * 1000;
+    }
+
+    totalGramos += gramos;
+    const concentracionGL = vol > 0 ? (gramos / vol) : 0;
+    const fertInfo = identificarFertilizante(prodNombre);
+    const aporte = linea.aporte || (fertInfo ? obtenerTextoAporte(fertInfo, prodNombre) : obtenerAporteFallback(prodNombre));
+    const esSuplemento = linea.esSuplemento || fertInfo?.esSuplemento || /tricho|nemati|bioact|verango|nimitz|rootex|kelpak|humic|ácido h|organ/i.test(prodNombre);
+
+    return {
+      producto: prodNombre,
+      dosisOriginal: linea.dosis,
+      unidadOriginal: linea.unidad,
+      gramos: Math.round(gramos * 10) / 10,
+      concentracionGL: Math.round(concentracionGL * 100) / 100,
+      aporte,
+      esSuplemento
+    };
+  });
+
+  return {
+    volumenAguaLitros: vol,
+    totalGramos: Math.round(totalGramos * 10) / 10,
+    totalKg: Math.round((totalGramos / 1000) * 100) / 100,
+    concentracionTotalGL: vol > 0 ? Math.round((totalGramos / vol) * 100) / 100 : 0,
+    items
+  };
+}
+
+export function obtenerTextoAporte(fert, prodNombre = '') {
+  if (fert?.descripcion) return fert.descripcion;
+  if (fert?.esSuplemento) {
+    if (/tricho/i.test(prodNombre)) return 'Biológico: Control preventivo de hongos de raíz';
+    if (/bioact|paecilomyces/i.test(prodNombre)) return 'Biológico: Control parasitario de nematodos';
+    if (/verango/i.test(prodNombre)) return 'Nematicida: Protección vascular de raíz';
+    if (/nimitz/i.test(prodNombre)) return 'Nematicida: Contacto y parálisis de nematodos';
+    if (/rootex/i.test(prodNombre)) return 'Bioestimulante: Enraizamiento y emisión de raicillas';
+    if (/kelpak/i.test(prodNombre)) return 'Fitoestimulante: Citoquininas y auxinas naturales';
+    if (/humic|ácido h/i.test(prodNombre)) return 'Enmienda orgánica: Retención y CIC del suelo';
+    return 'Suplemento / Biológico especializado';
+  }
+  const partes = [];
+  if (fert?.cao > 0) partes.push(`Calcio (${fert.cao}% CaO)`);
+  if (fert?.nTotal > 0) partes.push(`Nitrógeno (${fert.nTotal}% N)`);
+  if (fert?.p2o5 > 0) partes.push(`Fósforo (${fert.p2o5}% P₂O₅)`);
+  if (fert?.k2o > 0) partes.push(`Potasio (${fert.k2o}% K₂O)`);
+  if (fert?.mgo > 0) partes.push(`Magnesio (${fert.mgo}% MgO)`);
+  if (fert?.s > 0) partes.push(`Azufre (${fert.s}% S)`);
+  if (fert?.fe > 0) partes.push(`Hierro (${fert.fe}% Fe)`);
+  if (fert?.zn > 0) partes.push(`Zinc (${fert.zn}% Zn)`);
+  if (fert?.b > 0) partes.push(`Boro (${fert.b}% B)`);
+  return partes.length > 0 ? partes.join(', ') : 'Nutrición mineral soluble';
+}
+
+export function obtenerAporteFallback(prodNombre = '') {
+  const p = (prodNombre || '').toLowerCase();
+  if (/calcinit|calcio/i.test(p)) return 'Calcio (19%) + Nitrógeno Nítrico (14.4%)';
+  if (/kno3|nitrato de potasio/i.test(p)) return 'Potasio (46% K₂O) + Nitrógeno (13% N)';
+  if (/map|monoam/i.test(p)) return 'Fósforo asimilable (61% P₂O₅) + Nitrógeno (12% N)';
+  if (/mkp|monopot/i.test(p)) return 'Fósforo (52% P₂O₅) + Potasio (34% K₂O)';
+  if (/solusop|sop|sulfato de potasio/i.test(p)) return 'Potasio (50% K₂O) + Azufre (18% S)';
+  if (/epsom|sulfato de magnesio/i.test(p)) return 'Magnesio (16% MgO) + Azufre (13% S)';
+  if (/urea/i.test(p)) return 'Nitrógeno Amídico (46% N)';
+  if (/potaplus/i.test(p)) return 'Potasio asimilable (25% K₂O)';
+  if (/tricho/i.test(p)) return 'Biológico: Control preventivo de patógenos radiculares';
+  if (/nemati|bioact|verango|nimitz/i.test(p)) return 'Nematicida: Protección y sanidad radicular';
+  if (/rootex|enraiz/i.test(p)) return 'Bioestimulante: Enraizamiento y raicillas';
+  if (/kelpak/i.test(p)) return 'Bioestimulante de algas marinas';
+  if (/humic|ácido h/i.test(p)) return 'Acondicionador de suelo y retención de cationes';
+  return 'Aporte nutricional / Fitoactivo';
 }

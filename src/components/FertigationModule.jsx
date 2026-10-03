@@ -10,7 +10,8 @@ import {
   OBJETIVOS_FERTILIZACION,
   proponerFormulaDosatron,
   escalarFormulaPorVolumen,
-  reescalarLineasPorVolumen
+  reescalarLineasPorVolumen,
+  calcularDetalleCuadroFertilizacion
 } from '../services/nutritionCalculatorService';
 
 // Modalidades oficiales solicitadas por el Ing. Agr. Ricardo Barquero
@@ -1150,75 +1151,194 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                 </div>
               </div>
 
-              {/* Si es Dosatron */}
-              {ev.lineasTanqueA && ev.lineasTanqueB ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="border border-blue-200 rounded-xl p-3 bg-blue-50/40">
-                    <div className="flex items-center justify-between font-bold text-xs text-blue-900 mb-2 border-b border-blue-200/60 pb-1">
-                      <span>🔵 TANQUE A (Calcio y Nitratos)</span>
-                      <span className="text-[10px] text-blue-700">Concentrado 1000 L</span>
-                    </div>
-                    <div className="space-y-1.5">
-                      {ev.lineasTanqueA.map((l, idx) => (
-                        <div key={idx} className="flex justify-between items-center text-xs bg-white p-2 rounded-lg border border-blue-100">
-                          <p className="font-bold text-slate-800">{l.producto}</p>
-                          <span className="font-extrabold text-blue-900 shrink-0 ml-2">
-                            {l.dosis} {l.unidad}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+              {/* Cuadro de Fertilización y Pesaje para el Productor */}
+              {(() => {
+                const volTanque = Number(ev.volumenTanqueDirectoLitros) || 1000;
+                const detalleGeneral = (ev.productos && ev.productos.length > 0) ? calcularDetalleCuadroFertilizacion(ev.productos, volTanque) : null;
+                const volMadre = Number(ev.volumenTanqueMadreLitros) || 1000;
+                const detalleA = (ev.lineasTanqueA && ev.lineasTanqueA.length > 0) ? calcularDetalleCuadroFertilizacion(ev.lineasTanqueA, volMadre) : null;
+                const detalleB = (ev.lineasTanqueB && ev.lineasTanqueB.length > 0) ? calcularDetalleCuadroFertilizacion(ev.lineasTanqueB, volMadre) : null;
+                const tieneSuplementos = detalleGeneral?.items.some(it => it.esSuplemento) || false;
 
-                  <div className="border border-amber-200 rounded-xl p-3 bg-amber-50/40">
-                    <div className="flex items-center justify-between font-bold text-xs text-amber-900 mb-2 border-b border-amber-200/60 pb-1">
-                      <span>🟡 TANQUE B (Fósforo, Sulfatos y Micro)</span>
-                      <span className="text-[10px] text-amber-700">Concentrado 1000 L</span>
-                    </div>
-                    <div className="space-y-1.5">
-                      {ev.lineasTanqueB.map((l, idx) => (
-                        <div key={idx} className="flex justify-between items-center text-xs bg-white p-2 rounded-lg border border-amber-100">
-                          <p className="font-bold text-slate-800">{l.producto}</p>
-                          <span className="font-extrabold text-amber-900 shrink-0 ml-2">
-                            {l.dosis} {l.unidad}
+                return (
+                  <div className="space-y-3">
+                    {/* CUADRO / TABLA ESTRUCTURADA DE FERTILIZACIÓN */}
+                    {detalleGeneral && (
+                      <div className="border-2 border-emerald-300 rounded-2xl overflow-hidden bg-white shadow-sm">
+                        <div className="bg-gradient-to-r from-emerald-800 to-teal-800 text-white px-3.5 py-2 flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">⚖️</span>
+                            <span className="font-extrabold text-xs sm:text-sm">
+                              CUADRO DE PESAJE DE FERTILIZANTES Y SALES SOLUBLES
+                            </span>
+                          </div>
+                          <span className="bg-white/20 border border-white/40 text-white px-2.5 py-0.5 rounded-full font-mono font-bold text-xs">
+                            🛢️ Cantidad de Agua: {volTanque.toLocaleString()} Litros
                           </span>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                /* Para modalidades de lista única */
-                <div className="border border-slate-200 rounded-xl p-3 bg-slate-50/60">
-                  <div className="space-y-1.5">
-                    {(ev.productos || []).map((l, idx) => (
-                      <div key={idx} className="flex justify-between items-center text-xs bg-white p-2.5 rounded-lg border border-slate-200">
-                        <p className="font-bold text-slate-900">{l.producto}</p>
-                        <span className="font-extrabold text-emerald-800 shrink-0 ml-2 text-sm">
-                          {l.dosis} {l.unidad}
-                        </span>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs text-left border-collapse">
+                            <thead>
+                              <tr className="bg-slate-100 text-slate-700 font-extrabold text-[11px] uppercase border-b-2 border-slate-200">
+                                <th className="p-2.5">Sal / Fertilizante</th>
+                                <th className="p-2.5 text-center">Gramos a Pesar (para {volTanque.toLocaleString()} L)</th>
+                                <th className="p-2.5 text-center">Concentración</th>
+                                <th className="p-2.5">Aporte Principal / Función</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {detalleGeneral.items.map((it, idx) => (
+                                <tr key={idx} className="hover:bg-emerald-50/50 transition">
+                                  <td className="p-2.5 font-bold text-slate-900">
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      <span>{it.producto}</span>
+                                      {it.esSuplemento && (
+                                        <span className="text-[9px] font-sans font-extrabold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-full border border-emerald-300">
+                                          🌿 Suplemento / Biológico
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="p-2.5 text-center">
+                                    <span className="font-mono font-black text-emerald-900 bg-emerald-100/90 px-3 py-1 rounded-xl border border-emerald-300 inline-block text-sm">
+                                      {it.gramos.toLocaleString()} g
+                                    </span>
+                                  </td>
+                                  <td className="p-2.5 text-center font-mono text-slate-600 font-bold">
+                                    {it.concentracionGL} g/L
+                                  </td>
+                                  <td className="p-2.5 text-slate-600 text-[11.5px] leading-tight">
+                                    {it.aporte}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            <tfoot>
+                              <tr className="bg-emerald-50 font-bold text-emerald-950 border-t-2 border-emerald-500 text-xs">
+                                <td className="p-3 font-extrabold">TOTAL DE SALES A DISOLVER</td>
+                                <td className="p-3 text-center font-mono font-black text-emerald-900 text-sm">
+                                  {detalleGeneral.totalGramos.toLocaleString()} g <span className="text-[11px] font-medium font-sans">({detalleGeneral.totalKg} kg)</span>
+                                </td>
+                                <td className="p-3 text-center font-mono font-bold">{detalleGeneral.concentracionTotalGL} g/L</td>
+                                <td className="p-3 text-[11px] font-medium">
+                                  {ev.conductividadObjetivo && <span className="font-bold mr-2">⚡ CE: {ev.conductividadObjetivo}</span>}
+                                  {ev.phObjetivo && <span className="font-bold">🧪 pH: {ev.phObjetivo}</span>}
+                                </td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+
+                        {/* ABAJO DEL CUADRO LAS OBSERVACIONES */}
+                        <div className="bg-slate-50 p-3.5 border-t border-slate-200 space-y-2.5 text-xs">
+                          <div className="font-extrabold text-slate-800 flex items-center gap-1.5 uppercase tracking-wide text-[11px]">
+                            <span>📝</span> Observaciones Técnicas e Instrucciones de Preparación del Tanque para el Productor
+                          </div>
+
+                          <div className="bg-blue-50/90 border-l-4 border-blue-600 p-2.5 rounded-r-xl text-blue-950 space-y-1">
+                            <strong className="block text-xs font-bold">🔄 Orden Estricto de Disolución en Tanque ({volTanque.toLocaleString()} L de agua):</strong>
+                            <ol className="list-decimal list-inside space-y-1 text-[11.5px] text-blue-900 pl-1 leading-relaxed">
+                              <li><strong>1. Llenado previo:</strong> Llenar el tanque con el 60% – 70% de agua limpia (aprox. {Math.round(volTanque * 0.65).toLocaleString()} L) antes de incorporar las sales. Nunca verter fertilizantes en seco al fondo del tanque.</li>
+                              <li><strong>2. Fosfatos y Sulfatos primero:</strong> Disolver primero las fuentes de fósforo (MAP / MKP) y luego los sulfatos (Sulfato de Potasio SoluSOP y Sulfato de Magnesio Epsom). Agitar enérgicamente hasta disolución total.</li>
+                              <li><strong>3. Nitrato de Calcio de último:</strong> Con el retorno o agitación activa, incorporar el Calcinit (Nitrato de Calcio) de último para evitar precipitación de yeso. Completar con agua limpia hasta la marca de los {volTanque.toLocaleString()} Litros.</li>
+                              {tieneSuplementos && (
+                                <li><strong>4. Suplementos / Biológicos:</strong> Agregar los productos biológicos (ej. <em>Trichoderma</em>, nematicidas o bioestimulantes) al final con el tanque a volumen completo y aplicar en las primeras horas de la mañana.</li>
+                              )}
+                            </ol>
+                          </div>
+
+                          {ev.observacionesPie && (
+                            <div className="bg-amber-50 border-l-4 border-amber-500 p-2.5 rounded-r-xl text-amber-950 text-[11.5px] leading-relaxed">
+                              <strong>👨‍🌾 Indicación Agronómica para el Productor:</strong> {ev.observacionesPie}
+                            </div>
+                          )}
+
+                          {ev.analisisIa && (
+                            <div className="bg-emerald-50 border-l-4 border-emerald-600 p-2.5 rounded-r-xl text-emerald-950 text-[11.5px] leading-relaxed">
+                              <strong>✨ Dictamen Técnico y Compatibilidad IA:</strong> {ev.analisisIa}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                    )}
 
-              {ev.analisisIa && (
-                <div className="bg-blue-50/70 p-3 rounded-xl border border-blue-200 text-xs text-slate-700 space-y-1">
-                  <div className="flex items-center gap-1.5 font-bold text-blue-900">
-                    <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Dictamen y Análisis IA de esta Aplicación:</span>
-                  </div>
-                  <p className="text-[11px] text-slate-600 whitespace-pre-line leading-relaxed">{ev.analisisIa}</p>
-                </div>
-              )}
+                    {/* CASO DOSATRON (TANQUE A Y TANQUE B) */}
+                    {(detalleA || detalleB) && (
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {detalleA && (
+                            <div className="border border-blue-200 rounded-2xl overflow-hidden bg-white shadow-xs">
+                              <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white px-3 py-1.5 flex items-center justify-between text-xs">
+                                <strong className="font-extrabold">🔵 TANQUE A (Calcio, Nitratos y Quelatos Fe)</strong>
+                                <span className="bg-white/20 px-2 py-0.5 rounded-full font-mono text-[10px]">
+                                  {volMadre} L
+                                </span>
+                              </div>
+                              <div className="p-2 space-y-1 text-xs">
+                                {detalleA.items.map((it, lIdx) => (
+                                  <div key={lIdx} className="flex justify-between items-center bg-blue-50/50 p-2 rounded-lg border border-blue-100">
+                                    <span className="font-bold text-slate-800">{it.producto}</span>
+                                    <strong className="text-blue-900 bg-blue-100 px-2 py-0.5 rounded-lg font-mono">{it.gramos.toLocaleString()} g</strong>
+                                  </div>
+                                ))}
+                                <div className="pt-1 border-t border-blue-200 flex justify-between font-bold text-xs text-blue-900">
+                                  <span>Total Sales Tanque A:</span>
+                                  <span>{detalleA.totalGramos.toLocaleString()} g ({detalleA.totalKg} kg)</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
 
-              {ev.observacionesPie && (
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs text-slate-600 flex items-start gap-1.5">
-                  <span className="font-bold text-slate-700 shrink-0">Instrucciones:</span>
-                  <span>{ev.observacionesPie}</span>
-                </div>
-              )}
+                          {detalleB && (
+                            <div className="border border-amber-200 rounded-2xl overflow-hidden bg-white shadow-xs">
+                              <div className="bg-gradient-to-r from-amber-900 to-amber-800 text-white px-3 py-1.5 flex items-center justify-between text-xs">
+                                <strong className="font-extrabold">🟡 TANQUE B (Fósforo, Sulfatos y Magnesio)</strong>
+                                <span className="bg-white/20 px-2 py-0.5 rounded-full font-mono text-[10px]">
+                                  {volMadre} L
+                                </span>
+                              </div>
+                              <div className="p-2 space-y-1 text-xs">
+                                {detalleB.items.map((it, lIdx) => (
+                                  <div key={lIdx} className="flex justify-between items-center bg-amber-50/50 p-2 rounded-lg border border-amber-100">
+                                    <span className="font-bold text-slate-800">{it.producto}</span>
+                                    <strong className="text-amber-950 bg-amber-100 px-2 py-0.5 rounded-lg font-mono">{it.gramos.toLocaleString()} g</strong>
+                                  </div>
+                                ))}
+                                <div className="pt-1 border-t border-amber-200 flex justify-between font-bold text-xs text-amber-950">
+                                  <span>Total Sales Tanque B:</span>
+                                  <span>{detalleB.totalGramos.toLocaleString()} g ({detalleB.totalKg} kg)</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* OBSERVACIONES ABAJO DE LOS CUADROS EN DOSATRON */}
+                        <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-1.5 text-xs">
+                          <div className="font-extrabold text-slate-800 flex items-center gap-1.5 uppercase tracking-wide text-[11px]">
+                            <span>📝</span> Instrucciones de Inyección y Observaciones para el Productor
+                          </div>
+                          <div className="bg-blue-50 border-l-4 border-blue-600 p-2 rounded-r-xl text-blue-950">
+                            <strong>💉 Inyección Proporcional Dual Dosatron ({ev.relacionInyeccion || '1:100'}):</strong>
+                            <p className="mt-0.5">Calibrar inyectores al {ev.relacionInyeccion === '1:100' ? '1.0% (1:100)' : ev.relacionInyeccion}. Mantener estricta segregación química: nunca mezclar concentrados A y B en el mismo recipiente antes de inyectar.</p>
+                          </div>
+                          {ev.observacionesPie && (
+                            <div className="bg-amber-50 border-l-4 border-amber-500 p-2 rounded-r-xl text-amber-950">
+                              <strong>👨‍🌾 Indicación del Agrónomo:</strong> {ev.observacionesPie}
+                            </div>
+                          )}
+                          {ev.analisisIa && (
+                            <div className="bg-emerald-50 border-l-4 border-emerald-600 p-2 rounded-r-xl text-emerald-950">
+                              <strong>✨ Dictamen Técnico IA:</strong> {ev.analisisIa}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           ))
         ) : (
@@ -1954,7 +2074,7 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                           <div className="flex-1 min-w-[200px] flex items-center gap-1">
                             <select
                               value={l.producto}
-                              onChange={(e) => handleSeleccionarProductoEnLinea(e.target.value, lineasProductos, setLineasProductos, idx, todosFertilizantes)}
+                              onChange={(e) => handleSeleccionarProductoEnLinea(e.target.value, lineasProductos, setLineasProductos, idx)}
                               className="w-full text-xs font-bold text-slate-900 border border-slate-300 rounded-lg p-2 bg-slate-50 outline-none focus:ring-2 focus:ring-emerald-500"
                             >
                               <option value="__manual__">✏️ [+ Escribir otro producto manual...]</option>
@@ -2042,14 +2162,43 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                       </div>
                     ))}
                   </div>
+
+                  {/* TOTALIZADOR EN VIVO DEL PESAJE PARA EL TANQUE SELECCIONADO */}
+                  {modalidadSeleccionada === 'tanque_directo' && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">⚖️</span>
+                        <div>
+                          <strong className="text-emerald-950 block">Pesaje Total para Tanque de {volumenTanqueDirecto} L de Agua:</strong>
+                          <span className="text-[11px] text-emerald-800 font-mono font-bold">
+                            Total de Sales: {lineasProductos.reduce((acc, l) => acc + (parseFloat(String(l.dosis).replace(',', '.')) || 0), 0).toLocaleString()} g ({((lineasProductos.reduce((acc, l) => acc + (parseFloat(String(l.dosis).replace(',', '.')) || 0), 0)) / 1000).toFixed(2)} kg)
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-[11px] bg-white border border-emerald-300 text-emerald-900 px-2.5 py-1 rounded-xl font-bold font-mono">
+                        Concentración: {volumenTanqueDirecto > 0 ? ((lineasProductos.reduce((acc, l) => acc + (parseFloat(String(l.dosis).replace(',', '.')) || 0), 0)) / Number(volumenTanqueDirecto)).toFixed(2) : 0} g/L
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* Instrucciones */}
+              {/* Instrucciones y Observaciones Abajo del Cuadro */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Instrucciones Específicas para el Productor / Regador
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Instrucciones y Observaciones de Preparación para el Productor
+                  </label>
+                  {modalidadSeleccionada === 'tanque_directo' && (
+                    <button
+                      type="button"
+                      onClick={() => setObservaciones(`1. Llenar el tanque con el 65% de agua (${Math.round(volumenTanqueDirecto * 0.65)} L). 2. Disolver primero fosfatos (MAP/MKP) y sulfatos (SOP y Epsom). 3. Agregar Calcinit de último con agitación activa y completar con agua a ${volumenTanqueDirecto} L. 4. Inyectar en el pulso correspondiente.`)}
+                      className="text-[10.5px] font-bold text-blue-700 hover:text-blue-900 underline flex items-center gap-1"
+                    >
+                      🔄 Insertar Orden de Mezcla Técnico
+                    </button>
+                  )}
+                </div>
                 <textarea
                   rows={2}
                   value={observaciones}
