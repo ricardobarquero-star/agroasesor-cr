@@ -262,13 +262,8 @@ export function escalarFormulaPorVolumen(formula, volumenLitros = 1000) {
   return formula.salesBase1000L.map(sal => {
     const dosisBase = Number(sal.dosis1000L) || 0;
     const dosisEscalada = dosisBase * factor;
-
-    // Si la dosis escalada es >= 1000 g, se puede expresar en kg o mantener en g con etiqueta clara
-    const enKg = dosisEscalada >= 1000;
-    const valorFormateado = enKg
-      ? (dosisEscalada / 1000.0).toFixed(2).replace(/\.00$/, '')
-      : (Math.round(dosisEscalada * 10) / 10).toString();
-    const unidad = enKg ? `kg / tanque ${v} L` : `g / tanque ${v} L`;
+    const valorFormateado = (Math.round(dosisEscalada * 10) / 10).toString();
+    const unidad = `g / tanque ${v} L`;
 
     return {
       producto: sal.producto,
@@ -276,6 +271,7 @@ export function escalarFormulaPorVolumen(formula, volumenLitros = 1000) {
       unidad,
       aporte: sal.aporte || '',
       esManual: false,
+      esSuplemento: sal.esSuplemento || false,
       tipo: sal.tipo || 'sal_fertilizante'
     };
   });

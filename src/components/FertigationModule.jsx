@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Plus, Trash2, AlertTriangle, Sparkles, Check, 
-  Calendar, Sliders, X, MapPin, Edit3, List, Save
+  Calendar, Sliders, X, MapPin, Edit3, List, Save,
+  Droplets, Zap, CheckCircle2, ChevronDown, ChevronUp, RefreshCw, ArrowRight
 } from 'lucide-react';
 import { storageService } from '../services/storageService';
 import { geminiService } from '../services/geminiService';
@@ -151,6 +152,22 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
   const [notasNuevaFormula, setNotasNuevaFormula] = useState('');
   const [mensajeFormulaFeedback, setMensajeFormulaFeedback] = useState(null);
   const [mostrarSelectorSuplementos, setMostrarSelectorSuplementos] = useState(false);
+
+  // Estados para Panel Interactivo de Carga Rápida de Fórmulas Oficiales (F1 a F4)
+  const [panelFormulaId, setPanelFormulaId] = useState('fresa_f3_llenado');
+  const [panelVolumenTanque, setPanelVolumenTanque] = useState(1000);
+  const [panelDia, setPanelDia] = useState('Lunes y Jueves (Frecuencia 2x)');
+  const [panelCe, setPanelCe] = useState('1.43');
+  const [panelPh, setPanelPh] = useState('5.8');
+  const [panelLineas, setPanelLineas] = useState([]);
+  const [panelObservaciones, setPanelObservaciones] = useState('');
+  const [panelMostrarSuplementos, setPanelMostrarSuplementos] = useState(false);
+  const [panelAlertaFeedback, setPanelAlertaFeedback] = useState(null);
+  const [mostrarSelectorNuevaSalPanel, setMostrarSelectorNuevaSalPanel] = useState(false);
+  const [salNuevaPanel, setSalNuevaPanel] = useState('');
+  const [dosisNuevaPanel, setDosisNuevaPanel] = useState('');
+  const [unidadNuevaPanel, setUnidadNuevaPanel] = useState('g / tanque 1000 L');
+  const [eventoSuplementoActivoId, setEventoSuplementoActivoId] = useState(null);
 
   // Filas del formulario (Inician limpias, cada fila contiene modo 'dropdown' o 'manual')
   const [lineasProductos, setLineasProductos] = useState([]);
@@ -341,10 +358,275 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
 
   // Cargar fórmula directamente desde los botones de la pantalla principal
   const handleCargarFormulaDirectaDesdeBoton = (formulaId) => {
-    handleAbrirModalConModalidad('tanque_directo');
+    handleSeleccionarFormulaTab(formulaId);
+  };
+
+  // --- LÓGICA DEL PANEL DE CARGA RÁPIDA DE FÓRMULAS F1 A F4 (CERO DIGITACIÓN) ---
+  useEffect(() => {
+    const f = formulasDisponibles.find(item => item.id === panelFormulaId) || FORMULAS_FERTIRRIEGO_BASE[2];
+    if (f) {
+      const vol = Number(panelVolumenTanque) || 1000;
+      const lineas = escalarFormulaPorVolumen(f, vol);
+      setPanelLineas(lineas);
+      setPanelCe(f.ceEstimada || '1.43');
+      setPanelPh(f.phEstimado || '5.8');
+      setPanelDia(f.frecuenciaRecomendada || 'Lunes y Jueves (Frecuencia 2x)');
+      setPanelObservaciones(f.instruccionesPreparacion || '');
+      setUnidadNuevaPanel(`g / tanque ${vol} L`);
+    }
+  }, [panelFormulaId]);
+
+  const handleSeleccionarFormulaTab = (formulaId) => {
+    setPanelFormulaId(formulaId);
+    const f = formulasDisponibles.find(item => item.id === formulaId) || FORMULAS_FERTIRRIEGO_BASE.find(item => item.id === formulaId);
+    if (f) {
+      const vol = Number(panelVolumenTanque) || 1000;
+      const lineas = escalarFormulaPorVolumen(f, vol);
+      setPanelLineas(lineas);
+      setPanelCe(f.ceEstimada || '1.43');
+      setPanelPh(f.phEstimado || '5.8');
+      setPanelDia(f.frecuenciaRecomendada || 'Lunes y Jueves (Frecuencia 2x)');
+      setPanelObservaciones(f.instruccionesPreparacion || '');
+      setPanelAlertaFeedback({
+        tipo: 'exito',
+        mensaje: `📋 Fórmula "${f.nombre}" seleccionada. Sales, dosis y unidades cargadas para tanque de ${vol} L (cero digitación).`
+      });
+    }
+  };
+
+  const handleCambiarVolumenPanel = (nuevoVolumen) => {
+    const volAnterior = Number(panelVolumenTanque) || 1000;
+    const volNuevoNum = Math.max(1, Number(nuevoVolumen) || 1000);
+    setPanelVolumenTanque(volNuevoNum);
+    setUnidadNuevaPanel(`g / tanque ${volNuevoNum} L`);
+
+    if (panelLineas.length > 0 && volAnterior !== volNuevoNum) {
+      const reescaladas = reescalarLineasPorVolumen(panelLineas, volAnterior, volNuevoNum);
+      setPanelLineas(reescaladas);
+      setPanelAlertaFeedback({
+        tipo: 'info',
+        mensaje: `🔄 Dosis recalculadas automáticamente de ${volAnterior} L a ${volNuevoNum} L (factor: ${(volNuevoNum / volAnterior).toFixed(2)}x).`
+      });
+    }
+  };
+
+  const handleAjustarSalesPorCe = (nuevaCeStr) => {
+    const f = formulasDisponibles.find(item => item.id === panelFormulaId) || FORMULAS_FERTIRRIEGO_BASE[2];
+    const ceBase = parseFloat(f.ceEstimada) || 1.43;
+    const ceNueva = parseFloat(nuevaCeStr);
+    setPanelCe(nuevaCeStr);
+
+    if (!isNaN(ceNueva) && ceNueva > 0 && ceBase > 0) {
+      const factorCe = ceNueva / ceBase;
+      const lineasAjustadas = panelLineas.map(l => {
+        if (l.esSuplemento) return l; // Mantener suplementos biológicos intactos
+        const dosisNum = parseFloat(String(l.dosis).replace(',', '.'));
+        if (isNaN(dosisNum) || dosisNum <= 0) return l;
+        const nuevaDosis = Math.round(dosisNum * factorCe * 10) / 10;
+        return {
+          ...l,
+          dosis: nuevaDosis.toString()
+        };
+      });
+      setPanelLineas(lineasAjustadas);
+      setPanelAlertaFeedback({
+        tipo: 'info',
+        mensaje: `⚖️ Sales recalculadas por CE objetivo: ${ceNueva} mS/cm (factor ${(factorCe).toFixed(2)}x respecto a la base ${ceBase} mS/cm).`
+      });
+    }
+  };
+
+  const handleAgregarSuplementoPanel = (suplemento) => {
+    const vol = Number(panelVolumenTanque) || 1000;
+    const factor = vol / 1000.0;
+    const dosisEscalada = Math.round((suplemento.dosisSugerida1000L || 200) * factor * 10) / 10;
+    const unidadLimpia = (suplemento.unidad || 'g / tanque 1000 L').replace(/1000\s*L/i, `${vol} L`);
+
+    const nuevaLinea = {
+      producto: suplemento.nombre,
+      dosis: dosisEscalada.toString(),
+      unidad: unidadLimpia,
+      aporte: suplemento.categoria || 'Suplemento / Biocontrolador',
+      esManual: true,
+      esSuplemento: true,
+      tipo: suplemento.tipo || 'suplemento'
+    };
+
+    setPanelLineas(prev => [...prev, nuevaLinea]);
+    setPanelMostrarSuplementos(false);
+    setPanelAlertaFeedback({
+      tipo: 'suplemento',
+      mensaje: `🌿 Se incorporó "${suplemento.nombre}" (${dosisEscalada} ${unidadLimpia}) al cuadro de fertilización.`
+    });
+  };
+
+  const handleAgregarSalManualPanel = () => {
+    if (!salNuevaPanel.trim() || !dosisNuevaPanel.trim()) return;
+    const vol = Number(panelVolumenTanque) || 1000;
+    const nuevaLinea = {
+      producto: salNuevaPanel.trim(),
+      dosis: dosisNuevaPanel.trim(),
+      unidad: unidadNuevaPanel || `g / tanque ${vol} L`,
+      aporte: 'Insumo adicional / Corrector',
+      esManual: true,
+      esSuplemento: false,
+      tipo: 'fertilizante_adicional'
+    };
+    setPanelLineas(prev => [...prev, nuevaLinea]);
+    setSalNuevaPanel('');
+    setDosisNuevaPanel('');
+    setMostrarSelectorNuevaSalPanel(false);
+    setPanelAlertaFeedback({
+      tipo: 'exito',
+      mensaje: `➕ Se agregó "${nuevaLinea.producto}" (${nuevaLinea.dosis} ${nuevaLinea.unidad}) al cuadro.`
+    });
+  };
+
+  const handleModificarDosisLineaPanel = (index, nuevaDosis) => {
+    setPanelLineas(prev => prev.map((l, i) => i === index ? { ...l, dosis: nuevaDosis } : l));
+  };
+
+  const handleEliminarLineaPanel = (index) => {
+    setPanelLineas(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleIncorporarFormulaDirectaASemana = () => {
+    const formula = formulasDisponibles.find(f => f.id === panelFormulaId) || FORMULAS_FERTIRRIEGO_BASE[2];
+    const vol = Number(panelVolumenTanque) || 1000;
+
+    // Registrar en catálogo si no existe
+    panelLineas.forEach(l => {
+      if (l.producto && l.producto.trim()) {
+        storageService.registrarInsumoSiNoExiste({
+          nombreComercial: l.producto.trim(),
+          esFertilizante: true,
+          categoria: 'Tanque Directo',
+          dosis: `${l.dosis} ${l.unidad}`
+        });
+      }
+    });
+
+    const totalSalesNum = Math.round(panelLineas.reduce((acc, l) => acc + (parseFloat(String(l.dosis).replace(',', '.')) || 0), 0));
+
+    const nuevoEvento = {
+      id: 'ev-form-' + Date.now(),
+      modalidad: 'tanque_directo',
+      modalidadNombre: 'Tanque Directo',
+      modalidadIcono: '💧',
+      nombreEvento: `${formula.codigo} - ${formula.nombre.replace(/ \(Llano Grande\)/i, '')}`,
+      dia: panelDia,
+      objetivo: formula.objetivoFertilizacion,
+      volumenTanqueDirectoLitros: vol,
+      volumenTanqueMadreLitros: null,
+      relacionInyeccion: null,
+      conductividadObjetivo: panelCe ? `${panelCe} mS/cm` : `${formula.ceEstimada} mS/cm`,
+      phObjetivo: panelPh || '5.8',
+      alcance: alcanceEvento || 'Toda la Finca',
+      sistema: `Mezcla en tanque único de ${vol} L listo para fertirriego por goteo`,
+      productos: panelLineas.filter(l => l.producto && l.producto.trim()).map(l => ({
+        producto: l.producto,
+        dosis: l.dosis,
+        unidad: l.unidad,
+        aporte: l.aporte || '',
+        esSuplemento: !!l.esSuplemento,
+        tipo: l.tipo || 'sal_fertilizante'
+      })),
+      observacionesPie: panelObservaciones || formula.instruccionesPreparacion,
+      analisisIa: `Fórmula ${formula.codigo} oficial balanceada para ${vol} L de agua (CE ~${panelCe || formula.ceEstimada} mS/cm, pH ${panelPh || '5.8'}). Total sales: ${totalSalesNum} g (${(totalSalesNum/vol).toFixed(2)} g/L). 100% soluble respetando orden de disolución.`
+    };
+
+    const eventosActuales = recomendacionSemana.eventos || [];
+    const eventosActualizados = [...eventosActuales, nuevoEvento];
+
+    const recActualizada = {
+      ...recomendacionSemana,
+      etapaFenologica: recomendacionSemana.etapaFenologica || formula.etapaFenologica,
+      objetivoFertilizacion: recomendacionSemana.objetivoFertilizacion || formula.objetivoFertilizacion,
+      eventos: eventosActualizados
+    };
+
+    const todasRecs = recomendaciones.filter(r => r.semana !== semanaActiva);
+    todasRecs.push(recActualizada);
+    todasRecs.sort((a, b) => a.semana - b.semana);
+
+    onUpdateVisita({ ...visita, recomendacionesFertirriego: todasRecs });
+
+    setPanelAlertaFeedback({
+      tipo: 'exito',
+      mensaje: `🚀 ¡Cuadro de la fórmula ${formula.codigo} cargado en la Semana ${semanaActiva}! Con ${panelLineas.length} sales calculadas para ${vol} Litros. Ya está incorporado en la semana y visible en el reporte.`
+    });
+
     setTimeout(() => {
-      handleSeleccionarFormulaPredefinida(formulaId, 1000);
-    }, 50);
+      const el = document.getElementById('lista-cuadros-semana');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    }, 120);
+  };
+
+  // Re-escalar volumen de un cuadro ya guardado en la semana
+  const handleReescalarEventoTanque = (eventoId, nuevoVolumen) => {
+    const volNuevoNum = Number(nuevoVolumen) || 1000;
+    const eventosActualizados = (recomendacionSemana.eventos || []).map(ev => {
+      if (ev.id !== eventoId) return ev;
+      const volAnterior = Number(ev.volumenTanqueDirectoLitros) || 1000;
+      const rawProds = (Array.isArray(ev.productos) && ev.productos.length > 0)
+        ? ev.productos
+        : (Array.isArray(ev.lineasProductos) && ev.lineasProductos.length > 0)
+          ? ev.lineasProductos
+          : (Array.isArray(ev.sales) && ev.sales.length > 0)
+            ? ev.sales
+            : [];
+      const prodsReescalados = reescalarLineasPorVolumen(rawProds, volAnterior, volNuevoNum);
+      return {
+        ...ev,
+        volumenTanqueDirectoLitros: volNuevoNum,
+        productos: prodsReescalados,
+        sistema: `Mezcla en tanque único de ${volNuevoNum} L listo para fertirriego por goteo`
+      };
+    });
+
+    const recActualizada = { ...recomendacionSemana, eventos: eventosActualizados };
+    const todasRecs = recomendaciones.filter(r => r.semana !== semanaActiva);
+    todasRecs.push(recActualizada);
+    todasRecs.sort((a, b) => a.semana - b.semana);
+    onUpdateVisita({ ...visita, recomendacionesFertirriego: todasRecs });
+  };
+
+  // Agregar suplemento directo a un cuadro ya guardado en la semana
+  const handleAgregarSuplementoAEvento = (eventoId, suplemento) => {
+    const eventosActualizados = (recomendacionSemana.eventos || []).map(ev => {
+      if (ev.id !== eventoId) return ev;
+      const vol = Number(ev.volumenTanqueDirectoLitros) || 1000;
+      const factor = vol / 1000.0;
+      const dosisEscalada = Math.round((suplemento.dosisSugerida1000L || 200) * factor * 10) / 10;
+      const unidadLimpia = (suplemento.unidad || 'g / tanque 1000 L').replace(/1000\s*L/i, `${vol} L`);
+      const nuevoProd = {
+        producto: suplemento.nombre,
+        dosis: dosisEscalada.toString(),
+        unidad: unidadLimpia,
+        aporte: suplemento.categoria || 'Suplemento / Biocontrolador',
+        esSuplemento: true,
+        tipo: suplemento.tipo || 'suplemento'
+      };
+      const rawProds = (Array.isArray(ev.productos) && ev.productos.length > 0)
+        ? ev.productos
+        : (Array.isArray(ev.lineasProductos) && ev.lineasProductos.length > 0)
+          ? ev.lineasProductos
+          : (Array.isArray(ev.sales) && ev.sales.length > 0)
+            ? ev.sales
+            : [];
+      const prods = [...rawProds, nuevoProd];
+      return {
+        ...ev,
+        productos: prods
+      };
+    });
+
+    const recActualizada = { ...recomendacionSemana, eventos: eventosActualizados };
+    const todasRecs = recomendaciones.filter(r => r.semana !== semanaActiva);
+    todasRecs.push(recActualizada);
+    todasRecs.sort((a, b) => a.semana - b.semana);
+    onUpdateVisita({ ...visita, recomendacionesFertirriego: todasRecs });
+    setEventoSuplementoActivoId(null);
   };
 
   // Cambiar volumen del tanque directo con re-escalado automático de sales
@@ -998,62 +1280,463 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
         </div>
       )}
 
-      {/* PROGRAMA OFICIAL DE FERTIRRIEGO PARA FRESA (F1, F2, F3, F4) */}
-      <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 text-white p-4 rounded-3xl shadow-md space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-2">
-          <div className="flex items-center gap-2.5">
-            <span className="text-2xl p-2 bg-emerald-500/20 text-[#acf847] rounded-2xl border border-emerald-500/30">
+      {/* PANEL INTERACTIVO DE CARGA RÁPIDA DE FÓRMULAS EQUILIBRADAS (F1 A F4) - CERO DIGITACIÓN */}
+      <div className="bg-gradient-to-br from-emerald-950 via-teal-950 to-slate-950 text-white p-4 sm:p-5 rounded-3xl shadow-xl border border-emerald-500/40 space-y-4">
+        {/* Encabezado */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/15 pb-3">
+          <div className="flex items-center gap-3">
+            <span className="text-3xl p-2.5 bg-emerald-500/20 text-[#acf847] rounded-2xl border border-emerald-500/40 shrink-0">
               🍓
             </span>
             <div>
-              <h3 className="font-extrabold text-sm sm:text-base text-white flex items-center gap-2">
-                <span>Programa de Fertirriego para Fresa (F1 a F4)</span>
-                <span className="text-[10px] bg-[#acf847] text-[#131b2e] px-2 py-0.5 rounded-full font-black uppercase">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-extrabold text-base sm:text-lg text-white tracking-tight">
+                  Cargador Rápido de Fórmulas Equilibradas (F1 a F4)
+                </h3>
+                <span className="text-[10px] bg-[#acf847] text-[#131b2e] px-2.5 py-0.5 rounded-full font-black uppercase tracking-wide">
                   Llano Grande, Cartago
                 </span>
-              </h3>
-              <p className="text-xs text-emerald-200/80">
-                Fórmulas estequiométricas para tanque directo / 1000 L. Se ajustan automáticamente a la capacidad del tanque de la finca.
+              </div>
+              <p className="text-xs text-emerald-200/90 mt-0.5">
+                Seleccione la fórmula y la capacidad del tanque: las sales, dosis y unidades se calculan al instante con <strong>cero digitación</strong> para incorporar directamente al programa de la <strong>Semana {semanaActiva}</strong>.
               </p>
             </div>
           </div>
-          <span className="text-[11px] text-emerald-300 font-mono">
-            Pulsos: 2x por semana
-          </span>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-xs bg-white/10 px-3 py-1.5 rounded-xl border border-white/15 font-mono text-emerald-300">
+              📅 Semana {semanaActiva}
+            </span>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-          {formulasDisponibles.filter(f => f.esOficial).map(f => (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => handleCargarFormulaDirectaDesdeBoton(f.id)}
-              className="p-3 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/15 text-left transition group active:scale-95 flex flex-col justify-between space-y-2 hover:border-[#acf847]/60"
+        {/* Feedback de Carga / Re-escalado */}
+        {panelAlertaFeedback && (
+          <div className={`p-3 rounded-2xl text-xs font-bold flex items-center justify-between gap-2 shadow-sm transition animate-in fade-in duration-200 ${
+            panelAlertaFeedback.tipo === 'exito' 
+              ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/40' 
+              : panelAlertaFeedback.tipo === 'suplemento'
+                ? 'bg-teal-500/20 text-teal-200 border border-teal-500/40'
+                : 'bg-blue-500/20 text-blue-200 border border-blue-500/40'
+          }`}>
+            <span>{panelAlertaFeedback.mensaje}</span>
+            <button 
+              type="button" 
+              onClick={() => setPanelAlertaFeedback(null)} 
+              className="text-white/60 hover:text-white p-1 rounded-lg"
             >
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black px-2 py-0.5 rounded-lg bg-[#acf847] text-[#131b2e]">
-                    {f.codigo}
-                  </span>
-                  <span className="text-[10px] text-emerald-300 font-mono">
-                    {f.ceEstimada ? `CE ~${f.ceEstimada}` : ''}
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* 1. Selector de las 4 Fórmulas Oficiales */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-bold text-emerald-300 uppercase tracking-wider flex items-center justify-between">
+            <span>1. Escoja la Fórmula Oficial Equilibrada:</span>
+            <span className="text-[11px] text-emerald-400 font-normal">Toque una opción para cargarla</span>
+          </label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {formulasDisponibles.filter(f => f.esOficial).map(f => {
+              const esActiva = panelFormulaId === f.id;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => handleSeleccionarFormulaTab(f.id)}
+                  className={`p-3 rounded-2xl text-left transition flex flex-col justify-between border relative ${
+                    esActiva 
+                      ? 'bg-gradient-to-br from-emerald-700 to-teal-800 text-white border-[#acf847] shadow-lg ring-2 ring-[#acf847]/40 scale-[1.02]' 
+                      : 'bg-white/10 hover:bg-white/15 text-white/90 border-white/15 hover:border-emerald-400/50'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={`text-xs font-black px-2 py-0.5 rounded-lg ${
+                        esActiva ? 'bg-[#acf847] text-[#131b2e]' : 'bg-white/20 text-emerald-200'
+                      }`}>
+                        {f.codigo}
+                      </span>
+                      <span className="text-[10.5px] font-mono font-bold text-emerald-300">
+                        {f.ceEstimada ? `CE ~${f.ceEstimada}` : ''}
+                      </span>
+                    </div>
+                    <h4 className="font-bold text-xs leading-snug line-clamp-1">
+                      {f.nombre.replace(/ \(Llano Grande\)/i, '')}
+                    </h4>
+                    <p className={`text-[10.5px] line-clamp-2 mt-1 ${esActiva ? 'text-emerald-100' : 'text-emerald-200/70'}`}>
+                      {f.objetivoFertilizacion}
+                    </p>
+                  </div>
+
+                  <div className="pt-2 mt-2 border-t border-white/15 flex items-center justify-between text-[10px]">
+                    <span className="text-emerald-300/80">{f.duracionTipica || '2-4 sem'}</span>
+                    {esActiva ? (
+                      <span className="font-black text-[#acf847] flex items-center gap-0.5">
+                        ✓ Seleccionada
+                      </span>
+                    ) : (
+                      <span className="text-white/60">Seleccionar →</span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 2. Barra de Ajuste de Circunstancias (Capacidad de Tanque, CE, Frecuencia, Alcance) */}
+        {(() => {
+          const formulaActual = formulasDisponibles.find(f => f.id === panelFormulaId) || FORMULAS_FERTIRRIEGO_BASE[2];
+          const totalGramosCalculados = Math.round(panelLineas.reduce((acc, l) => acc + (parseFloat(String(l.dosis).replace(',', '.')) || 0), 0));
+          const factorEscala = (panelVolumenTanque / 1000).toFixed(2);
+          const concSalesGL = panelVolumenTanque > 0 ? (totalGramosCalculados / panelVolumenTanque).toFixed(2) : '1.30';
+
+          return (
+            <div className="space-y-4">
+              <div className="bg-white/10 p-3.5 rounded-2xl border border-white/15 space-y-3">
+                <div className="text-xs font-bold text-emerald-300 uppercase tracking-wider">
+                  2. Ajuste según las Circunstancias de la Finca:
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {/* Selector de Capacidad de Tanque */}
+                  <div className="space-y-1.5 md:col-span-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <label className="font-bold text-white flex items-center gap-1.5">
+                        <span>🛢️ Capacidad del Tanque / Cantidad de Agua:</span>
+                      </label>
+                      <span className="text-[11px] font-mono text-[#acf847]">
+                        Escala: {factorEscala}x ({panelVolumenTanque} L)
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {[200, 500, 750, 1000, 1500, 2000].map(v => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => handleCambiarVolumenPanel(v)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition active:scale-95 ${
+                            panelVolumenTanque === v
+                              ? 'bg-[#acf847] text-[#131b2e] shadow-md font-black'
+                              : 'bg-white/15 hover:bg-white/25 text-white border border-white/20'
+                          }`}
+                        >
+                          {v} L
+                        </button>
+                      ))}
+
+                      <div className="flex items-center gap-1 bg-black/30 border border-white/20 rounded-xl px-2 py-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="50000"
+                          step="50"
+                          value={panelVolumenTanque}
+                          onChange={(e) => handleCambiarVolumenPanel(e.target.value)}
+                          className="w-16 bg-transparent text-center font-mono font-black text-xs text-white outline-none"
+                          placeholder="Litros"
+                        />
+                        <span className="text-[11px] text-white/60 font-mono">L</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Conductividad Eléctrica (CE) y Ajuste Proporcional */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <label className="font-bold text-white flex items-center gap-1">
+                        <span>⚡ CE Objetivo:</span>
+                      </label>
+                      <span className="text-[10.5px] text-emerald-300 font-mono">
+                        Base: {formulaActual.ceEstimada || '1.43'} mS/cm
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        step="0.05"
+                        min="0.5"
+                        max="4.0"
+                        value={panelCe}
+                        onChange={(e) => setPanelCe(e.target.value)}
+                        className="w-20 bg-black/30 text-center font-mono font-black text-xs text-white border border-white/20 rounded-xl py-1.5 outline-none"
+                        placeholder="CE"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleAjustarSalesPorCe(panelCe)}
+                        className="flex-1 px-2.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-[11px] transition flex items-center justify-center gap-1"
+                        title="Ajusta proporcionalmente las dosis de las sales según la CE indicada"
+                      >
+                        <span>⚖️ Ajustar por CE</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Frecuencia y Alcance */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 border-t border-white/10">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-emerald-200">
+                      📅 Frecuencia / Días de Riego:
+                    </label>
+                    <select
+                      value={panelDia}
+                      onChange={(e) => setPanelDia(e.target.value)}
+                      className="w-full bg-black/40 text-white text-xs border border-white/20 rounded-xl p-2 outline-none font-medium"
+                    >
+                      <option value="Lunes y Jueves (Frecuencia 2x)" className="bg-slate-900 text-white">Lunes y Jueves (Frecuencia 2x)</option>
+                      <option value="Lunes, Miércoles y Viernes (Frecuencia 3x)" className="bg-slate-900 text-white">Lunes, Miércoles y Viernes (Frecuencia 3x)</option>
+                      <option value="Lunes" className="bg-slate-900 text-white">Lunes</option>
+                      <option value="Martes" className="bg-slate-900 text-white">Martes</option>
+                      <option value="Miércoles" className="bg-slate-900 text-white">Miércoles</option>
+                      <option value="Jueves" className="bg-slate-900 text-white">Jueves</option>
+                      <option value="Viernes" className="bg-slate-900 text-white">Viernes</option>
+                      <option value="Sábado" className="bg-slate-900 text-white">Sábado</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-emerald-200">
+                      📍 Alcance del Programa:
+                    </label>
+                    <select
+                      value={alcanceEvento}
+                      onChange={(e) => setAlcanceEvento(e.target.value)}
+                      className="w-full bg-black/40 text-white text-xs border border-white/20 rounded-xl p-2 outline-none font-medium"
+                    >
+                      <option value="Toda la Finca" className="bg-slate-900 text-white">Toda la Finca</option>
+                      {lotesDeFinca.map((l, i) => (
+                        <option key={i} value={`Lote: ${l.nombreLote || l.nombre || 'Lote ' + (i+1)}`} className="bg-slate-900 text-white">
+                          Lote: {l.nombreLote || l.nombre || `Lote ${i+1}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. EL CUADRO DE FERTILIZACIÓN EN VIVO (3 COLUMNAS: SAL, DOSIS, UNIDADES) */}
+              <div className="border-2 border-emerald-400/60 rounded-2xl overflow-hidden bg-white text-slate-900 shadow-md">
+                <div className="bg-gradient-to-r from-emerald-800 to-teal-800 text-white px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">📋</span>
+                    <strong className="text-xs sm:text-sm font-extrabold uppercase tracking-wide">
+                      CUADRO DE FERTILIZACIÓN: {formulaActual.codigo} ({formulaActual.nombre.replace(/ \(Llano Grande\)/i, '')})
+                    </strong>
+                  </div>
+                  <span className="bg-white/20 px-2.5 py-0.5 rounded-full font-mono text-xs font-bold border border-white/30">
+                    🛢️ {panelVolumenTanque.toLocaleString()} Litros de Agua
                   </span>
                 </div>
-                <h4 className="font-bold text-xs text-white mt-1.5 group-hover:text-[#acf847] transition">
-                  {f.nombre.replace(/ \(Llano Grande\)/i, '')}
-                </h4>
-                <p className="text-[10.5px] text-emerald-200/70 line-clamp-2 mt-0.5">
-                  {f.objetivoFertilizacion}
-                </p>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-700 font-extrabold text-[11px] uppercase border-b-2 border-slate-200">
+                        <th className="p-2.5">Sal / Fertilizante</th>
+                        <th className="p-2.5 text-center w-32">Dosis</th>
+                        <th className="p-2.5 text-center w-36">Unidades</th>
+                        <th className="p-2 text-center w-12">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-mono">
+                      {panelLineas.map((linea, idx) => (
+                        <tr key={idx} className="hover:bg-emerald-50/50 transition">
+                          <td className="p-2.5 font-bold font-sans text-slate-900">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span>{linea.producto}</span>
+                              {linea.esSuplemento && (
+                                <span className="text-[9px] font-sans font-extrabold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-full border border-emerald-300">
+                                  🌿 Suplemento
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-2 text-center">
+                            <input
+                              type="text"
+                              value={linea.dosis}
+                              onChange={(e) => handleModificarDosisLineaPanel(idx, e.target.value)}
+                              className="w-24 text-center font-mono font-black text-emerald-950 bg-emerald-50 border border-emerald-300 rounded-lg py-1 px-1.5 outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+                              title="Haga clic para editar la dosis en gramos si lo desea"
+                            />
+                          </td>
+                          <td className="p-2.5 text-center font-mono text-slate-600 font-bold text-xs">
+                            {linea.unidad}
+                          </td>
+                          <td className="p-2 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleEliminarLineaPanel(idx)}
+                              className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                              title="Eliminar esta sal del cuadro"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-emerald-50 font-bold text-emerald-950 border-t-2 border-emerald-500 text-xs">
+                        <td className="p-3 font-extrabold font-sans">
+                          <div className="flex items-center gap-1.5">
+                            <span>TOTAL DE SALES A DISOLVER</span>
+                            <span className="text-[10.5px] font-normal text-emerald-800">
+                              (Conc: {concSalesGL} g/L)
+                            </span>
+                          </div>
+                        </td>
+                        <td className="p-3 text-center font-mono font-black text-emerald-900 text-sm">
+                          {totalGramosCalculados.toLocaleString()}
+                        </td>
+                        <td className="p-3 text-center font-mono font-bold text-emerald-800" colSpan="2">
+                          g / {panelVolumenTanque} L
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* 4. ESPACIO PARA AGREGARLE ALGUNA OTRA COSA AL CUADRO */}
+                <div className="bg-slate-50 p-3 border-t border-slate-200 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-slate-700">
+                      ➕ Espacio para agregar insumos adicionales al cuadro:
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPanelMostrarSuplementos(!panelMostrarSuplementos)}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold text-xs flex items-center gap-1 transition active:scale-95 border border-emerald-300"
+                      >
+                        <span>🌿 + Agregar Suplemento / Nematicida</span>
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${panelMostrarSuplementos ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setMostrarSelectorNuevaSalPanel(!mostrarSelectorNuevaSalPanel)}
+                        className="px-3 py-1.5 rounded-xl bg-blue-100 hover:bg-blue-200 text-blue-900 font-bold text-xs flex items-center gap-1 transition active:scale-95 border border-blue-300"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>+ Agregar Otra Sal / Fertilizante</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Drawer de Suplementos Biológicos y Nematicidas */}
+                  {panelMostrarSuplementos && (
+                    <div className="bg-white p-3 rounded-xl border border-emerald-300 shadow-sm space-y-2 animate-in fade-in duration-150">
+                      <span className="text-[11px] font-bold text-emerald-900 block">
+                        Toque un suplemento para agregarlo automáticamente escalado para {panelVolumenTanque} Litros:
+                      </span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
+                        {suplementosDisponibles.map(sup => {
+                          const dosisEsc = Math.round((sup.dosisSugerida1000L || 200) * (panelVolumenTanque / 1000));
+                          return (
+                            <button
+                              key={sup.id}
+                              type="button"
+                              onClick={() => handleAgregarSuplementoPanel(sup)}
+                              className="p-2 rounded-xl border border-emerald-200 hover:border-emerald-500 hover:bg-emerald-50 text-left transition group active:scale-95 flex flex-col justify-between"
+                            >
+                              <div>
+                                <div className="flex items-center gap-1 font-bold text-xs text-slate-800 group-hover:text-emerald-900">
+                                  <span>{sup.icono || '🌿'}</span>
+                                  <span className="line-clamp-1">{sup.nombre}</span>
+                                </div>
+                                <p className="text-[10px] text-slate-500 line-clamp-1 mt-0.5">{sup.categoria}</p>
+                              </div>
+                              <div className="mt-1 pt-1 border-t border-slate-100 flex items-center justify-between text-[10.5px]">
+                                <span className="font-mono font-bold text-emerald-800">+{dosisEsc} g/cc</span>
+                                <span className="text-emerald-700 font-bold">+ Agregar</span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Formulario Inline para Agregar Otra Sal Manual */}
+                  {mostrarSelectorNuevaSalPanel && (
+                    <div className="bg-white p-3 rounded-xl border border-blue-300 shadow-sm space-y-2 animate-in fade-in duration-150">
+                      <span className="text-[11px] font-bold text-blue-900 block">
+                        Seleccione o escriba el nombre del fertilizante e indique los gramos:
+                      </span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="text"
+                          list="lista-fert-panel"
+                          placeholder="Nombre del fertilizante o sal..."
+                          value={salNuevaPanel}
+                          onChange={(e) => setSalNuevaPanel(e.target.value)}
+                          className="flex-1 min-w-[200px] text-xs border border-slate-300 rounded-xl p-2 outline-none"
+                        />
+                        <datalist id="lista-fert-panel">
+                          {todosFertilizantes.map((f, i) => (
+                            <option key={i} value={f.nombreComercial} />
+                          ))}
+                        </datalist>
+
+                        <input
+                          type="number"
+                          placeholder="Dosis en gramos..."
+                          value={dosisNuevaPanel}
+                          onChange={(e) => setDosisNuevaPanel(e.target.value)}
+                          className="w-32 text-xs font-mono border border-slate-300 rounded-xl p-2 outline-none text-center"
+                        />
+
+                        <button
+                          type="button"
+                          onClick={handleAgregarSalManualPanel}
+                          className="px-3 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs transition active:scale-95 shadow-sm"
+                        >
+                          + Insertar al Cuadro
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Instrucciones de Preparación al Pie del Cuadro */}
+                  <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                    <strong className="block text-[11px] font-extrabold text-slate-800 uppercase tracking-wide">
+                      📝 Instrucciones de Preparación y Observaciones Técnicas al Pie:
+                    </strong>
+                    <textarea
+                      rows={3}
+                      value={panelObservaciones}
+                      onChange={(e) => setPanelObservaciones(e.target.value)}
+                      placeholder="Instrucciones para el productor, orden de disolución..."
+                      className="w-full text-xs border border-slate-300 rounded-xl p-2.5 outline-none leading-relaxed font-mono text-slate-800 focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
               </div>
 
-              <div className="pt-1.5 border-t border-white/10 flex items-center justify-between text-[10px] text-emerald-300">
-                <span>{f.duracionTipica || '2-4 sem'}</span>
-                <span className="font-bold group-hover:translate-x-0.5 transition">+ Cargar Cuadro →</span>
+              {/* 5. BOTÓN PRINCIPAL: INCORPORAR AL PROGRAMA DE LA SEMANA */}
+              <div className="pt-1 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="text-xs text-emerald-200">
+                  💡 Al presionar este botón, este cuadro completo se guardará en la <strong>Semana {semanaActiva}</strong> y quedará registrado en el reporte.
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleIncorporarFormulaDirectaASemana}
+                  className="w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-[#acf847] hover:bg-[#9de43d] text-[#131b2e] font-black text-sm sm:text-base shadow-xl flex items-center justify-center gap-2.5 transition active:scale-95 ring-2 ring-[#acf847]/50"
+                >
+                  <span>🚀 Incorporar Cuadro {formulaActual.codigo} a la Semana {semanaActiva}</span>
+                  <ArrowRight className="w-5 h-5" />
+                </button>
               </div>
-            </button>
-          ))}
-        </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Botones de Modalidades */}
@@ -1086,7 +1769,7 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
       </div>
 
       {/* Lista de Cuadros Programados */}
-      <div className="space-y-4">
+      <div className="space-y-4" id="lista-cuadros-semana">
         {(recomendacionSemana.eventos && recomendacionSemana.eventos.length > 0) ? (
           recomendacionSemana.eventos.map((ev, index) => (
             <div key={ev.id || index} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
@@ -1182,6 +1865,66 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
 
                 return (
                   <div className="space-y-3">
+                    {/* Barra de ajuste rápido para este cuadro cargado en la semana */}
+                    {!esDual && (
+                      <div className="bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="font-bold text-slate-700 flex items-center gap-1">
+                            <span>🛢️ Reescalar Volumen:</span>
+                          </span>
+                          {[200, 500, 750, 1000, 1500, 2000].map(v => (
+                            <button
+                              key={v}
+                              type="button"
+                              onClick={() => handleReescalarEventoTanque(ev.id, v)}
+                              className={`px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold transition ${
+                                volTanque === v 
+                                  ? 'bg-emerald-700 text-white shadow-xs' 
+                                  : 'bg-white hover:bg-emerald-50 text-slate-700 border border-slate-200'
+                              }`}
+                              title={`Reescalar automáticamente todas las dosis a ${v} Litros`}
+                            >
+                              {v} L
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => setEventoSuplementoActivoId(eventoSuplementoActivoId === ev.id ? null : ev.id)}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold text-[11px] flex items-center gap-1 transition"
+                          >
+                            <span>🌿 + Suplemento / Insumo</span>
+                            <ChevronDown className="w-3 h-3" />
+                          </button>
+
+                          {eventoSuplementoActivoId === ev.id && (
+                            <div className="absolute right-0 top-full mt-1.5 w-72 bg-white rounded-xl shadow-xl border border-slate-200 p-2 z-30 space-y-1">
+                              <span className="text-[10px] font-bold text-slate-500 uppercase px-1 block">
+                                Insumos Biológicos y Nematicidas ({volTanque} L):
+                              </span>
+                              {suplementosDisponibles.map(sup => (
+                                <button
+                                  key={sup.id}
+                                  type="button"
+                                  onClick={() => handleAgregarSuplementoAEvento(ev.id, sup)}
+                                  className="w-full text-left p-1.5 rounded-lg hover:bg-emerald-50 text-xs flex items-center justify-between group transition"
+                                >
+                                  <div>
+                                    <span className="font-bold text-slate-800 block text-[11px]">{sup.nombre}</span>
+                                    <span className="text-[9.5px] text-slate-500">{sup.categoria}</span>
+                                  </div>
+                                  <span className="text-[10px] font-mono text-emerald-800 font-bold shrink-0">
+                                    +{Math.round((sup.dosisSugerida1000L || 200) * (volTanque / 1000))} g
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                     {/* CUADRO / TABLA ESTRUCTURADA DE FERTILIZACIÓN (3 COLUMNAS: SAL, DOSIS, UNIDADES) */}
                     {!esDual && (
                       <div className="border-2 border-emerald-300 rounded-2xl overflow-hidden bg-white shadow-sm">
