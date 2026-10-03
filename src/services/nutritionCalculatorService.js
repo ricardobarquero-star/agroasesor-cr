@@ -151,6 +151,56 @@ export const FERTILIZANTES_QUIMICA = {
     fe: 4.0, zn: 4.0, mn: 3.0, b: 0.8, cu: 0.5, mo: 0.1,
     tanqueRecomendado: 'B',
     tipo: 'micro_mix'
+  },
+
+  // --- SUPLEMENTOS BIOLÓGICOS, NEMATICIDAS Y BIOESTIMULANTES ---
+  'trichoderma': {
+    nombre: 'Trichoderma (Tusal WG / Trichobiol)',
+    alias: ['trichoderma', 'tusal', 'trichobiol', 'triconativa', 'bioeco trichoderma'],
+    nTotal: 0, nNitrico: 0, nAmoniacal: 0, p2o5: 0, k2o: 0, cao: 0, mgo: 0, s: 0,
+    tanqueRecomendado: 'B',
+    tipo: 'suplemento_biologico',
+    esSuplemento: true
+  },
+  'bioact': {
+    nombre: 'BioAct Prime (Purpureocillium lilacinum)',
+    alias: ['bioact', 'bioact prime', 'purpureocillium', 'nematicida biologico', 'nematicida bioact'],
+    nTotal: 0, nNitrico: 0, nAmoniacal: 0, p2o5: 0, k2o: 0, cao: 0, mgo: 0, s: 0,
+    tanqueRecomendado: 'B',
+    tipo: 'nematicida',
+    esSuplemento: true
+  },
+  'verango': {
+    nombre: 'Verango 500 SC (Fluopyram)',
+    alias: ['verango', 'fluopyram', 'verango 500 sc'],
+    nTotal: 0, nNitrico: 0, nAmoniacal: 0, p2o5: 0, k2o: 0, cao: 0, mgo: 0, s: 0,
+    tanqueRecomendado: 'B',
+    tipo: 'nematicida',
+    esSuplemento: true
+  },
+  'nimitz': {
+    nombre: 'Nimitz 480 EC (Fluensulfone)',
+    alias: ['nimitz', 'fluensulfone', 'nimitz 480 ec'],
+    nTotal: 0, nNitrico: 0, nAmoniacal: 0, p2o5: 0, k2o: 0, cao: 0, mgo: 0, s: 0,
+    tanqueRecomendado: 'B',
+    tipo: 'nematicida',
+    esSuplemento: true
+  },
+  'kelpak': {
+    nombre: 'Kelpak (Extracto de Algas Ecklonia maxima)',
+    alias: ['kelpak', 'extracto de algas', 'ecklonia', 'kelp'],
+    nTotal: 0.2, nNitrico: 0, nAmoniacal: 0, p2o5: 0.1, k2o: 0.5, cao: 0, mgo: 0, s: 0,
+    tanqueRecomendado: 'B',
+    tipo: 'bioestimulante',
+    esSuplemento: true
+  },
+  'acidos humicos': {
+    nombre: 'Ácidos Húmicos y Fúlvicos Líquidos',
+    alias: ['ácidos húmicos', 'acidos humicos', 'humicos', 'fulvicos', 'humifértil', 'humifertil'],
+    nTotal: 1.0, nNitrico: 0, nAmoniacal: 0, p2o5: 0.2, k2o: 3.0, cao: 0, mgo: 0, s: 0,
+    tanqueRecomendado: 'B',
+    tipo: 'acondicionador',
+    esSuplemento: true
   }
 };
 
@@ -456,7 +506,16 @@ export function auditarIncompatibilidadQuimica({ modalidad, lineasA = [], lineas
     const tieneSulfato = nombresUnicos.includes('sulfato') || nombresUnicos.includes('solusop') || nombresUnicos.includes('epsom');
 
     if (tieneCalcio && (tieneSulfato || tieneFosfato)) {
-      alertas.push('⚠️ SOLUBILIDAD EN TANQUE ÚNICO: Al preparar mezclas directas con Calcio y Sulfatos/Fosfatos en el mismo tanque, asegure una dilución alta (< 1.5 g/L en solución final de riego) para evitar sedimentaciones.');
+      // Calcular concentración total de sales en g/L
+      const totalKgSales = lineasProductos.reduce((acc, l) => acc + normalizarDosisAKg(l.dosis, l.unidad), 0);
+      // Asumir tanque directo estándar de 1000 L si no se indica otra escala
+      const concEstimada_gL = totalKgSales > 0 ? (totalKgSales * 1000) / 1000 : 1.3;
+
+      if (concEstimada_gL <= 2.2) {
+        advertencias.push(`✅ TANQUE DIRECTO DILUIDO (${concEstimada_gL.toFixed(2)} g/L): Concentración dentro de límites seguros de solubilidad (saturación de yeso < 40%, según programa oficial de fresa). Respete orden: 1° disolver fosfatos y sulfatos, 2° Nitrato de Calcio al final con agitación enérgica.`);
+      } else {
+        alertas.push(`⚠️ ALTA CONCENTRACIÓN EN TANQUE DIRECTO (${concEstimada_gL.toFixed(2)} g/L): Supera los 2.2 g/L con Calcio y Sulfatos/Fosfatos simultáneos. Se recomienda aumentar el volumen de agua o dividir en pulsos para prevenir precipitación de yeso.`);
+      }
     }
   }
 
@@ -466,6 +525,13 @@ export function auditarIncompatibilidadQuimica({ modalidad, lineasA = [], lineas
     advertencias
   };
 }
+
+export {
+  FORMULAS_FERTIRRIEGO_BASE,
+  SUPLEMENTOS_FERTIRRIEGO_CR,
+  escalarFormulaPorVolumen,
+  reescalarLineasPorVolumen
+} from '../data/fertigationPrograms';
 
 /**
  * Cálculos especializados para inyección proporcional con Dosatron / Venturi

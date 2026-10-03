@@ -2266,6 +2266,11 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                                 </span>
                               </div>
                               <div className="flex items-center gap-1 font-mono text-[9.5px]">
+                                {ev.volumenTanqueDirectoLitros && (
+                                  <span className="font-bold text-slate-700 bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200">
+                                    🛢️ {ev.volumenTanqueDirectoLitros} L
+                                  </span>
+                                )}
                                 {ev.conductividadObjetivo && (
                                   <span className="font-bold text-[#00652c] bg-[#d3ffd5] px-1.5 py-0.2 rounded border border-[#79db8d]">
                                     CE: {ev.conductividadObjetivo}
@@ -2307,12 +2312,31 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                               </div>
                             ) : (
                               <div className="bg-[#faf8ff] p-1.5 rounded border border-[#eaedff] space-y-0.5 text-[10px]">
-                                {(ev.productos || []).map((l, lIdx) => (
-                                  <div key={lIdx} className="flex justify-between py-0.5 border-b border-slate-100 last:border-0 font-mono">
-                                    <span className="font-body text-slate-800">{l.producto}</span>
-                                    <strong className="text-[#00652c] ml-1">{l.dosis} {l.unidad}</strong>
-                                  </div>
-                                ))}
+                                {(ev.productos || []).map((l, lIdx) => {
+                                  const esSuplemento = l.esSuplemento || /tricho|nemati|bioact|verango|nimitz|rootex|kelpak|humic|ácido h|organ/i.test(l.producto || '');
+                                  return (
+                                    <div key={lIdx} className="flex justify-between items-center py-0.5 border-b border-slate-100 last:border-0 font-mono">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="font-body text-slate-800">{l.producto}</span>
+                                        {esSuplemento && (
+                                          <span className="text-[8px] font-sans font-semibold bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded border border-emerald-200">
+                                            🌿 Suplemento / Biológico
+                                          </span>
+                                        )}
+                                      </div>
+                                      <strong className="text-[#00652c] ml-1">{l.dosis} {l.unidad}</strong>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {ev.analisisIa && (
+                              <div className="bg-emerald-50/80 border border-emerald-200 rounded p-1.5 mt-1 text-[9.5px]">
+                                <span className="font-bold text-emerald-800 flex items-center gap-1 mb-0.5">
+                                  <span>✨</span> Dictamen Técnico IA:
+                                </span>
+                                <p className="text-slate-700 leading-snug">{ev.analisisIa}</p>
                               </div>
                             )}
 

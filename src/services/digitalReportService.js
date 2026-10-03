@@ -217,6 +217,7 @@ export function generarHtmlReporte(datos = {}) {
                   <div class="event-meta-chips">
                     ${ev.modalidadNombre ? `<span>⚙️ ${escapeHtml(ev.modalidadNombre)}</span>` : ''}
                     ${ev.volumenTanqueMadreLitros ? `<span>🛢️ Tanque Madre: ${ev.volumenTanqueMadreLitros} L</span>` : ''}
+                    ${ev.volumenTanqueDirectoLitros ? `<span>🛢️ Tanque Directo: ${ev.volumenTanqueDirectoLitros} L</span>` : ''}
                     ${ev.relacionInyeccion ? `<span>💉 Inyección: ${escapeHtml(ev.relacionInyeccion)}</span>` : ''}
                     ${ev.conductividadObjetivo ? `<span>⚡ CE: ${escapeHtml(ev.conductividadObjetivo)}</span>` : ''}
                     ${ev.phObjetivo ? `<span>🧪 pH: ${escapeHtml(ev.phObjetivo)}</span>` : ''}
@@ -252,14 +253,19 @@ export function generarHtmlReporte(datos = {}) {
 
                   ${ev.productos?.length > 0 ? `
                     <div class="tank-box tank-general">
-                      <div class="tank-label">📦 INSUMOS DE APLICACIÓN DIRECTA</div>
+                      <div class="tank-label">📦 INSUMOS DE APLICACIÓN DIRECTA ${ev.volumenTanqueDirectoLitros ? `(${ev.volumenTanqueDirectoLitros} L)` : ''}</div>
                       <ul class="tank-list">
-                        ${ev.productos.map(l => `
+                        ${ev.productos.map(l => {
+                          const esSuplemento = l.esSuplemento || /tricho|nemati|bioact|verango|nimitz|rootex|kelpak|humic|ácido h|organ/i.test(l.producto || '');
+                          return `
                           <li>
-                            <strong>${escapeHtml(l.producto)}</strong>
+                            <div>
+                              <strong>${escapeHtml(l.producto)}</strong>
+                              ${esSuplemento ? `<span style="display:inline-block; font-size:10px; background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; padding:1px 6px; border-radius:10px; margin-left:6px; font-weight:600;">🌿 Suplemento / Biológico</span>` : ''}
+                            </div>
                             <span class="tank-dose">${escapeHtml(l.dosis)} ${escapeHtml(l.unidad || '')}</span>
                           </li>
-                        `).join('')}
+                        `;}).join('')}
                       </ul>
                     </div>
                   ` : ''}

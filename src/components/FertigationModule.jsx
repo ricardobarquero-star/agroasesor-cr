@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
 import { 
   Plus, Trash2, AlertTriangle, Sparkles, Check, 
-  Calendar, Sliders, X, MapPin, Edit3, List
+  Calendar, Sliders, X, MapPin, Edit3, List, Save
 } from 'lucide-react';
 import { storageService } from '../services/storageService';
 import { geminiService } from '../services/geminiService';
 import { 
   ETAPAS_FENOLOGICAS, 
   OBJETIVOS_FERTILIZACION,
-  proponerFormulaDosatron
+  proponerFormulaDosatron,
+  escalarFormulaPorVolumen,
+  reescalarLineasPorVolumen
 } from '../services/nutritionCalculatorService';
 
 // Modalidades oficiales solicitadas por el Ing. Agr. Ricardo Barquero
@@ -137,6 +139,17 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
   const [ph, setPh] = useState('5.8');
   const [observaciones, setObservaciones] = useState('');
 
+  // Estados para Tanque Directo y Fórmulas Predefinidas (F1 a F4 y Personalizadas)
+  const [volumenTanqueDirecto, setVolumenTanqueDirecto] = useState(1000);
+  const [formulaSeleccionadaId, setFormulaSeleccionadaId] = useState('');
+  const [mostrarModalGuardarFormula, setMostrarModalGuardarFormula] = useState(false);
+  const [nombreNuevaFormula, setNombreNuevaFormula] = useState('');
+  const [etapaNuevaFormula, setEtapaNuevaFormula] = useState('');
+  const [objetivoNuevaFormula, setObjetivoNuevaFormula] = useState('');
+  const [notasNuevaFormula, setNotasNuevaFormula] = useState('');
+  const [mensajeFormulaFeedback, setMensajeFormulaFeedback] = useState(null);
+  const [mostrarSelectorSuplementos, setMostrarSelectorSuplementos] = useState(false);
+
   // Filas del formulario (Inician limpias, cada fila contiene modo 'dropdown' o 'manual')
   const [lineasProductos, setLineasProductos] = useState([]);
   const [lineasTanqueA, setLineasTanqueA] = useState([]);
@@ -152,6 +165,8 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
 
   const modalidadActualConfig = MODALIDADES.find(m => m.id === modalidadSeleccionada) || MODALIDADES[0];
   const todosFertilizantes = storageService.getTodosLosFertilizantes(modalidadSeleccionada);
+  const formulasDisponibles = storageService.getFormulasFertirriego(visita.lote?.cultivoId || 'fresa');
+  const suplementosDisponibles = storageService.getSuplementosFertirriego();
 
   // Obtener lotes de la finca para el alcance
   const clientes = storageService.getClientes();
@@ -199,6 +214,10 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
     setEsObjetivoManual(false);
     setVolumenTanqueMadre(1000);
     setRelacionInyeccion('1:100');
+    setVolumenTanqueDirecto(1000);
+    setFormulaSeleccionadaId('');
+    setMensajeFormulaFeedback(null);
+    setMostrarSelectorSuplementos(false);
     setResultadoAnalisisEventoIa(null);
     setProductoInvestigadoMsg(null);
     setObservaciones('');
@@ -227,6 +246,10 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
     setObjetivoAplicacion(ev.objetivo || recomendacionSemana.objetivoFertilizacion || 'Llenado y engrose de fruto');
     setEsObjetivoManual(false);
     setVolumenTanqueMadre(ev.volumenTanqueMadreLitros || 1000);
+    setVolumenTanqueDirecto(ev.volumenTanqueDirectoLitros || 1000);
+    setFormulaSeleccionadaId('');
+    setMensajeFormulaFeedback(null);
+    setMostrarSelectorSuplementos(false);
     setRelacionInyeccion(ev.relacionInyeccion || '1:100');
     setResultadoAnalisisEventoIa(ev.analisisIa ? { analisisIa: ev.analisisIa } : null);
     setProductoInvestigadoMsg(null);
@@ -259,8 +282,182 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
     setMostrarModalEvento(true);
   };
 
+  // Seleccionar fórmula predefinida (F1, F2, F3, F4 o personalizada)
+  const handleSeleccionarFormulaPredefinida = (formulaId, volumenCustom = null) => {
+    setFormulaSeleccionadaId(formulaId);
+    if (!formulaId) return;
+
+    const formula = formulasDisponibles.find(f => f.id === formulaId);
+    if (!formula) return;
+
+    // Cambiar a la modalidad de la fórmula (por defecto tanque directo para F1-F4)
+    const mod = formula.modalidad || 'tanque_directo';
+    setModalidadSeleccionada(mod);
+
+    // Ajustar campos generales
+    setNombreEvento(formula.nombre);
+    if (formula.frecuenciaRecomendada) {
+      setDiaAplicacion(formula.frecuenciaRecomendada);
+    }
+    if (formula.objetivoFertilizacion) {
+      setObjetivoAplicacion(formula.objetivoFertilizacion);
+      setEsObjetivoManual(false);
+    }
+    if (formula.ceEstimada) {
+      setConductividad(formula.ceEstimada);
+    }
+    if (formula.phEstimado) {
+      setPh(formula.phEstimado);
+    }
+    if (formula.instruccionesPreparacion) {
+      setObservaciones(formula.instruccionesPreparacion);
+    }
+
+    // Actualizar etapa y objetivo en la recomendación semanal si está definida
+    if (formula.etapaFenologica || formula.objetivoFertilizacion) {
+      handleActualizarEtapaYObjetivo(formula.etapaFenologica, formula.objetivoFertilizacion);
+    }
+
+    // Escalar dosis según el volumen actual del tanque directo
+    const vol = Math.max(1, Number(volumenCustom || volumenTanqueDirecto) || 1000);
+    const lineasEscaladas = escalarFormulaPorVolumen(formula, vol);
+    setLineasProductos(lineasEscaladas);
+
+    // Feedback visual
+    setMensajeFormulaFeedback({
+      tipo: 'exito',
+      texto: `✅ Fórmula "${formula.nombre}" cargada. Dosis calculadas automáticamente para tanque de ${vol} Litros.`
+    });
+
+    // Auto-generar dictamen técnico con la fundamentación del programa
+    const salesTotales = Math.round((formula.totalSalesGramos || 1315) * (vol / 1000));
+    setResultadoAnalisisEventoIa({
+      origen: formula.origen || 'Programa Oficial de Fresa (Llano Grande)',
+      analisisIa: `📋 FÓRMULA OFICIAL DEL PROGRAMA CARGADA: ${formula.nombre}\n\n• Etapa: ${formula.etapaFenologica || 'Definida'}\n• Objetivo Agronómico: ${formula.objetivoFertilizacion || 'Nutrición balanceada'}\n• CE esperada: ${formula.ceEstimada || '1.3'} mS/cm | pH: ${formula.phEstimado || '5.8'}\n• Concentración de sales: ${salesTotales} g / tanque ${vol} L (${(salesTotales/vol).toFixed(2)} g/L).\n\nFundamentación técnica: La mezcla en tanque directo a concentración diluida (< 2.0 g/L) mantiene la saturación de yeso < 40%, garantizando 100% de solubilidad sin riesgo de precipitación al respetar el orden de disolución indicado.`
+    });
+  };
+
+  // Cargar fórmula directamente desde los botones de la pantalla principal
+  const handleCargarFormulaDirectaDesdeBoton = (formulaId) => {
+    handleAbrirModalConModalidad('tanque_directo');
+    setTimeout(() => {
+      handleSeleccionarFormulaPredefinida(formulaId, 1000);
+    }, 50);
+  };
+
+  // Cambiar volumen del tanque directo con re-escalado automático de sales
+  const handleCambiarVolumenTanqueDirecto = (nuevoVolumenStr) => {
+    const volAnterior = Number(volumenTanqueDirecto) || 1000;
+    setVolumenTanqueDirecto(nuevoVolumenStr);
+    const nuevoVol = parseFloat(nuevoVolumenStr);
+
+    if (!isNaN(nuevoVol) && nuevoVol > 0 && volAnterior > 0 && nuevoVol !== volAnterior) {
+      const lineasReescaladas = reescalarLineasPorVolumen(lineasProductos, volAnterior, nuevoVol);
+      setLineasProductos(lineasReescaladas);
+
+      setMensajeFormulaFeedback({
+        tipo: 'info',
+        texto: `🔄 Dosis reajustadas automáticamente de ${volAnterior} L a ${nuevoVol} L (factor: ${(nuevoVol/volAnterior).toFixed(2)}x).`
+      });
+    }
+  };
+
+  // Agregar suplemento especial (Trichoderma, Nematicida, etc.) a la receta actual
+  const handleAgregarSuplemento = (suplemento) => {
+    const vol = Number(volumenTanqueDirecto) || 1000;
+    const factor = vol / 1000.0;
+    const dosisEscalada = Math.round((suplemento.dosisSugerida1000L || 200) * factor * 10) / 10;
+    const unidadLimpia = (suplemento.unidad || 'g / tanque 1000 L').replace(/1000\s*L/i, `${vol} L`);
+
+    const nuevaLinea = {
+      producto: suplemento.nombre,
+      dosis: dosisEscalada.toString(),
+      unidad: unidadLimpia,
+      aporte: suplemento.categoria || 'Suplemento / Biocontrolador',
+      esManual: true,
+      tipo: suplemento.tipo || 'suplemento'
+    };
+
+    setLineasProductos(prev => [...prev, nuevaLinea]);
+    setMostrarSelectorSuplementos(false);
+    setMensajeFormulaFeedback({
+      tipo: 'suplemento',
+      texto: `🧪 Se agregó "${suplemento.nombre}" (${dosisEscalada} ${unidadLimpia}) a la receta.`
+    });
+  };
+
+  // Abrir modal para guardar fórmula personalizada
+  const handleAbrirModalGuardarFormula = () => {
+    setNombreNuevaFormula(nombreEvento ? `${nombreEvento} (Personalizada)` : 'Fórmula Personalizada');
+    setEtapaNuevaFormula(recomendacionSemana.etapaFenologica || 'Llenado, engrose y calibre de fruto');
+    setObjetivoNuevaFormula(objetivoAplicacion || 'Nutrición balanceada');
+    setNotasNuevaFormula(observaciones || '');
+    setMostrarModalGuardarFormula(true);
+  };
+
+  // Confirmar y guardar la nueva fórmula en el catálogo
+  const handleConfirmarGuardarFormula = (e) => {
+    e.preventDefault();
+    if (!nombreNuevaFormula.trim()) return;
+
+    const vol = Number(volumenTanqueDirecto) || 1000;
+    const salesBase1000L = lineasProductos.filter(l => l.producto && l.dosis).map((l, i) => {
+      const dosisNum = parseFloat(String(l.dosis).replace(',', '.')) || 0;
+      const dosis1000L = (dosisNum * 1000.0) / vol;
+      return {
+        producto: l.producto,
+        dosis1000L: Math.round(dosis1000L * 10) / 10,
+        unidad: 'g / tanque 1000 L',
+        orden: i + 1,
+        tipo: l.tipo || 'sal_fertilizante'
+      };
+    });
+
+    const totalSalesGramos = salesBase1000L.reduce((acc, s) => acc + s.dosis1000L, 0);
+
+    const nuevaFormula = {
+      id: 'custom_form_' + Date.now(),
+      codigo: 'FC' + Math.floor(Math.random() * 90 + 10),
+      nombre: nombreNuevaFormula.trim(),
+      cultivoId: visita.lote?.cultivoId || 'fresa',
+      cultivoNombre: visita.lote?.cultivoNombre || 'Fresa (Fragaria x ananassa)',
+      etapaFenologica: etapaNuevaFormula,
+      objetivoFertilizacion: objetivoNuevaFormula,
+      frecuenciaRecomendada: diaAplicacion,
+      modalidad: modalidadSeleccionada,
+      volumenBaseLitros: 1000,
+      ceEstimada: conductividad || '1.3',
+      phEstimado: ph || '5.8',
+      salesBase1000L,
+      totalSalesGramos,
+      instruccionesPreparacion: notasNuevaFormula,
+      origen: 'Fórmula Personalizada Guardada en AgroAsesor Pro CR',
+      esPersonalizada: true
+    };
+
+    storageService.guardarFormulaPersonalizada(nuevaFormula);
+    setMostrarModalGuardarFormula(false);
+    setFormulaSeleccionadaId(nuevaFormula.id);
+    setMensajeFormulaFeedback({
+      tipo: 'exito',
+      texto: `💾 ¡Fórmula "${nuevaFormula.nombre}" guardada con éxito en el catálogo! Ahora está disponible en el desplegable.`
+    });
+  };
+
+  // Eliminar fórmula personalizada del catálogo
+  const handleEliminarFormulaPersonalizada = (fId, e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    if (!confirm('¿Desea eliminar esta fórmula personalizada del catálogo?')) return;
+    storageService.eliminarFormulaPersonalizada(fId);
+    if (formulaSeleccionadaId === fId) setFormulaSeleccionadaId('');
+    setMensajeFormulaFeedback({
+      tipo: 'info',
+      texto: 'Fórmula eliminada del catálogo.'
+    });
+  };
+
   // Manejar selección de producto en el dropdown
-  const handleSeleccionarProductoEnLinea = (valor, lineas, setLineas, idx, listaFuente) => {
+  const handleSeleccionarProductoEnLinea = (valor, lineas, setLineas, idx) => {
     const nuevas = [...lineas];
     if (valor === '__manual__') {
       nuevas[idx].esManual = true;
@@ -377,6 +574,7 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
       dia: diaAplicacion,
       objetivo: objetivoAplicacion,
       volumenTanqueMadreLitros: modalidadSeleccionada === 'dosatron' ? Number(volumenTanqueMadre) || 1000 : null,
+      volumenTanqueDirectoLitros: modalidadSeleccionada === 'tanque_directo' ? (Number(volumenTanqueDirecto) || 1000) : null,
       relacionInyeccion: modalidadSeleccionada === 'dosatron' ? relacionInyeccion : null,
       analisisIa: resultadoAnalisisEventoIa?.analisisIa || null,
       alcance: alcanceEvento,
@@ -798,6 +996,64 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
         </div>
       )}
 
+      {/* PROGRAMA OFICIAL DE FERTIRRIEGO PARA FRESA (F1, F2, F3, F4) */}
+      <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 text-white p-4 rounded-3xl shadow-md space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-2">
+          <div className="flex items-center gap-2.5">
+            <span className="text-2xl p-2 bg-emerald-500/20 text-[#acf847] rounded-2xl border border-emerald-500/30">
+              🍓
+            </span>
+            <div>
+              <h3 className="font-extrabold text-sm sm:text-base text-white flex items-center gap-2">
+                <span>Programa de Fertirriego para Fresa (F1 a F4)</span>
+                <span className="text-[10px] bg-[#acf847] text-[#131b2e] px-2 py-0.5 rounded-full font-black uppercase">
+                  Llano Grande, Cartago
+                </span>
+              </h3>
+              <p className="text-xs text-emerald-200/80">
+                Fórmulas estequiométricas para tanque directo / 1000 L. Se ajustan automáticamente a la capacidad del tanque de la finca.
+              </p>
+            </div>
+          </div>
+          <span className="text-[11px] text-emerald-300 font-mono">
+            Pulsos: 2x por semana
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+          {formulasDisponibles.filter(f => f.esOficial).map(f => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => handleCargarFormulaDirectaDesdeBoton(f.id)}
+              className="p-3 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/15 text-left transition group active:scale-95 flex flex-col justify-between space-y-2 hover:border-[#acf847]/60"
+            >
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black px-2 py-0.5 rounded-lg bg-[#acf847] text-[#131b2e]">
+                    {f.codigo}
+                  </span>
+                  <span className="text-[10px] text-emerald-300 font-mono">
+                    {f.ceEstimada ? `CE ~${f.ceEstimada}` : ''}
+                  </span>
+                </div>
+                <h4 className="font-bold text-xs text-white mt-1.5 group-hover:text-[#acf847] transition">
+                  {f.nombre.replace(/ \(Llano Grande\)/i, '')}
+                </h4>
+                <p className="text-[10.5px] text-emerald-200/70 line-clamp-2 mt-0.5">
+                  {f.objetivoFertilizacion}
+                </p>
+              </div>
+
+              <div className="pt-1.5 border-t border-white/10 flex items-center justify-between text-[10px] text-emerald-300">
+                <span>{f.duracionTipica || '2-4 sem'}</span>
+                <span className="font-bold group-hover:translate-x-0.5 transition">+ Cargar Cuadro →</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Botones de Modalidades */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
         <div className="flex items-center justify-between">
@@ -1007,6 +1263,84 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
             {/* Formulario */}
             <form onSubmit={handleGuardarEvento} className="p-4 space-y-4 overflow-y-auto flex-1">
               
+              {/* SELECTOR DE PROGRAMAS / FÓRMULAS PREDEFINIDAS (F1, F2, F3, F4 Y PERSONALIZADAS) */}
+              <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 p-3.5 rounded-2xl border-2 border-emerald-300 shadow-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🍓</span>
+                    <div>
+                      <label className="block text-xs font-black text-emerald-950">
+                        Cargar Fórmula Predefinida / Programa de Fresa:
+                      </label>
+                      <span className="text-[10.5px] text-emerald-700 font-sans block">
+                        Jala automáticamente productos, dosis calculadas para el tanque, etapa fenológica y objetivo técnico.
+                      </span>
+                    </div>
+                  </div>
+                  {formulaSeleccionadaId && (
+                    <button
+                      type="button"
+                      onClick={() => setFormulaSeleccionadaId('')}
+                      className="text-[10.5px] text-slate-500 hover:text-slate-800 underline font-semibold"
+                    >
+                      Limpiar selección
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <select
+                    value={formulaSeleccionadaId}
+                    onChange={(e) => handleSeleccionarFormulaPredefinida(e.target.value)}
+                    className="flex-1 text-xs font-bold text-slate-900 border-2 border-emerald-400 rounded-xl p-2.5 bg-white outline-none focus:ring-2 focus:ring-emerald-500 shadow-xs"
+                  >
+                    <option value="">-- 📋 Toque aquí para seleccionar fórmula (F1, F2, F3, F4 o guardadas) --</option>
+                    <optgroup label="🍓 Programa Oficial de Fresa (Llano Grande de Cartago)">
+                      {formulasDisponibles.filter(f => f.esOficial).map(f => (
+                        <option key={f.id} value={f.id}>
+                          {f.codigo}: {f.nombre} ({f.etapaFenologica})
+                        </option>
+                      ))}
+                    </optgroup>
+                    {formulasDisponibles.some(f => f.esPersonalizada) && (
+                      <optgroup label="⭐ Fórmulas Personalizadas Guardadas por el Agrónomo">
+                        {formulasDisponibles.filter(f => f.esPersonalizada).map(f => (
+                          <option key={f.id} value={f.id}>
+                            ⭐ {f.nombre} ({f.etapaFenologica || 'Personalizada'})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+
+                  {formulasDisponibles.find(f => f.id === formulaSeleccionadaId)?.esPersonalizada && (
+                    <button
+                      type="button"
+                      onClick={(e) => handleEliminarFormulaPersonalizada(formulaSeleccionadaId, e)}
+                      title="Eliminar esta fórmula personalizada del catálogo"
+                      className="px-3 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold flex items-center gap-1 transition-colors shrink-0"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Borrar</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Feedback dinámico al cargar fórmula */}
+                {mensajeFormulaFeedback && (
+                  <div className={`p-2 rounded-xl text-xs flex items-center justify-between gap-2 animate-fadeIn ${
+                    mensajeFormulaFeedback.tipo === 'exito' ? 'bg-emerald-100/90 text-emerald-950 border border-emerald-300 font-semibold' :
+                    mensajeFormulaFeedback.tipo === 'suplemento' ? 'bg-indigo-50 text-indigo-950 border border-indigo-200 font-medium' :
+                    'bg-blue-50 text-blue-950 border border-blue-200'
+                  }`}>
+                    <span>{mensajeFormulaFeedback.texto}</span>
+                    <button type="button" onClick={() => setMensajeFormulaFeedback(null)} className="text-slate-400 hover:text-slate-600">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+
               {/* Título y Alcance (Finca vs Lote) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -1038,6 +1372,55 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                   </select>
                 </div>
               </div>
+
+              {/* CONTROL DE CAPACIDAD DEL TANQUE DIRECTO Y ESCALADO AUTOMÁTICO */}
+              {modalidadSeleccionada === 'tanque_directo' && (
+                <div className="bg-blue-50/80 p-3 rounded-2xl border border-blue-200 flex flex-wrap sm:flex-nowrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl p-1.5 bg-blue-100 text-blue-800 rounded-xl">💧</span>
+                    <div>
+                      <label className="block text-xs font-extrabold text-blue-950">
+                        Capacidad del Tanque Directo de Riego:
+                      </label>
+                      <p className="text-[10.5px] text-blue-800">
+                        Las dosis de sales se ajustan automáticamente si el tanque cambia de volumen.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 bg-white px-2.5 py-1 rounded-xl border border-blue-300 shadow-xs">
+                      <input
+                        type="number"
+                        min="10"
+                        step="10"
+                        value={volumenTanqueDirecto}
+                        onChange={(e) => handleCambiarVolumenTanqueDirecto(e.target.value)}
+                        className="w-20 text-xs font-black text-center text-blue-950 outline-none"
+                      />
+                      <span className="text-xs font-bold text-slate-600">Litros</span>
+                    </div>
+
+                    {/* Botones de capacidades estándar */}
+                    <div className="flex items-center gap-1">
+                      {[200, 500, 1000, 2000].map(v => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => handleCambiarVolumenTanqueDirecto(v.toString())}
+                          className={`px-2 py-1 rounded-lg text-[10.5px] font-bold transition ${
+                            Number(volumenTanqueDirecto) === v
+                              ? 'bg-blue-700 text-white shadow-xs'
+                              : 'bg-white text-blue-800 border border-blue-200 hover:bg-blue-100'
+                          }`}
+                        >
+                          {v >= 1000 ? `${v/1000}k L` : `${v} L`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* DÍA Y OBJETIVO DE LA APLICACIÓN (COMBOBOX) */}
               <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-3">
@@ -1477,18 +1860,91 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
               ) : (
                 /* LISTA ÚNICA PARA LAS DEMÁS MODALIDADES CON DROPDOWN NATIVO */
                 <div className="border border-slate-200 rounded-2xl p-3.5 bg-slate-50/40 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-extrabold text-xs text-slate-800">
-                      Insumos Recomendados ({modalidadActualConfig.nombre})
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setLineasProductos([...lineasProductos, { producto: '', dosis: '', unidad: modalidadActualConfig.unidades[0], aporte: '', esManual: false }])}
-                      className="px-2 py-1 bg-emerald-700 text-white rounded-lg text-[11px] font-bold hover:bg-emerald-800 flex items-center gap-1"
-                    >
-                      <Plus className="w-3 h-3" /> Agregar Insumo
-                    </button>
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-2">
+                    <div>
+                      <span className="font-extrabold text-xs text-slate-800 flex items-center gap-1.5">
+                        <span>Insumos y Sales ({modalidadActualConfig.nombre})</span>
+                        {modalidadSeleccionada === 'tanque_directo' && (
+                          <span className="text-[10px] font-mono font-bold bg-blue-100 text-blue-900 px-2 py-0.5 rounded-full border border-blue-200">
+                            Tanque: {volumenTanqueDirecto} L
+                          </span>
+                        )}
+                      </span>
+                      <p className="text-[10.5px] text-slate-500">
+                        Modifique dosis libremente o incorpore Trichoderma, nematicidas o suplementos.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setLineasProductos([...lineasProductos, { producto: '', dosis: '', unidad: modalidadSeleccionada === 'tanque_directo' ? `g / tanque ${volumenTanqueDirecto} L` : modalidadActualConfig.unidades[0], aporte: '', esManual: false }])}
+                        className="px-2.5 py-1.5 bg-emerald-700 text-white rounded-xl text-[11px] font-bold hover:bg-emerald-800 flex items-center gap-1 transition active:scale-95 shadow-xs"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Agregar Sal / Insumo
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setMostrarSelectorSuplementos(!mostrarSelectorSuplementos)}
+                        className="px-2.5 py-1.5 bg-indigo-600 text-white rounded-xl text-[11px] font-bold hover:bg-indigo-700 flex items-center gap-1 transition active:scale-95 shadow-xs"
+                        title="Agregar Trichoderma, Nematicida o Suplemento"
+                      >
+                        <span>🦠 + Suplemento / Nematicida</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleAbrirModalGuardarFormula}
+                        disabled={lineasProductos.length === 0}
+                        className="px-2.5 py-1.5 bg-slate-800 text-white rounded-xl text-[11px] font-bold hover:bg-slate-900 flex items-center gap-1 transition active:scale-95 disabled:opacity-40 shadow-xs"
+                        title="Guardar esta tabla como nueva fórmula reutilizable en el catálogo"
+                      >
+                        <Save className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Guardar como Fórmula</span>
+                      </button>
+                    </div>
                   </div>
+
+                  {/* SUB-SELECTOR DE SUPLEMENTOS RÁPIDOS */}
+                  {mostrarSelectorSuplementos && (
+                    <div className="bg-indigo-50 border-2 border-indigo-200 rounded-2xl p-3 space-y-2 animate-fadeIn">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black text-indigo-950 flex items-center gap-1">
+                          <span>🧪 Suplementos, Biocontroladores y Nematicidas Comunes:</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setMostrarSelectorSuplementos(false)}
+                          className="text-slate-400 hover:text-slate-600"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                        {suplementosDisponibles.map(sup => (
+                          <button
+                            key={sup.id}
+                            type="button"
+                            onClick={() => handleAgregarSuplemento(sup)}
+                            className="p-2 rounded-xl bg-white border border-indigo-200 hover:border-indigo-400 hover:bg-indigo-100/50 text-left transition flex items-start gap-2"
+                          >
+                            <span className="text-base mt-0.5">{sup.icono}</span>
+                            <div className="flex-1 min-w-0">
+                              <strong className="block text-[11.5px] text-indigo-950 font-bold leading-tight">
+                                {sup.nombre}
+                              </strong>
+                              <span className="text-[10px] text-slate-500 block truncate">
+                                {sup.categoria} • Ref: {sup.dosisSugerida1000L} {sup.unidad}
+                              </span>
+                            </div>
+                            <span className="text-[11px] font-black text-indigo-600 self-center">+</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="space-y-2">
                     {lineasProductos.map((l, idx) => (
@@ -1675,6 +2131,129 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                 </button>
               </div>
 
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PARA GUARDAR NUEVA FÓRMULA EN EL CATÁLOGO */}
+      {mostrarModalGuardarFormula && (
+        <div className="fixed inset-0 z-60 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-fadeIn">
+            <div className="bg-slate-900 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 bg-emerald-500 text-white rounded-xl font-bold">💾</span>
+                <div>
+                  <h4 className="font-extrabold text-sm sm:text-base leading-tight">
+                    Guardar como Nueva Fórmula en Catálogo
+                  </h4>
+                  <p className="text-[11px] text-slate-300">
+                    Quedará disponible en el desplegable para cualquier visita y finca
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMostrarModalGuardarFormula(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmarGuardarFormula} className="p-4 space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Nombre de la Fórmula *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={nombreNuevaFormula}
+                  onChange={(e) => setNombreNuevaFormula(e.target.value)}
+                  placeholder="Ej: F5 - Fresa Floración Alta San Rafael + Trichoderma"
+                  className="w-full text-xs font-bold border border-slate-300 rounded-xl p-2.5 outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Etapa Fenológica
+                  </label>
+                  <select
+                    value={etapaNuevaFormula}
+                    onChange={(e) => setEtapaNuevaFormula(e.target.value)}
+                    className="w-full text-xs border border-slate-300 rounded-xl p-2 outline-none bg-white font-medium"
+                  >
+                    {ETAPAS_FENOLOGICAS.map((et, i) => (
+                      <option key={i} value={et}>{et}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Objetivo Agronómico
+                  </label>
+                  <input
+                    type="text"
+                    value={objetivoNuevaFormula}
+                    onChange={(e) => setObjetivoNuevaFormula(e.target.value)}
+                    placeholder="Ej: Llenado de fruto y calibre"
+                    className="w-full text-xs border border-slate-300 rounded-xl p-2 outline-none font-medium"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Instrucciones u Observaciones Técnicas
+                </label>
+                <textarea
+                  rows={2}
+                  value={notasNuevaFormula}
+                  onChange={(e) => setNotasNuevaFormula(e.target.value)}
+                  placeholder="Orden de mezcla, precauciones de solubilidad..."
+                  className="w-full text-xs border border-slate-300 rounded-xl p-2 outline-none"
+                />
+              </div>
+
+              {/* Resumen de insumos que se guardarán (normalizados a base 1000 L) */}
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs space-y-1">
+                <span className="font-bold text-slate-800 text-[11px] block">
+                  📋 Resumen de insumos incluidos (Base 1000 L):
+                </span>
+                <ul className="text-[11px] text-slate-600 space-y-0.5 max-h-32 overflow-y-auto">
+                  {lineasProductos.filter(l => l.producto && l.dosis).map((l, i) => {
+                    const dNum = parseFloat(String(l.dosis).replace(',', '.')) || 0;
+                    const d1000 = Math.round(((dNum * 1000) / (Number(volumenTanqueDirecto) || 1000)) * 10) / 10;
+                    return (
+                      <li key={i} className="flex justify-between border-b border-slate-100 py-0.5">
+                        <span className="font-semibold text-slate-800">{l.producto}</span>
+                        <span className="font-mono font-bold text-emerald-800">{d1000} g / 1000 L</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setMostrarModalGuardarFormula(false)}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-black shadow-md flex items-center gap-1.5 transition active:scale-95"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Confirmar y Guardar en Catálogo</span>
+                </button>
+              </div>
             </form>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import { crAgroDatabase } from '../data/crAgroDatabase';
+import { FORMULAS_FERTIRRIEGO_BASE, SUPLEMENTOS_FERTIRRIEGO_CR } from '../data/fertigationPrograms';
 
 const STORAGE_KEYS = {
   CLIENTES: 'agroasesor_clientes_db_v2',
@@ -6,7 +7,8 @@ const STORAGE_KEYS = {
   VISITA_ACTUAL_ID: 'agroasesor_visita_activa_id_v2',
   CATALOGO_PERSONALIZADO: 'agroasesor_custom_catalog_v2',
   PERFIL_INGENIERO: 'agroasesor_perfil_ingeniero_v2',
-  REPORTES_EXPEDIENTE: 'agroasesor_reportes_expediente_v2'
+  REPORTES_EXPEDIENTE: 'agroasesor_reportes_expediente_v2',
+  FORMULAS_PREDEFINIDAS: 'agroasesor_formulas_predefinidas_v2'
 };
 
 const PERFIL_INGENIERO_DEFECTO = {
@@ -869,9 +871,83 @@ export const storageService = {
       if (data.visitas) localStorage.setItem(STORAGE_KEYS.VISITAS, JSON.stringify(data.visitas));
       if (data.catalogoPersonalizado) localStorage.setItem(STORAGE_KEYS.CATALOGO_PERSONALIZADO, JSON.stringify(data.catalogoPersonalizado));
       if (data.reportesExpediente) localStorage.setItem(STORAGE_KEYS.REPORTES_EXPEDIENTE, JSON.stringify(data.reportesExpediente));
+      if (data.formulasPredefinidas) localStorage.setItem(STORAGE_KEYS.FORMULAS_PREDEFINIDAS, JSON.stringify(data.formulasPredefinidas));
       return { exito: true };
     } catch (e) {
       return { exito: false, error: e.message };
     }
   },
+
+  // ==========================================
+  // GESTIÓN DE PROGRAMAS Y FÓRMULAS DE FERTIRRIEGO
+  // ==========================================
+  getFormulasFertirriego(cultivoId = '') {
+    let custom = [];
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.FORMULAS_PREDEFINIDAS);
+      if (raw) {
+        custom = JSON.parse(raw);
+      }
+    } catch (e) {
+      console.warn('Error leyendo fórmulas personalizadas:', e);
+    }
+
+    const todas = [...FORMULAS_FERTIRRIEGO_BASE, ...custom];
+    if (!cultivoId) return todas;
+
+    const cId = cultivoId.toLowerCase();
+    return todas.filter(f => !f.cultivoId || f.cultivoId.toLowerCase() === cId || f.cultivoNombre?.toLowerCase().includes(cId));
+  },
+
+  guardarFormulaPersonalizada(formula) {
+    if (!formula || !formula.nombre) return null;
+    try {
+      let custom = [];
+      const raw = localStorage.getItem(STORAGE_KEYS.FORMULAS_PREDEFINIDAS);
+      if (raw) {
+        custom = JSON.parse(raw);
+      }
+
+      const id = formula.id && formula.id.startsWith('custom_form_') ? formula.id : ('custom_form_' + Date.now());
+      const formulaFinal = {
+        ...formula,
+        id,
+        esPersonalizada: true,
+        fechaCreacion: formula.fechaCreacion || new Date().toISOString()
+      };
+
+      const idx = custom.findIndex(f => f.id === id);
+      if (idx >= 0) {
+        custom[idx] = formulaFinal;
+      } else {
+        custom.push(formulaFinal);
+      }
+
+      localStorage.setItem(STORAGE_KEYS.FORMULAS_PREDEFINIDAS, JSON.stringify(custom));
+      return formulaFinal;
+    } catch (e) {
+      console.error('Error guardando fórmula personalizada:', e);
+      return null;
+    }
+  },
+
+  eliminarFormulaPersonalizada(formulaId) {
+    try {
+      let custom = [];
+      const raw = localStorage.getItem(STORAGE_KEYS.FORMULAS_PREDEFINIDAS);
+      if (raw) {
+        custom = JSON.parse(raw);
+      }
+      const filtradas = custom.filter(f => f.id !== formulaId);
+      localStorage.setItem(STORAGE_KEYS.FORMULAS_PREDEFINIDAS, JSON.stringify(filtradas));
+      return true;
+    } catch (e) {
+      console.error('Error eliminando fórmula:', e);
+      return false;
+    }
+  },
+
+  getSuplementosFertirriego() {
+    return SUPLEMENTOS_FERTIRRIEGO_CR;
+  }
 };
