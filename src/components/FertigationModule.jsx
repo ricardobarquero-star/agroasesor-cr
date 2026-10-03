@@ -1155,29 +1155,41 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
               {/* Cuadro de Fertilización y Pesaje para el Productor (Formato clásico: Sal, Dosis, Unidades) */}
               {(() => {
                 const volTanque = Number(ev.volumenTanqueDirectoLitros) || 1000;
-                const prodsDirectos = (ev.productos || []).map(p => normalizarSalDosisUnidad(p, volTanque));
+                const rawProducts = (Array.isArray(ev.productos) && ev.productos.length > 0)
+                  ? ev.productos
+                  : (Array.isArray(ev.lineasProductos) && ev.lineasProductos.length > 0)
+                    ? ev.lineasProductos
+                    : (Array.isArray(ev.sales) && ev.sales.length > 0)
+                      ? ev.sales
+                      : (Array.isArray(ev.fertilizantes) && ev.fertilizantes.length > 0)
+                        ? ev.fertilizantes
+                        : (ev.productos || []);
+
+                const prodsDirectos = rawProducts.map(p => normalizarSalDosisUnidad(p, volTanque)).filter(p => p.producto && p.producto.trim());
                 const totalDosisDirecto = prodsDirectos.reduce((acc, p) => acc + p.dosisNum, 0);
 
                 const volMadre = Number(ev.volumenTanqueMadreLitros) || 1000;
-                const prodsA = (ev.lineasTanqueA || []).map(p => normalizarSalDosisUnidad(p, volMadre));
+                const prodsA = (Array.isArray(ev.lineasTanqueA) ? ev.lineasTanqueA : []).map(p => normalizarSalDosisUnidad(p, volMadre)).filter(p => p.producto && p.producto.trim());
                 const totalDosisA = prodsA.reduce((acc, p) => acc + p.dosisNum, 0);
 
-                const prodsB = (ev.lineasTanqueB || []).map(p => normalizarSalDosisUnidad(p, volMadre));
+                const prodsB = (Array.isArray(ev.lineasTanqueB) ? ev.lineasTanqueB : []).map(p => normalizarSalDosisUnidad(p, volMadre)).filter(p => p.producto && p.producto.trim());
                 const totalDosisB = prodsB.reduce((acc, p) => acc + p.dosisNum, 0);
 
-                const esDual = ev.lineasTanqueA && ev.lineasTanqueB && (ev.lineasTanqueA.length > 0 || ev.lineasTanqueB.length > 0);
+                const tieneProdsDual = prodsA.length > 0 || prodsB.length > 0;
+                const esDual = (ev.modalidad === 'dosatron' && tieneProdsDual) || (prodsA.length > 0 && prodsB.length > 0);
                 const tieneSuplementos = prodsDirectos.some(it => it.esSuplemento);
+                const obsTexto = ev.observacionesPie || ev.observaciones || ev.instrucciones || '';
 
                 return (
                   <div className="space-y-3">
                     {/* CUADRO / TABLA ESTRUCTURADA DE FERTILIZACIÓN (3 COLUMNAS: SAL, DOSIS, UNIDADES) */}
-                    {!esDual && prodsDirectos.length > 0 && (
+                    {!esDual && (
                       <div className="border-2 border-emerald-300 rounded-2xl overflow-hidden bg-white shadow-sm">
                         <div className="bg-gradient-to-r from-emerald-800 to-teal-800 text-white px-3.5 py-2 flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
                             <span className="text-base">📋</span>
                             <span className="font-extrabold text-xs sm:text-sm">
-                              CUADRO DE FERTILIZACIÓN ({ev.nombreEvento || 'Fórmula Nutricional'})
+                              CUADRO DE FERTILIZACIÓN ({ev.nombreEvento || ev.nombre || 'Fórmula Nutricional'})
                             </span>
                           </div>
                           <span className="bg-white/20 border border-white/40 text-white px-2.5 py-0.5 rounded-full font-mono font-bold text-xs">
@@ -1195,40 +1207,50 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 font-mono">
-                              {prodsDirectos.map((it, idx) => (
-                                <tr key={idx} className="hover:bg-emerald-50/50 transition">
-                                  <td className="p-2.5 font-bold font-sans text-slate-900">
-                                    <div className="flex flex-wrap items-center gap-1.5">
-                                      <span>{it.producto}</span>
-                                      {it.esSuplemento && (
-                                        <span className="text-[9px] font-sans font-extrabold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-full border border-emerald-300">
-                                          🌿 Suplemento / Biológico
-                                        </span>
-                                      )}
-                                    </div>
-                                  </td>
-                                  <td className="p-2.5 text-center">
-                                    <span className="font-mono font-black text-emerald-900 bg-emerald-100/90 px-3 py-1 rounded-xl border border-emerald-300 inline-block text-sm">
-                                      {it.dosis}
-                                    </span>
-                                  </td>
-                                  <td className="p-2.5 text-center font-mono text-slate-600 font-bold">
-                                    {it.unidad}
+                              {prodsDirectos.length > 0 ? (
+                                prodsDirectos.map((it, idx) => (
+                                  <tr key={idx} className="hover:bg-emerald-50/50 transition">
+                                    <td className="p-2.5 font-bold font-sans text-slate-900">
+                                      <div className="flex flex-wrap items-center gap-1.5">
+                                        <span>{it.producto}</span>
+                                        {it.esSuplemento && (
+                                          <span className="text-[9px] font-sans font-extrabold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-full border border-emerald-300">
+                                            🌿 Suplemento / Biológico
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="p-2.5 text-center">
+                                      <span className="font-mono font-black text-emerald-900 bg-emerald-100/90 px-3 py-1 rounded-xl border border-emerald-300 inline-block text-sm">
+                                        {it.dosis}
+                                      </span>
+                                    </td>
+                                    <td className="p-2.5 text-center font-mono text-slate-600 font-bold">
+                                      {it.unidad}
+                                    </td>
+                                  </tr>
+                                ))
+                              ) : (
+                                <tr>
+                                  <td colSpan="3" className="p-3 text-center text-slate-500 italic font-body">
+                                    Sin sales especificadas todavía en esta aplicación.
                                   </td>
                                 </tr>
-                              ))}
+                              )}
                             </tbody>
-                            <tfoot>
-                              <tr className="bg-emerald-50 font-bold text-emerald-950 border-t-2 border-emerald-500 text-xs">
-                                <td className="p-3 font-extrabold font-sans">TOTAL DE SALES A DISOLVER</td>
-                                <td className="p-3 text-center font-mono font-black text-emerald-900 text-sm">
-                                  {totalDosisDirecto.toLocaleString()}
-                                </td>
-                                <td className="p-3 text-center font-mono font-bold text-emerald-800">
-                                  g / {volTanque} L
-                                </td>
-                              </tr>
-                            </tfoot>
+                            {prodsDirectos.length > 0 && (
+                              <tfoot>
+                                <tr className="bg-emerald-50 font-bold text-emerald-950 border-t-2 border-emerald-500 text-xs">
+                                  <td className="p-3 font-extrabold font-sans">TOTAL DE SALES A DISOLVER</td>
+                                  <td className="p-3 text-center font-mono font-black text-emerald-900 text-sm">
+                                    {totalDosisDirecto.toLocaleString()}
+                                  </td>
+                                  <td className="p-3 text-center font-mono font-bold text-emerald-800">
+                                    g / {volTanque} L
+                                  </td>
+                                </tr>
+                              </tfoot>
+                            )}
                           </table>
                         </div>
 
@@ -1250,9 +1272,9 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                             </ol>
                           </div>
 
-                          {ev.observacionesPie && (
+                          {obsTexto && (
                             <div className="bg-amber-50 border-l-4 border-amber-500 p-2.5 rounded-r-xl text-amber-950 text-[11.5px] leading-relaxed">
-                              <strong>👨‍🌾 Indicación Agronómica para el Productor:</strong> {ev.observacionesPie}
+                              <strong>👨‍🌾 Indicación Agronómica para el Productor:</strong> {obsTexto}
                             </div>
                           )}
 
@@ -1266,7 +1288,7 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                     )}
 
                     {/* CASO DOSATRON (TANQUE A Y TANQUE B) */}
-                    {(esDual || prodsA.length > 0 || prodsB.length > 0) && (
+                    {esDual && (
                       <div className="space-y-2">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           {prodsA.length > 0 && (

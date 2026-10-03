@@ -32,10 +32,10 @@ export function generarHtmlReporte(datos = {}) {
     lote = {},
     filtroLote = 'todos',
     perfilIngeniero = {},
-    hallazgosFiltrados = datos.hallazgosFiltrados || datos.hallazgos || [],
-    medicionesSuelo = datos.medicionesSuelo || [],
-    recFertirriegoFiltradas = datos.recFertirriegoFiltradas || datos.recomendacionesFertirriego || [],
-    recPlaguicidasFiltradas = datos.recPlaguicidasFiltradas || datos.recomendacionesPlaguicidas || [],
+    hallazgosFiltrados = datos.hallazgosFiltrados || datos.hallazgos || datos.visita?.hallazgos || [],
+    medicionesSuelo = datos.medicionesSuelo || datos.visita?.medicionesSuelo || [],
+    recFertirriegoFiltradas = datos.recFertirriegoFiltradas || datos.recomendacionesFertirriego || datos.visita?.recomendacionesFertirriego || [],
+    recPlaguicidasFiltradas = datos.recPlaguicidasFiltradas || datos.recomendacionesPlaguicidas || datos.visita?.recomendacionesPlaguicidas || [],
     analisisClimaIa = {},
     estadisticasClima = null,
     analisisEpidemiologico = {},
@@ -203,18 +203,30 @@ export function generarHtmlReporte(datos = {}) {
 
               ${(s.eventos || []).map(ev => {
                 const volTanque = Number(ev.volumenTanqueDirectoLitros) || 1000;
-                const prodsDirectos = (ev.productos || []).map(p => normalizarSalDosisUnidad(p, volTanque));
+                const rawProducts = (Array.isArray(ev.productos) && ev.productos.length > 0)
+                  ? ev.productos
+                  : (Array.isArray(ev.lineasProductos) && ev.lineasProductos.length > 0)
+                    ? ev.lineasProductos
+                    : (Array.isArray(ev.sales) && ev.sales.length > 0)
+                      ? ev.sales
+                      : (Array.isArray(ev.fertilizantes) && ev.fertilizantes.length > 0)
+                        ? ev.fertilizantes
+                        : (ev.productos || []);
+
+                const prodsDirectos = rawProducts.map(p => normalizarSalDosisUnidad(p, volTanque)).filter(p => p.producto && p.producto.trim());
                 const totalDosisDirecto = prodsDirectos.reduce((acc, p) => acc + p.dosisNum, 0);
 
                 const volMadre = Number(ev.volumenTanqueMadreLitros) || 1000;
-                const prodsA = (ev.lineasTanqueA || []).map(p => normalizarSalDosisUnidad(p, volMadre));
+                const prodsA = (Array.isArray(ev.lineasTanqueA) ? ev.lineasTanqueA : []).map(p => normalizarSalDosisUnidad(p, volMadre)).filter(p => p.producto && p.producto.trim());
                 const totalDosisA = prodsA.reduce((acc, p) => acc + p.dosisNum, 0);
 
-                const prodsB = (ev.lineasTanqueB || []).map(p => normalizarSalDosisUnidad(p, volMadre));
+                const prodsB = (Array.isArray(ev.lineasTanqueB) ? ev.lineasTanqueB : []).map(p => normalizarSalDosisUnidad(p, volMadre)).filter(p => p.producto && p.producto.trim());
                 const totalDosisB = prodsB.reduce((acc, p) => acc + p.dosisNum, 0);
 
-                const esDual = ev.lineasTanqueA && ev.lineasTanqueB && (ev.lineasTanqueA.length > 0 || ev.lineasTanqueB.length > 0);
+                const tieneProdsDual = prodsA.length > 0 || prodsB.length > 0;
+                const esDual = (ev.modalidad === 'dosatron' && tieneProdsDual) || (prodsA.length > 0 && prodsB.length > 0);
                 const tieneSuplementos = prodsDirectos.some(it => it.esSuplemento);
+                const obsTexto = ev.observacionesPie || ev.observaciones || ev.instrucciones || '';
 
                 return `
                 <div class="event-block">
@@ -239,7 +251,7 @@ export function generarHtmlReporte(datos = {}) {
                   </div>
 
                   <!-- CUADRO DE DOSIFICACIÓN PARA EL PRODUCTOR (TABLA ESTRUCTURADA EN 3 COLUMNAS: SAL, DOSIS, UNIDADES) -->
-                  ${(!esDual && prodsDirectos.length > 0) ? `
+                  ${!esDual ? `
                     <div class="cuadro-fert-wrapper">
                       <div class="cuadro-fert-header">
                         <div class="cuadro-fert-title">
@@ -261,7 +273,7 @@ export function generarHtmlReporte(datos = {}) {
                             </tr>
                           </thead>
                           <tbody>
-                            ${prodsDirectos.map(it => `
+                            ${prodsDirectos.length > 0 ? prodsDirectos.map(it => `
                               <tr>
                                 <td>
                                   <div class="fert-name-cell">
@@ -276,19 +288,27 @@ export function generarHtmlReporte(datos = {}) {
                                   <span class="dose-unit-cell">${escapeHtml(it.unidad)}</span>
                                 </td>
                               </tr>
-                            `).join('')}
+                            `).join('') : `
+                              <tr>
+                                <td colspan="3" style="text-align: center; padding: 12px; color: #64748b; font-style: italic;">
+                                  Sin sales especificadas todavía en esta aplicación.
+                                </td>
+                              </tr>
+                            `}
                           </tbody>
-                          <tfoot>
-                            <tr class="cuadro-fert-total-row">
-                              <td><strong>TOTAL DE SALES A DISOLVER</strong></td>
-                              <td style="text-align: center;">
-                                <strong class="total-grams-badge">${totalDosisDirecto.toLocaleString()}</strong>
-                              </td>
-                              <td style="text-align: center;">
-                                <strong class="total-kg-sub">g / ${volTanque} L</strong>
-                              </td>
-                            </tr>
-                          </tfoot>
+                          ${prodsDirectos.length > 0 ? `
+                            <tfoot>
+                              <tr class="cuadro-fert-total-row">
+                                <td><strong>TOTAL DE SALES A DISOLVER</strong></td>
+                                <td style="text-align: center;">
+                                  <strong class="total-grams-badge">${totalDosisDirecto.toLocaleString()}</strong>
+                                </td>
+                                <td style="text-align: center;">
+                                  <strong class="total-kg-sub">g / ${volTanque} L</strong>
+                                </td>
+                              </tr>
+                            </tfoot>
+                          ` : ''}
                         </table>
                       </div>
 
@@ -308,10 +328,10 @@ export function generarHtmlReporte(datos = {}) {
                           </ol>
                         </div>
 
-                        ${ev.observacionesPie ? `
+                        ${obsTexto ? `
                           <div class="instruccion-productor-card">
                             <strong>👨‍🌾 Indicación Agronómica para el Productor:</strong>
-                            <p>${escapeHtml(ev.observacionesPie)}</p>
+                            <p>${escapeHtml(obsTexto)}</p>
                           </div>
                         ` : ''}
 
@@ -326,7 +346,7 @@ export function generarHtmlReporte(datos = {}) {
                   ` : ''}
 
                   <!-- CASO DOSATRON (TANQUE A Y TANQUE B) -->
-                  ${(esDual || prodsA.length > 0 || prodsB.length > 0) ? `
+                  ${esDual ? `
                     <div class="grid-tanques-dual">
                       ${prodsA.length > 0 ? `
                         <div class="cuadro-fert-wrapper tank-a-wrapper">
@@ -434,10 +454,10 @@ export function generarHtmlReporte(datos = {}) {
                           <li><strong>Orden en Tanque B:</strong> Disolver primero los fosfatos (MAP/MKP), luego los sulfatos y finalmente los micronutrientes quelatados.</li>
                         </ol>
                       </div>
-                      ${ev.observacionesPie ? `
+                      ${obsTexto ? `
                         <div class="instruccion-productor-card">
                           <strong>👨‍🌾 Indicación del Agrónomo:</strong>
-                          <p>${escapeHtml(ev.observacionesPie)}</p>
+                          <p>${escapeHtml(obsTexto)}</p>
                         </div>
                       ` : ''}
                       ${ev.analisisIa ? `

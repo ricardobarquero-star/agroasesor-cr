@@ -1426,25 +1426,44 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                       {(() => {
                         const volTanque = Number(ev.volumenTanqueDirectoLitros) || 1000;
                         const volMadre = Number(ev.volumenTanqueMadreLitros) || 1000;
-                        const prodsDirectos = (ev.productos || []).map(p => normalizarSalDosisUnidad(p, volTanque));
+
+                        const rawProducts = (Array.isArray(ev.productos) && ev.productos.length > 0)
+                          ? ev.productos
+                          : (Array.isArray(ev.lineasProductos) && ev.lineasProductos.length > 0)
+                            ? ev.lineasProductos
+                            : (Array.isArray(ev.sales) && ev.sales.length > 0)
+                              ? ev.sales
+                              : (Array.isArray(ev.fertilizantes) && ev.fertilizantes.length > 0)
+                                ? ev.fertilizantes
+                                : (ev.productos || []);
+
+                        const prodsDirectos = rawProducts
+                          .map(p => normalizarSalDosisUnidad(p, volTanque))
+                          .filter(p => p.producto && p.producto.trim());
                         const totalDosisDirecto = prodsDirectos.reduce((acc, p) => acc + p.dosisNum, 0);
 
-                        const prodsA = (ev.lineasTanqueA || []).map(p => normalizarSalDosisUnidad(p, volMadre));
+                        const prodsA = (Array.isArray(ev.lineasTanqueA) ? ev.lineasTanqueA : [])
+                          .map(p => normalizarSalDosisUnidad(p, volMadre))
+                          .filter(p => p.producto && p.producto.trim());
                         const totalDosisA = prodsA.reduce((acc, p) => acc + p.dosisNum, 0);
 
-                        const prodsB = (ev.lineasTanqueB || []).map(p => normalizarSalDosisUnidad(p, volMadre));
+                        const prodsB = (Array.isArray(ev.lineasTanqueB) ? ev.lineasTanqueB : [])
+                          .map(p => normalizarSalDosisUnidad(p, volMadre))
+                          .filter(p => p.producto && p.producto.trim());
                         const totalDosisB = prodsB.reduce((acc, p) => acc + p.dosisNum, 0);
 
-                        const esDual = ev.lineasTanqueA && ev.lineasTanqueB;
+                        const tieneProdsDual = prodsA.length > 0 || prodsB.length > 0;
+                        const esDual = (ev.modalidad === 'dosatron' && tieneProdsDual) || (prodsA.length > 0 && prodsB.length > 0);
+                        const obsTexto = ev.observacionesPie || ev.observaciones || ev.instrucciones || '';
 
                         return (
                           <div className="space-y-3">
                             {/* FORMULA EN FORMATO CUADRO (COLUMNAS: SAL, DOSIS, UNIDADES) */}
-                            {!esDual && prodsDirectos.length > 0 && (
+                            {!esDual && (
                               <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
                                 <div className="bg-slate-800 text-white px-3 py-1.5 flex items-center justify-between text-xs">
                                   <span className="font-headline font-bold flex items-center gap-1.5">
-                                    <span>📋</span> Cuadro de Fertilización ({ev.nombreEvento || 'Fórmula Nutricional'})
+                                    <span>📋</span> Cuadro de Fertilización ({ev.nombreEvento || ev.nombre || 'Fórmula Nutricional'})
                                   </span>
                                   <span className="font-mono text-[10px] bg-slate-700 px-2 py-0.5 rounded text-emerald-300 font-bold">
                                     Tanque: {volTanque.toLocaleString()} L de Agua
@@ -1460,38 +1479,48 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-slate-100 font-mono text-xs">
-                                    {prodsDirectos.map((l, li) => (
-                                      <tr key={li} className="hover:bg-slate-50">
-                                        <td className="p-2 font-body font-semibold text-slate-900 border-r border-slate-100">
-                                          <div className="flex items-center gap-1.5">
-                                            <span>{l.producto}</span>
-                                            {l.esSuplemento && (
-                                              <span className="text-[8.5px] font-sans font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded border border-emerald-200">
-                                                🌿 Suplemento
-                                              </span>
-                                            )}
-                                          </div>
-                                        </td>
-                                        <td className="p-2 text-center font-bold text-slate-900 border-r border-slate-100 bg-slate-50/50">
-                                          {l.dosis}
-                                        </td>
-                                        <td className="p-2 text-center text-slate-600">
-                                          {l.unidad}
+                                    {prodsDirectos.length > 0 ? (
+                                      prodsDirectos.map((l, li) => (
+                                        <tr key={li} className="hover:bg-slate-50">
+                                          <td className="p-2 font-body font-semibold text-slate-900 border-r border-slate-100">
+                                            <div className="flex items-center gap-1.5">
+                                              <span>{l.producto}</span>
+                                              {l.esSuplemento && (
+                                                <span className="text-[8.5px] font-sans font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded border border-emerald-200">
+                                                  🌿 Suplemento
+                                                </span>
+                                              )}
+                                            </div>
+                                          </td>
+                                          <td className="p-2 text-center font-bold text-slate-900 border-r border-slate-100 bg-slate-50/50">
+                                            {l.dosis}
+                                          </td>
+                                          <td className="p-2 text-center text-slate-600">
+                                            {l.unidad}
+                                          </td>
+                                        </tr>
+                                      ))
+                                    ) : (
+                                      <tr>
+                                        <td colSpan="3" className="p-3 text-center text-slate-500 italic font-body">
+                                          Sin sales especificadas en este evento.
                                         </td>
                                       </tr>
-                                    ))}
+                                    )}
                                   </tbody>
-                                  <tfoot>
-                                    <tr className="bg-emerald-50/80 font-headline font-bold text-emerald-950 border-t-2 border-emerald-600 text-xs">
-                                      <td className="p-2 border-r border-emerald-200">TOTAL DE SALES A DISOLVER</td>
-                                      <td className="p-2 text-center font-mono font-black text-emerald-900 border-r border-emerald-200">
-                                        {totalDosisDirecto.toLocaleString()}
-                                      </td>
-                                      <td className="p-2 text-center font-mono text-emerald-800 font-bold">
-                                        g / {volTanque} L
-                                      </td>
-                                    </tr>
-                                  </tfoot>
+                                  {prodsDirectos.length > 0 && (
+                                    <tfoot>
+                                      <tr className="bg-emerald-50/80 font-headline font-bold text-emerald-950 border-t-2 border-emerald-600 text-xs">
+                                        <td className="p-2 border-r border-emerald-200">TOTAL DE SALES A DISOLVER</td>
+                                        <td className="p-2 text-center font-mono font-black text-emerald-900 border-r border-emerald-200">
+                                          {totalDosisDirecto.toLocaleString()}
+                                        </td>
+                                        <td className="p-2 text-center font-mono text-emerald-800 font-bold">
+                                          g / {volTanque} L
+                                        </td>
+                                      </tr>
+                                    </tfoot>
+                                  )}
                                 </table>
 
                                 {/* AL PIE DEL CUADRO SE DEJAN LAS INSTRUCCIONES */}
@@ -1512,9 +1541,9 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                                     </ol>
                                   </div>
 
-                                  {ev.observacionesPie && (
+                                  {obsTexto && (
                                     <div className="bg-amber-50 border-l-4 border-amber-500 p-2 rounded-r text-[11px] text-amber-950">
-                                      <strong>👨‍🌾 Indicación Agronómica para el Productor:</strong> {ev.observacionesPie}
+                                      <strong>👨‍🌾 Indicación Agronómica para el Productor:</strong> {obsTexto}
                                     </div>
                                   )}
 
@@ -1609,9 +1638,9 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                                     <strong>💉 Inyección Dosatron ({ev.relacionInyeccion || '1:100'}):</strong>
                                     <p>Calibrar inyectores al {ev.relacionInyeccion === '1:100' ? '1.0%' : ev.relacionInyeccion}. Mantener estricta segregación química: nunca juntar concentrados A y B antes de inyectar al flujo de agua.</p>
                                   </div>
-                                  {ev.observacionesPie && (
+                                  {obsTexto && (
                                     <div className="bg-amber-50 border-l-4 border-amber-500 p-2 rounded-r text-[11px] text-amber-950">
-                                      <strong>👨‍🌾 Indicación del Agrónomo:</strong> {ev.observacionesPie}
+                                      <strong>👨‍🌾 Indicación del Agrónomo:</strong> {obsTexto}
                                     </div>
                                   )}
                                   {ev.analisisIa && (
@@ -2435,25 +2464,44 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                             {(() => {
                               const volTanque = Number(ev.volumenTanqueDirectoLitros) || 1000;
                               const volMadre = Number(ev.volumenTanqueMadreLitros) || 1000;
-                              const prodsDirectos = (ev.productos || []).map(p => normalizarSalDosisUnidad(p, volTanque));
+
+                              const rawProducts = (Array.isArray(ev.productos) && ev.productos.length > 0)
+                                ? ev.productos
+                                : (Array.isArray(ev.lineasProductos) && ev.lineasProductos.length > 0)
+                                  ? ev.lineasProductos
+                                  : (Array.isArray(ev.sales) && ev.sales.length > 0)
+                                    ? ev.sales
+                                    : (Array.isArray(ev.fertilizantes) && ev.fertilizantes.length > 0)
+                                      ? ev.fertilizantes
+                                      : (ev.productos || []);
+
+                              const prodsDirectos = rawProducts
+                                .map(p => normalizarSalDosisUnidad(p, volTanque))
+                                .filter(p => p.producto && p.producto.trim());
                               const totalDosisDirecto = prodsDirectos.reduce((acc, p) => acc + p.dosisNum, 0);
 
-                              const prodsA = (ev.lineasTanqueA || []).map(p => normalizarSalDosisUnidad(p, volMadre));
+                              const prodsA = (Array.isArray(ev.lineasTanqueA) ? ev.lineasTanqueA : [])
+                                .map(p => normalizarSalDosisUnidad(p, volMadre))
+                                .filter(p => p.producto && p.producto.trim());
                               const totalDosisA = prodsA.reduce((acc, p) => acc + p.dosisNum, 0);
 
-                              const prodsB = (ev.lineasTanqueB || []).map(p => normalizarSalDosisUnidad(p, volMadre));
+                              const prodsB = (Array.isArray(ev.lineasTanqueB) ? ev.lineasTanqueB : [])
+                                .map(p => normalizarSalDosisUnidad(p, volMadre))
+                                .filter(p => p.producto && p.producto.trim());
                               const totalDosisB = prodsB.reduce((acc, p) => acc + p.dosisNum, 0);
 
-                              const esDual = ev.lineasTanqueA && ev.lineasTanqueB;
+                              const tieneProdsDual = prodsA.length > 0 || prodsB.length > 0;
+                              const esDual = (ev.modalidad === 'dosatron' && tieneProdsDual) || (prodsA.length > 0 && prodsB.length > 0);
+                              const obsTexto = ev.observacionesPie || ev.observaciones || ev.instrucciones || '';
 
                               return (
                                 <div className="space-y-2 mt-1">
                                   {/* CUADRO / TABLA ESTRUCTURADA DE FERTILIZACIÓN (SAL, DOSIS, UNIDADES) */}
-                                  {!esDual && prodsDirectos.length > 0 && (
+                                  {!esDual && (
                                     <div className="border border-slate-300 rounded-xl overflow-hidden bg-white shadow-xs">
                                       <div className="bg-slate-800 text-white px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-1 text-[10px]">
                                         <span className="font-headline font-bold flex items-center gap-1.5">
-                                          <span>📋</span> Cuadro de Fertilización ({ev.nombreEvento || 'Fórmula Nutricional'})
+                                          <span>📋</span> Cuadro de Fertilización ({ev.nombreEvento || ev.nombre || 'Fórmula Nutricional'})
                                         </span>
                                         <span className="bg-white/20 border border-white/30 text-white px-2 py-0.5 rounded-full font-mono font-bold text-[9px]">
                                           🛢️ Cantidad de Agua: {volTanque.toLocaleString()} L
@@ -2469,38 +2517,48 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                                           </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 font-mono text-[9.5px]">
-                                          {prodsDirectos.map((it, idx) => (
-                                            <tr key={idx} className="hover:bg-slate-50">
-                                              <td className="p-1.5 font-body font-semibold text-slate-900 border-r border-slate-100">
-                                                <div className="flex items-center gap-1.5">
-                                                  <span>{it.producto}</span>
-                                                  {it.esSuplemento && (
-                                                    <span className="text-[7.5px] font-sans font-bold bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded border border-emerald-200">
-                                                      🌿 Suplemento
-                                                    </span>
-                                                  )}
-                                                </div>
-                                              </td>
-                                              <td className="p-1.5 text-center font-bold text-slate-900 border-r border-slate-100 bg-slate-50/50">
-                                                {it.dosis}
-                                              </td>
-                                              <td className="p-1.5 text-center text-slate-600">
-                                                {it.unidad}
+                                          {prodsDirectos.length > 0 ? (
+                                            prodsDirectos.map((it, idx) => (
+                                              <tr key={idx} className="hover:bg-slate-50">
+                                                <td className="p-1.5 font-body font-semibold text-slate-900 border-r border-slate-100">
+                                                  <div className="flex items-center gap-1.5">
+                                                    <span>{it.producto}</span>
+                                                    {it.esSuplemento && (
+                                                      <span className="text-[7.5px] font-sans font-bold bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded border border-emerald-200">
+                                                        🌿 Suplemento
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                </td>
+                                                <td className="p-1.5 text-center font-bold text-slate-900 border-r border-slate-100 bg-slate-50/50">
+                                                  {it.dosis}
+                                                </td>
+                                                <td className="p-1.5 text-center text-slate-600">
+                                                  {it.unidad}
+                                                </td>
+                                              </tr>
+                                            ))
+                                          ) : (
+                                            <tr>
+                                              <td colSpan="3" className="p-2 text-center text-slate-500 italic font-body">
+                                                Sin sales especificadas en este evento.
                                               </td>
                                             </tr>
-                                          ))}
+                                          )}
                                         </tbody>
-                                        <tfoot>
-                                          <tr className="bg-emerald-50 font-bold text-emerald-950 border-t-2 border-emerald-500 text-[9.5px]">
-                                            <td className="p-1.5 border-r border-emerald-200">TOTAL DE SALES A DISOLVER</td>
-                                            <td className="p-1.5 text-center font-mono font-black text-emerald-900 border-r border-emerald-200">
-                                              {totalDosisDirecto.toLocaleString()}
-                                            </td>
-                                            <td className="p-1.5 text-center font-mono text-emerald-800 font-bold">
-                                              g / {volTanque} L
-                                            </td>
-                                          </tr>
-                                        </tfoot>
+                                        {prodsDirectos.length > 0 && (
+                                          <tfoot>
+                                            <tr className="bg-emerald-50 font-bold text-emerald-950 border-t-2 border-emerald-500 text-[9.5px]">
+                                              <td className="p-1.5 border-r border-emerald-200">TOTAL DE SALES A DISOLVER</td>
+                                              <td className="p-1.5 text-center font-mono font-black text-emerald-900 border-r border-emerald-200">
+                                                {totalDosisDirecto.toLocaleString()}
+                                              </td>
+                                              <td className="p-1.5 text-center font-mono text-emerald-800 font-bold">
+                                                g / {volTanque} L
+                                              </td>
+                                            </tr>
+                                          </tfoot>
+                                        )}
                                       </table>
 
                                       {/* AL PIE DEL CUADRO SE DEJAN LAS INSTRUCCIONES */}
@@ -2521,9 +2579,9 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                                           </ol>
                                         </div>
 
-                                        {ev.observacionesPie && (
+                                        {obsTexto && (
                                           <div className="bg-amber-50 border-l-4 border-amber-500 p-1.5 rounded-r text-amber-950 text-[9px]">
-                                            <strong>👨‍🌾 Indicación Agronómica para el Productor:</strong> {ev.observacionesPie}
+                                            <strong>👨‍🌾 Indicación Agronómica para el Productor:</strong> {obsTexto}
                                           </div>
                                         )}
 
@@ -2618,9 +2676,9 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                                           <strong>💉 Inyección Proporcional Dual Dosatron ({ev.relacionInyeccion || '1:100'}):</strong>
                                           <p>Calibrar inyectores al {ev.relacionInyeccion === '1:100' ? '1.0%' : ev.relacionInyeccion}. Mantener estricta segregación química: nunca mezclar concentrados A y B en el mismo recipiente antes de inyectar.</p>
                                         </div>
-                                        {ev.observacionesPie && (
+                                        {obsTexto && (
                                           <div className="bg-amber-50 border-l-4 border-amber-500 p-1.5 rounded-r text-amber-950">
-                                            <strong>👨‍🌾 Indicación del Agrónomo:</strong> {ev.observacionesPie}
+                                            <strong>👨‍🌾 Indicación del Agrónomo:</strong> {obsTexto}
                                           </div>
                                         )}
                                         {ev.analisisIa && (
