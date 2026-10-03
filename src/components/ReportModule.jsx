@@ -10,7 +10,7 @@ import { crAgroDatabase } from '../data/crAgroDatabase';
 import { storageService } from '../services/storageService';
 import { calcularDosisDual } from '../utils/doseCalculator';
 import { agroEpidemiologyService } from '../services/agroEpidemiologyService';
-import { calcularNutrientesTotales, calcularDetalleCuadroFertilizacion } from '../services/nutritionCalculatorService';
+import { calcularNutrientesTotales, calcularDetalleCuadroFertilizacion, normalizarSalDosisUnidad } from '../services/nutritionCalculatorService';
 import { digitalReportService } from '../services/digitalReportService';
 import { photoStorageService } from '../services/photoStorageService';
 
@@ -1423,61 +1423,208 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                         </div>
                       </div>
 
-                      {ev.lineasTanqueA && ev.lineasTanqueB ? (
-                        <div className="space-y-2">
-                          <div className="bg-[#e2e7ff]/40 p-2.5 rounded-lg border border-[#dae2fd]">
-                            <strong className="text-[#004b73] block text-xs font-headline font-bold uppercase mb-1">
-                              🔵 Tanque A (Calcio / Nitratos):
-                            </strong>
-                            <ul className="space-y-1 text-slate-800 font-mono text-xs sm:text-sm">
-                              {ev.lineasTanqueA.map((l, li) => (
-                                <li key={li} className="flex justify-between items-center">
-                                  <span>{l.producto}</span>
-                                  <strong className="text-[#004b73]">{l.dosis} {l.unidad}</strong>
-                                </li>
-                              ))}
-                            </ul>
+                      {(() => {
+                        const volTanque = Number(ev.volumenTanqueDirectoLitros) || 1000;
+                        const volMadre = Number(ev.volumenTanqueMadreLitros) || 1000;
+                        const prodsDirectos = (ev.productos || []).map(p => normalizarSalDosisUnidad(p, volTanque));
+                        const totalDosisDirecto = prodsDirectos.reduce((acc, p) => acc + p.dosisNum, 0);
+
+                        const prodsA = (ev.lineasTanqueA || []).map(p => normalizarSalDosisUnidad(p, volMadre));
+                        const totalDosisA = prodsA.reduce((acc, p) => acc + p.dosisNum, 0);
+
+                        const prodsB = (ev.lineasTanqueB || []).map(p => normalizarSalDosisUnidad(p, volMadre));
+                        const totalDosisB = prodsB.reduce((acc, p) => acc + p.dosisNum, 0);
+
+                        const esDual = ev.lineasTanqueA && ev.lineasTanqueB;
+
+                        return (
+                          <div className="space-y-3">
+                            {/* FORMULA EN FORMATO CUADRO (COLUMNAS: SAL, DOSIS, UNIDADES) */}
+                            {!esDual && prodsDirectos.length > 0 && (
+                              <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
+                                <div className="bg-slate-800 text-white px-3 py-1.5 flex items-center justify-between text-xs">
+                                  <span className="font-headline font-bold flex items-center gap-1.5">
+                                    <span>📋</span> Cuadro de Fertilización ({ev.nombreEvento || 'Fórmula Nutricional'})
+                                  </span>
+                                  <span className="font-mono text-[10px] bg-slate-700 px-2 py-0.5 rounded text-emerald-300 font-bold">
+                                    Tanque: {volTanque.toLocaleString()} L de Agua
+                                  </span>
+                                </div>
+
+                                <table className="w-full text-xs text-left border-collapse">
+                                  <thead>
+                                    <tr className="bg-slate-100 text-slate-700 font-headline font-bold text-[10.5px] uppercase border-b border-slate-200">
+                                      <th className="p-2 border-r border-slate-200">Sal / Fertilizante</th>
+                                      <th className="p-2 text-center border-r border-slate-200 w-24">Dosis</th>
+                                      <th className="p-2 text-center w-28">Unidades</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100 font-mono text-xs">
+                                    {prodsDirectos.map((l, li) => (
+                                      <tr key={li} className="hover:bg-slate-50">
+                                        <td className="p-2 font-body font-semibold text-slate-900 border-r border-slate-100">
+                                          <div className="flex items-center gap-1.5">
+                                            <span>{l.producto}</span>
+                                            {l.esSuplemento && (
+                                              <span className="text-[8.5px] font-sans font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded border border-emerald-200">
+                                                🌿 Suplemento
+                                              </span>
+                                            )}
+                                          </div>
+                                        </td>
+                                        <td className="p-2 text-center font-bold text-slate-900 border-r border-slate-100 bg-slate-50/50">
+                                          {l.dosis}
+                                        </td>
+                                        <td className="p-2 text-center text-slate-600">
+                                          {l.unidad}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                  <tfoot>
+                                    <tr className="bg-emerald-50/80 font-headline font-bold text-emerald-950 border-t-2 border-emerald-600 text-xs">
+                                      <td className="p-2 border-r border-emerald-200">TOTAL DE SALES A DISOLVER</td>
+                                      <td className="p-2 text-center font-mono font-black text-emerald-900 border-r border-emerald-200">
+                                        {totalDosisDirecto.toLocaleString()}
+                                      </td>
+                                      <td className="p-2 text-center font-mono text-emerald-800 font-bold">
+                                        g / {volTanque} L
+                                      </td>
+                                    </tr>
+                                  </tfoot>
+                                </table>
+
+                                {/* AL PIE DEL CUADRO SE DEJAN LAS INSTRUCCIONES */}
+                                <div className="bg-slate-50 p-2.5 border-t border-slate-200 space-y-1.5 text-xs text-slate-700">
+                                  <div className="font-headline font-bold text-slate-800 flex items-center gap-1 text-[11px] uppercase tracking-wide">
+                                    <span>📝</span> Instrucciones de Preparación al Pie del Cuadro:
+                                  </div>
+
+                                  <div className="bg-blue-50/70 border-l-4 border-blue-600 p-2 rounded-r text-[11px] text-blue-950 space-y-0.5">
+                                    <strong className="block text-blue-900">🔄 Orden Estricto de Disolución en Tanque ({volTanque.toLocaleString()} L de agua):</strong>
+                                    <ol className="list-decimal list-inside space-y-0.5 text-blue-900">
+                                      <li>Llenar el tanque con el 60% – 70% de agua limpia antes de verter las sales.</li>
+                                      <li>Disolver primero las fuentes de fósforo (MAP/MKP) y luego los sulfatos (SoluSOP y Epsom) agitando hasta disolución total.</li>
+                                      <li>Agregar el Nitrato de Calcio (Calcinit) de último con agitación continua y completar el agua hasta los {volTanque.toLocaleString()} Litros.</li>
+                                      {prodsDirectos.some(p => p.esSuplemento) && (
+                                        <li>Incorporar los suplementos biológicos o nematicidas al final con el tanque completamente lleno.</li>
+                                      )}
+                                    </ol>
+                                  </div>
+
+                                  {ev.observacionesPie && (
+                                    <div className="bg-amber-50 border-l-4 border-amber-500 p-2 rounded-r text-[11px] text-amber-950">
+                                      <strong>👨‍🌾 Indicación Agronómica para el Productor:</strong> {ev.observacionesPie}
+                                    </div>
+                                  )}
+
+                                  {ev.analisisIa && (
+                                    <div className="bg-emerald-50 border-l-4 border-emerald-600 p-2 rounded-r text-[11px] text-emerald-950">
+                                      <strong>✨ Dictamen Técnico IA:</strong> {ev.analisisIa}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* CASO DUAL DOSATRON (TANQUE A Y TANQUE B) */}
+                            {esDual && (
+                              <div className="space-y-3">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                                  {prodsA.length > 0 && (
+                                    <div className="border border-blue-200 rounded-xl overflow-hidden bg-white shadow-xs">
+                                      <div className="bg-blue-800 text-white px-2.5 py-1.5 flex items-center justify-between text-xs">
+                                        <span className="font-bold">🔵 Tanque A (Calcio y Nitratos)</span>
+                                        <span className="font-mono text-[9.5px] bg-blue-900 px-1.5 py-0.2 rounded">{volMadre} L</span>
+                                      </div>
+                                      <table className="w-full text-xs text-left border-collapse">
+                                        <thead>
+                                          <tr className="bg-blue-50 text-blue-900 font-bold text-[10px] uppercase border-b border-blue-200">
+                                            <th className="p-1.5 border-r border-blue-100">Sal / Fertilizante</th>
+                                            <th className="p-1.5 text-center border-r border-blue-100 w-20">Dosis</th>
+                                            <th className="p-1.5 text-center w-24">Unidades</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-blue-50 font-mono text-xs">
+                                          {prodsA.map((l, li) => (
+                                            <tr key={li}>
+                                              <td className="p-1.5 font-body text-slate-800 border-r border-blue-50">{l.producto}</td>
+                                              <td className="p-1.5 text-center font-bold text-blue-900 border-r border-blue-50">{l.dosis}</td>
+                                              <td className="p-1.5 text-center text-slate-600">{l.unidad}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                        <tfoot>
+                                          <tr className="bg-blue-100/70 font-bold text-blue-950 border-t border-blue-300 text-xs">
+                                            <td className="p-1.5 border-r border-blue-200">TOTAL TANQUE A</td>
+                                            <td className="p-1.5 text-center font-mono font-bold text-blue-900 border-r border-blue-200">{totalDosisA.toLocaleString()}</td>
+                                            <td className="p-1.5 text-center font-mono text-blue-800 font-bold">g / {volMadre} L</td>
+                                          </tr>
+                                        </tfoot>
+                                      </table>
+                                    </div>
+                                  )}
+
+                                  {prodsB.length > 0 && (
+                                    <div className="border border-amber-200 rounded-xl overflow-hidden bg-white shadow-xs">
+                                      <div className="bg-amber-800 text-white px-2.5 py-1.5 flex items-center justify-between text-xs">
+                                        <span className="font-bold">🟡 Tanque B (Fósforo, Sulfatos y Micros)</span>
+                                        <span className="font-mono text-[9.5px] bg-amber-900 px-1.5 py-0.2 rounded">{volMadre} L</span>
+                                      </div>
+                                      <table className="w-full text-xs text-left border-collapse">
+                                        <thead>
+                                          <tr className="bg-amber-50 text-amber-900 font-bold text-[10px] uppercase border-b border-amber-200">
+                                            <th className="p-1.5 border-r border-amber-100">Sal / Fertilizante</th>
+                                            <th className="p-1.5 text-center border-r border-amber-100 w-20">Dosis</th>
+                                            <th className="p-1.5 text-center w-24">Unidades</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-amber-50 font-mono text-xs">
+                                          {prodsB.map((l, li) => (
+                                            <tr key={li}>
+                                              <td className="p-1.5 font-body text-slate-800 border-r border-amber-50">{l.producto}</td>
+                                              <td className="p-1.5 text-center font-bold text-amber-950 border-r border-amber-50">{l.dosis}</td>
+                                              <td className="p-1.5 text-center text-slate-600">{l.unidad}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                        <tfoot>
+                                          <tr className="bg-amber-100/70 font-bold text-amber-950 border-t border-amber-300 text-xs">
+                                            <td className="p-1.5 border-r border-amber-200">TOTAL TANQUE B</td>
+                                            <td className="p-1.5 text-center font-mono font-bold text-amber-950 border-r border-amber-200">{totalDosisB.toLocaleString()}</td>
+                                            <td className="p-1.5 text-center font-mono text-amber-900 font-bold">g / {volMadre} L</td>
+                                          </tr>
+                                        </tfoot>
+                                      </table>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* AL PIE DEL CUADRO EN DOSATRON */}
+                                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 space-y-1.5 text-xs text-slate-700">
+                                  <div className="font-headline font-bold text-slate-800 flex items-center gap-1 text-[11px] uppercase tracking-wide">
+                                    <span>📝</span> Instrucciones al Pie del Cuadro (Inyección Dual):
+                                  </div>
+                                  <div className="bg-blue-50/70 border-l-4 border-blue-600 p-2 rounded-r text-[11px] text-blue-950">
+                                    <strong>💉 Inyección Dosatron ({ev.relacionInyeccion || '1:100'}):</strong>
+                                    <p>Calibrar inyectores al {ev.relacionInyeccion === '1:100' ? '1.0%' : ev.relacionInyeccion}. Mantener estricta segregación química: nunca juntar concentrados A y B antes de inyectar al flujo de agua.</p>
+                                  </div>
+                                  {ev.observacionesPie && (
+                                    <div className="bg-amber-50 border-l-4 border-amber-500 p-2 rounded-r text-[11px] text-amber-950">
+                                      <strong>👨‍🌾 Indicación del Agrónomo:</strong> {ev.observacionesPie}
+                                    </div>
+                                  )}
+                                  {ev.analisisIa && (
+                                    <div className="bg-emerald-50 border-l-4 border-emerald-600 p-2 rounded-r text-[11px] text-emerald-950">
+                                      <strong>✨ Dictamen Técnico IA:</strong> {ev.analisisIa}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </div>
-
-                          <div className="bg-amber-50/60 p-2.5 rounded-lg border border-amber-200">
-                            <strong className="text-amber-900 block text-xs font-headline font-bold uppercase mb-1">
-                              🟡 Tanque B (Fósforo / Sulfatos / Micros):
-                            </strong>
-                            <ul className="space-y-1 text-slate-800 font-mono text-xs sm:text-sm">
-                              {ev.lineasTanqueB.map((l, li) => (
-                                <li key={li} className="flex justify-between items-center">
-                                  <span>{l.producto}</span>
-                                  <strong className="text-amber-950">{l.dosis} {l.unidad}</strong>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="bg-white p-2.5 rounded-lg border border-slate-200">
-                          <ul className="space-y-1 text-slate-800 font-mono text-xs sm:text-sm">
-                            {(ev.productos || []).map((l, li) => (
-                              <li key={li} className="flex justify-between items-center">
-                                <span>{l.producto}</span>
-                                <strong className="text-[#00652c]">{l.dosis} {l.unidad}</strong>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      {ev.analisisIa && (
-                        <div className="p-2.5 rounded-xl bg-blue-50/70 border border-blue-200 text-xs text-slate-700">
-                          <strong className="text-blue-900 block font-bold mb-0.5">✨ Dictamen Técnico IA de esta Aplicación:</strong>
-                          <p className="whitespace-pre-line text-[11px] leading-relaxed">{ev.analisisIa}</p>
-                        </div>
-                      )}
-
-                      {ev.observacionesPie && (
-                        <p className="text-xs text-slate-500 italic pt-1 border-t border-slate-200">
-                          Instrucción: {ev.observacionesPie}
-                        </p>
-                      )}
+                        );
+                      })()}
                     </div>
                   ))}
 
@@ -2284,96 +2431,92 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                               </div>
                             </div>
 
-                            {/* Cuadro de Fertilización y Pesaje para el Productor */}
+                            {/* Cuadro de Fertilización y Pesaje para el Productor (Formato Manual: Sal, Dosis, Unidades) */}
                             {(() => {
                               const volTanque = Number(ev.volumenTanqueDirectoLitros) || 1000;
-                              const detalleGeneral = (ev.productos && ev.productos.length > 0) ? calcularDetalleCuadroFertilizacion(ev.productos, volTanque) : null;
                               const volMadre = Number(ev.volumenTanqueMadreLitros) || 1000;
-                              const detalleA = (ev.lineasTanqueA && ev.lineasTanqueA.length > 0) ? calcularDetalleCuadroFertilizacion(ev.lineasTanqueA, volMadre) : null;
-                              const detalleB = (ev.lineasTanqueB && ev.lineasTanqueB.length > 0) ? calcularDetalleCuadroFertilizacion(ev.lineasTanqueB, volMadre) : null;
-                              const tieneSuplementos = detalleGeneral?.items.some(it => it.esSuplemento) || false;
+                              const prodsDirectos = (ev.productos || []).map(p => normalizarSalDosisUnidad(p, volTanque));
+                              const totalDosisDirecto = prodsDirectos.reduce((acc, p) => acc + p.dosisNum, 0);
+
+                              const prodsA = (ev.lineasTanqueA || []).map(p => normalizarSalDosisUnidad(p, volMadre));
+                              const totalDosisA = prodsA.reduce((acc, p) => acc + p.dosisNum, 0);
+
+                              const prodsB = (ev.lineasTanqueB || []).map(p => normalizarSalDosisUnidad(p, volMadre));
+                              const totalDosisB = prodsB.reduce((acc, p) => acc + p.dosisNum, 0);
+
+                              const esDual = ev.lineasTanqueA && ev.lineasTanqueB;
 
                               return (
                                 <div className="space-y-2 mt-1">
-                                  {/* CUADRO / TABLA ESTRUCTURADA DE FERTILIZACIÓN */}
-                                  {detalleGeneral && (
-                                    <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
-                                      <div className="bg-gradient-to-r from-emerald-800 to-teal-800 text-white px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-1 text-[10px]">
+                                  {/* CUADRO / TABLA ESTRUCTURADA DE FERTILIZACIÓN (SAL, DOSIS, UNIDADES) */}
+                                  {!esDual && prodsDirectos.length > 0 && (
+                                    <div className="border border-slate-300 rounded-xl overflow-hidden bg-white shadow-xs">
+                                      <div className="bg-slate-800 text-white px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-1 text-[10px]">
                                         <span className="font-headline font-bold flex items-center gap-1.5">
-                                          <span>⚖️</span> Cuadro de Pesaje de Fertilizantes y Sales Solubles
+                                          <span>📋</span> Cuadro de Fertilización ({ev.nombreEvento || 'Fórmula Nutricional'})
                                         </span>
                                         <span className="bg-white/20 border border-white/30 text-white px-2 py-0.5 rounded-full font-mono font-bold text-[9px]">
                                           🛢️ Cantidad de Agua: {volTanque.toLocaleString()} L
                                         </span>
                                       </div>
 
-                                      <div className="overflow-x-auto">
-                                        <table className="w-full text-[10px] text-left border-collapse">
-                                          <thead>
-                                            <tr className="bg-slate-100 text-slate-700 font-headline font-bold text-[9px] uppercase border-b border-slate-200">
-                                              <th className="p-1.5">Sal / Fertilizante</th>
-                                              <th className="p-1.5 text-center">Gramos a Pesar (para {volTanque.toLocaleString()} L)</th>
-                                              <th className="p-1.5 text-center">Concentración</th>
-                                              <th className="p-1.5">Aporte Principal / Función</th>
-                                            </tr>
-                                          </thead>
-                                          <tbody className="divide-y divide-slate-100">
-                                            {detalleGeneral.items.map((it, idx) => (
-                                              <tr key={idx} className="hover:bg-emerald-50/40">
-                                                <td className="p-1.5 font-medium text-slate-900">
-                                                  <div className="flex items-center gap-1.5">
-                                                    <span>{it.producto}</span>
-                                                    {it.esSuplemento && (
-                                                      <span className="text-[8px] font-sans font-semibold bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded border border-emerald-200">
-                                                        🌿 Suplemento
-                                                      </span>
-                                                    )}
-                                                  </div>
-                                                </td>
-                                                <td className="p-1.5 text-center">
-                                                  <span className="font-mono font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200 inline-block text-[10.5px]">
-                                                    {it.gramos.toLocaleString()} g
-                                                  </span>
-                                                </td>
-                                                <td className="p-1.5 text-center font-mono text-slate-600 text-[9.5px]">
-                                                  {it.concentracionGL} g/L
-                                                </td>
-                                                <td className="p-1.5 text-slate-600 text-[9.5px]">
-                                                  {it.aporte}
-                                                </td>
-                                              </tr>
-                                            ))}
-                                          </tbody>
-                                          <tfoot>
-                                            <tr className="bg-emerald-50 font-bold text-emerald-950 border-t-2 border-emerald-500 text-[10px]">
-                                              <td className="p-1.5">TOTAL DE SALES A DISOLVER</td>
-                                              <td className="p-1.5 text-center font-mono font-black text-emerald-900">
-                                                {detalleGeneral.totalGramos.toLocaleString()} g <span className="text-[8.5px] font-normal font-sans">({detalleGeneral.totalKg} kg)</span>
+                                      <table className="w-full text-[10px] text-left border-collapse">
+                                        <thead>
+                                          <tr className="bg-slate-100 text-slate-700 font-headline font-bold text-[9px] uppercase border-b border-slate-300">
+                                            <th className="p-1.5 border-r border-slate-200">Sal / Fertilizante</th>
+                                            <th className="p-1.5 text-center border-r border-slate-200 w-24">Dosis</th>
+                                            <th className="p-1.5 text-center w-28">Unidades</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 font-mono text-[9.5px]">
+                                          {prodsDirectos.map((it, idx) => (
+                                            <tr key={idx} className="hover:bg-slate-50">
+                                              <td className="p-1.5 font-body font-semibold text-slate-900 border-r border-slate-100">
+                                                <div className="flex items-center gap-1.5">
+                                                  <span>{it.producto}</span>
+                                                  {it.esSuplemento && (
+                                                    <span className="text-[7.5px] font-sans font-bold bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded border border-emerald-200">
+                                                      🌿 Suplemento
+                                                    </span>
+                                                  )}
+                                                </div>
                                               </td>
-                                              <td className="p-1.5 text-center font-mono">{detalleGeneral.concentracionTotalGL} g/L</td>
-                                              <td className="p-1.5 text-[9px] font-normal">
-                                                {ev.conductividadObjetivo && <span className="font-bold mr-1">⚡ CE: {ev.conductividadObjetivo}</span>}
-                                                {ev.phObjetivo && <span className="font-bold">🧪 pH: {ev.phObjetivo}</span>}
+                                              <td className="p-1.5 text-center font-bold text-slate-900 border-r border-slate-100 bg-slate-50/50">
+                                                {it.dosis}
+                                              </td>
+                                              <td className="p-1.5 text-center text-slate-600">
+                                                {it.unidad}
                                               </td>
                                             </tr>
-                                          </tfoot>
-                                        </table>
-                                      </div>
+                                          ))}
+                                        </tbody>
+                                        <tfoot>
+                                          <tr className="bg-emerald-50 font-bold text-emerald-950 border-t-2 border-emerald-500 text-[9.5px]">
+                                            <td className="p-1.5 border-r border-emerald-200">TOTAL DE SALES A DISOLVER</td>
+                                            <td className="p-1.5 text-center font-mono font-black text-emerald-900 border-r border-emerald-200">
+                                              {totalDosisDirecto.toLocaleString()}
+                                            </td>
+                                            <td className="p-1.5 text-center font-mono text-emerald-800 font-bold">
+                                              g / {volTanque} L
+                                            </td>
+                                          </tr>
+                                        </tfoot>
+                                      </table>
 
-                                      {/* ABAJO DEL CUADRO LAS OBSERVACIONES */}
+                                      {/* AL PIE DEL CUADRO SE DEJAN LAS INSTRUCCIONES */}
                                       <div className="bg-slate-50 p-2 border-t border-slate-200 space-y-1.5 text-[9.5px]">
                                         <div className="font-headline font-bold text-slate-800 flex items-center gap-1 uppercase tracking-wide text-[9px]">
-                                          <span>📝</span> Observaciones Técnicas e Instrucciones de Preparación del Tanque para el Productor
+                                          <span>📝</span> Instrucciones al Pie del Cuadro:
                                         </div>
 
                                         <div className="bg-blue-50/80 border-l-4 border-blue-600 p-1.5 rounded-r text-blue-900 space-y-0.5">
                                           <strong className="block text-[9.5px]">🔄 Orden Estricto de Disolución en Tanque ({volTanque.toLocaleString()} L de agua):</strong>
                                           <ol className="list-decimal list-inside space-y-0.5 text-[9px] text-blue-950 pl-1">
-                                            <li><strong>Llenado previo:</strong> Llenar el tanque con el 60% – 70% de agua limpia (aprox. {Math.round(volTanque * 0.65).toLocaleString()} L) antes de incorporar las sales. Nunca verter fertilizantes en seco al fondo del tanque.</li>
-                                            <li><strong>Fosfatos y Sulfatos primero:</strong> Disolver primero las fuentes de fósforo (MAP / MKP) y luego los sulfatos (Sulfato de Potasio SoluSOP y Sulfato de Magnesio Epsom). Agitar enérgicamente hasta disolución total.</li>
-                                            <li><strong>Nitrato de Calcio de último:</strong> Con la agitación o recirculación activa, incorporar el Calcinit (Nitrato de Calcio) de último para evitar precipitación de yeso. Completar con agua limpia hasta la marca de los {volTanque.toLocaleString()} Litros.</li>
-                                            {tieneSuplementos && (
-                                              <li><strong>Suplementos / Biológicos:</strong> Agregar los productos biológicos (ej. <em>Trichoderma</em>, nematicidas o bioestimulantes) al final con el tanque a volumen completo y aplicar preferiblemente en las primeras horas del día.</li>
+                                            <li>Llenar el tanque con el 60% – 70% de agua limpia antes de incorporar las sales.</li>
+                                            <li>Disolver primero las fuentes de fósforo (MAP/MKP) y luego los sulfatos (SoluSOP y Epsom) agitando hasta disolución total.</li>
+                                            <li>Agregar el Nitrato de Calcio (Calcinit) de último con agitación continua y completar el agua hasta los {volTanque.toLocaleString()} Litros.</li>
+                                            {prodsDirectos.some(p => p.esSuplemento) && (
+                                              <li>Incorporar los suplementos biológicos o nematicidas al final con el tanque a volumen completo.</li>
                                             )}
                                           </ol>
                                         </div>
@@ -2394,56 +2537,74 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                                   )}
 
                                   {/* CASO DOSATRON (TANQUE A Y TANQUE B) */}
-                                  {(detalleA || detalleB) && (
+                                  {esDual && (
                                     <div className="space-y-1.5">
                                       <div className="grid grid-cols-2 gap-2 text-[10px]">
-                                        {detalleA && (
-                                          <div className="bg-blue-50/50 p-2 rounded-xl border border-blue-200 space-y-1">
-                                            <div className="flex items-center justify-between border-b border-blue-200 pb-0.5">
-                                              <strong className="font-headline text-[#004b73] text-[9.5px] font-bold">
-                                                🔵 TANQUE A (Calcio y Nitratos):
-                                              </strong>
-                                              <span className="font-mono text-[8.5px] text-blue-700 bg-white px-1.5 py-0.2 rounded border border-blue-200 font-bold">
-                                                {volMadre} L
-                                              </span>
+                                        {prodsA.length > 0 && (
+                                          <div className="bg-white rounded-xl border border-blue-200 overflow-hidden shadow-xs">
+                                            <div className="bg-blue-800 text-white px-2 py-1 flex items-center justify-between text-[9px] font-bold">
+                                              <span>🔵 TANQUE A (Calcio / Nitratos)</span>
+                                              <span className="font-mono bg-blue-900 px-1.5 py-0.2 rounded">{volMadre} L</span>
                                             </div>
-                                            <div className="space-y-0.5">
-                                              {detalleA.items.map((it, lIdx) => (
-                                                <div key={lIdx} className="flex justify-between items-center text-slate-800 font-mono py-0.5 border-b border-blue-100 last:border-0">
-                                                  <span className="font-body text-[9.5px]">{it.producto}</span>
-                                                  <strong className="text-blue-800 bg-blue-100 px-1 py-0.2 rounded text-[9px]">{it.gramos.toLocaleString()} g</strong>
-                                                </div>
-                                              ))}
-                                            </div>
-                                            <div className="pt-0.5 border-t border-blue-200 flex justify-between font-bold text-[9px] text-blue-900">
-                                              <span>Total Tanque A:</span>
-                                              <span>{detalleA.totalGramos.toLocaleString()} g ({detalleA.totalKg} kg)</span>
-                                            </div>
+                                            <table className="w-full text-[9px] text-left border-collapse">
+                                              <thead>
+                                                <tr className="bg-blue-50 text-blue-950 font-bold uppercase border-b border-blue-200">
+                                                  <th className="p-1 border-r border-blue-100">Sal / Fertilizante</th>
+                                                  <th className="p-1 text-center border-r border-blue-100 w-16">Dosis</th>
+                                                  <th className="p-1 text-center w-16">Unidades</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody className="divide-y divide-blue-50 font-mono">
+                                                {prodsA.map((l, li) => (
+                                                  <tr key={li}>
+                                                    <td className="p-1 font-body text-slate-800 border-r border-blue-50">{l.producto}</td>
+                                                    <td className="p-1 text-center font-bold text-blue-900 border-r border-blue-50">{l.dosis}</td>
+                                                    <td className="p-1 text-center text-slate-600">{l.unidad}</td>
+                                                  </tr>
+                                                ))}
+                                              </tbody>
+                                              <tfoot>
+                                                <tr className="bg-blue-100/70 font-bold text-blue-950 border-t border-blue-300">
+                                                  <td className="p-1 border-r border-blue-200">TOTAL TANQUE A</td>
+                                                  <td className="p-1 text-center font-mono font-bold text-blue-900 border-r border-blue-200">{totalDosisA.toLocaleString()}</td>
+                                                  <td className="p-1 text-center font-mono text-blue-800">g / {volMadre} L</td>
+                                                </tr>
+                                              </tfoot>
+                                            </table>
                                           </div>
                                         )}
 
-                                        {detalleB && (
-                                          <div className="bg-amber-50/60 p-2 rounded-xl border border-amber-200 space-y-1">
-                                            <div className="flex items-center justify-between border-b border-amber-200 pb-0.5">
-                                              <strong className="font-headline text-amber-900 text-[9.5px] font-bold">
-                                                🟡 TANQUE B (Fósforo, Sulfatos y Micros):
-                                              </strong>
-                                              <span className="font-mono text-[8.5px] text-amber-800 bg-white px-1.5 py-0.2 rounded border border-amber-200 font-bold">
-                                                {volMadre} L
-                                              </span>
+                                        {prodsB.length > 0 && (
+                                          <div className="bg-white rounded-xl border border-amber-200 overflow-hidden shadow-xs">
+                                            <div className="bg-amber-800 text-white px-2 py-1 flex items-center justify-between text-[9px] font-bold">
+                                              <span>🟡 TANQUE B (Fósforo / Sulfatos / Micros)</span>
+                                              <span className="font-mono bg-amber-900 px-1.5 py-0.2 rounded">{volMadre} L</span>
                                             </div>
-                                            <div className="space-y-0.5">
-                                              {detalleB.items.map((it, lIdx) => (
-                                                <div key={lIdx} className="flex justify-between items-center text-slate-800 font-mono py-0.5 border-b border-amber-100 last:border-0">
-                                                  <span className="font-body text-[9.5px]">{it.producto}</span>
-                                                  <strong className="text-amber-900 bg-amber-100 px-1 py-0.2 rounded text-[9px]">{it.gramos.toLocaleString()} g</strong>
-                                                </div>
-                                              ))}
-                                            </div>
-                                            <div className="pt-0.5 border-t border-amber-200 flex justify-between font-bold text-[9px] text-amber-950">
-                                              <span>Total Tanque B:</span>
-                                              <span>{detalleB.totalGramos.toLocaleString()} g ({detalleB.totalKg} kg)</span>
-                                            </div>
+                                            <table className="w-full text-[9px] text-left border-collapse">
+                                              <thead>
+                                                <tr className="bg-amber-50 text-amber-950 font-bold uppercase border-b border-amber-200">
+                                                  <th className="p-1 border-r border-amber-100">Sal / Fertilizante</th>
+                                                  <th className="p-1 text-center border-r border-amber-100 w-16">Dosis</th>
+                                                  <th className="p-1 text-center w-16">Unidades</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody className="divide-y divide-amber-50 font-mono">
+                                                {prodsB.map((l, li) => (
+                                                  <tr key={li}>
+                                                    <td className="p-1 font-body text-slate-800 border-r border-amber-50">{l.producto}</td>
+                                                    <td className="p-1 text-center font-bold text-amber-950 border-r border-amber-50">{l.dosis}</td>
+                                                    <td className="p-1 text-center text-slate-600">{l.unidad}</td>
+                                                  </tr>
+                                                ))}
+                                              </tbody>
+                                              <tfoot>
+                                                <tr className="bg-amber-100/70 font-bold text-amber-950 border-t border-amber-300">
+                                                  <td className="p-1 border-r border-amber-200">TOTAL TANQUE B</td>
+                                                  <td className="p-1 text-center font-mono font-bold text-amber-950 border-r border-amber-200">{totalDosisB.toLocaleString()}</td>
+                                                  <td className="p-1 text-center font-mono text-amber-800">g / {volMadre} L</td>
+                                                </tr>
+                                              </tfoot>
+                                            </table>
                                           </div>
                                         )}
                                       </div>
@@ -2451,11 +2612,11 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                                       {/* OBSERVACIONES ABAJO DE LOS CUADROS EN DOSATRON */}
                                       <div className="bg-slate-50 p-2 rounded-xl border border-slate-200 space-y-1 text-[9px]">
                                         <div className="font-bold text-slate-800 flex items-center gap-1 uppercase tracking-wide">
-                                          <span>📝</span> Instrucciones de Inyección y Observaciones para el Productor
+                                          <span>📝</span> Instrucciones al Pie del Cuadro:
                                         </div>
                                         <div className="bg-blue-50 border-l-4 border-blue-600 p-1.5 rounded-r text-blue-950">
                                           <strong>💉 Inyección Proporcional Dual Dosatron ({ev.relacionInyeccion || '1:100'}):</strong>
-                                          <p>Calibrar inyectores al {ev.relacionInyeccion === '1:100' ? '1.0% (1:100)' : ev.relacionInyeccion}. Mantener estricta segregación química: nunca mezclar concentrados A y B en el mismo recipiente antes de inyectar.</p>
+                                          <p>Calibrar inyectores al {ev.relacionInyeccion === '1:100' ? '1.0%' : ev.relacionInyeccion}. Mantener estricta segregación química: nunca mezclar concentrados A y B en el mismo recipiente antes de inyectar.</p>
                                         </div>
                                         {ev.observacionesPie && (
                                           <div className="bg-amber-50 border-l-4 border-amber-500 p-1.5 rounded-r text-amber-950">

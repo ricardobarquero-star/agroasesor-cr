@@ -841,3 +841,58 @@ export function obtenerAporteFallback(prodNombre = '') {
   if (/humic|ácido h/i.test(p)) return 'Acondicionador de suelo y retención de cationes';
   return 'Aporte nutricional / Fitoactivo';
 }
+
+/**
+ * Normaliza una línea de fertilizante al formato clásico manual:
+ * Columna 1: Sal / Fertilizante
+ * Columna 2: Dosis
+ * Columna 3: Unidad
+ */
+export function normalizarSalDosisUnidad(linea, volumenTanque = 1000) {
+  let prodNombre = '';
+  let dosisRaw = '';
+  let unidadRaw = '';
+
+  if (typeof linea === 'string') {
+    const partes = linea.split(/[:–-]/);
+    if (partes.length >= 2) {
+      prodNombre = partes[0].trim();
+      dosisRaw = partes.slice(1).join('-').trim();
+    } else {
+      prodNombre = linea.trim();
+    }
+  } else {
+    prodNombre = linea?.producto || linea?.nombre || '';
+    dosisRaw = String(linea?.dosis || '').trim();
+    unidadRaw = String(linea?.unidad || '').trim();
+  }
+
+  // Si dosisRaw contiene letras al final (ej: "580 g" o "580g"), separar
+  const match = dosisRaw.match(/^([0-9]+([.,][0-9]+)?)\s*(.*)$/);
+  let dosisNumero = dosisRaw;
+  if (match) {
+    dosisNumero = match[1];
+    if (match[3] && !unidadRaw) {
+      unidadRaw = match[3];
+    }
+  }
+
+  // Normalizar unidad
+  if (!unidadRaw) {
+    unidadRaw = `g / ${volumenTanque} L`;
+  } else {
+    unidadRaw = unidadRaw.replace(/g\s*\/\s*tanque\s*/i, 'g / ');
+  }
+
+  const numVal = parseFloat(dosisNumero.replace(',', '.')) || 0;
+  const esSuplemento = linea?.esSuplemento || /tricho|nemati|bioact|verango|nimitz|rootex|kelpak|humic|ácido h|organ/i.test(prodNombre);
+
+  return {
+    producto: prodNombre,
+    dosis: dosisNumero,
+    dosisNum: numVal,
+    unidad: unidadRaw,
+    esSuplemento
+  };
+}
+

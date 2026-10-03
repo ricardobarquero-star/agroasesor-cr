@@ -6,7 +6,7 @@
  */
 
 import { calcularDosisDual } from '../utils/doseCalculator.js';
-import { calcularNutrientesTotales, calcularDetalleCuadroFertilizacion } from './nutritionCalculatorService.js';
+import { calcularNutrientesTotales, calcularDetalleCuadroFertilizacion, normalizarSalDosisUnidad } from './nutritionCalculatorService.js';
 
 /**
  * Escapa cadenas de texto para inserción segura en HTML
@@ -32,10 +32,10 @@ export function generarHtmlReporte(datos = {}) {
     lote = {},
     filtroLote = 'todos',
     perfilIngeniero = {},
-    hallazgosFiltrados = [],
-    medicionesSuelo = [],
-    recFertirriegoFiltradas = [],
-    recPlaguicidasFiltradas = [],
+    hallazgosFiltrados = datos.hallazgosFiltrados || datos.hallazgos || [],
+    medicionesSuelo = datos.medicionesSuelo || [],
+    recFertirriegoFiltradas = datos.recFertirriegoFiltradas || datos.recomendacionesFertirriego || [],
+    recPlaguicidasFiltradas = datos.recPlaguicidasFiltradas || datos.recomendacionesPlaguicidas || [],
     analisisClimaIa = {},
     estadisticasClima = null,
     analisisEpidemiologico = {},
@@ -203,11 +203,18 @@ export function generarHtmlReporte(datos = {}) {
 
               ${(s.eventos || []).map(ev => {
                 const volTanque = Number(ev.volumenTanqueDirectoLitros) || 1000;
-                const detalleGeneral = (ev.productos && ev.productos.length > 0) ? calcularDetalleCuadroFertilizacion(ev.productos, volTanque) : null;
+                const prodsDirectos = (ev.productos || []).map(p => normalizarSalDosisUnidad(p, volTanque));
+                const totalDosisDirecto = prodsDirectos.reduce((acc, p) => acc + p.dosisNum, 0);
+
                 const volMadre = Number(ev.volumenTanqueMadreLitros) || 1000;
-                const detalleA = (ev.lineasTanqueA && ev.lineasTanqueA.length > 0) ? calcularDetalleCuadroFertilizacion(ev.lineasTanqueA, volMadre) : null;
-                const detalleB = (ev.lineasTanqueB && ev.lineasTanqueB.length > 0) ? calcularDetalleCuadroFertilizacion(ev.lineasTanqueB, volMadre) : null;
-                const tieneSuplementos = detalleGeneral?.items.some(it => it.esSuplemento) || false;
+                const prodsA = (ev.lineasTanqueA || []).map(p => normalizarSalDosisUnidad(p, volMadre));
+                const totalDosisA = prodsA.reduce((acc, p) => acc + p.dosisNum, 0);
+
+                const prodsB = (ev.lineasTanqueB || []).map(p => normalizarSalDosisUnidad(p, volMadre));
+                const totalDosisB = prodsB.reduce((acc, p) => acc + p.dosisNum, 0);
+
+                const esDual = ev.lineasTanqueA && ev.lineasTanqueB && (ev.lineasTanqueA.length > 0 || ev.lineasTanqueB.length > 0);
+                const tieneSuplementos = prodsDirectos.some(it => it.esSuplemento);
 
                 return `
                 <div class="event-block">
@@ -231,13 +238,13 @@ export function generarHtmlReporte(datos = {}) {
                     ${ev.phObjetivo ? `<span>🧪 pH: ${escapeHtml(ev.phObjetivo)}</span>` : ''}
                   </div>
 
-                  <!-- CUADRO DE DOSIFICACIÓN PARA EL PRODUCTOR (TABLA ESTRUCTURADA) -->
-                  ${detalleGeneral ? `
+                  <!-- CUADRO DE DOSIFICACIÓN PARA EL PRODUCTOR (TABLA ESTRUCTURADA EN 3 COLUMNAS: SAL, DOSIS, UNIDADES) -->
+                  ${(!esDual && prodsDirectos.length > 0) ? `
                     <div class="cuadro-fert-wrapper">
                       <div class="cuadro-fert-header">
                         <div class="cuadro-fert-title">
-                          <span>⚖️</span>
-                          <span>CUADRO DE PESAJE DE FERTILIZANTES Y SALES SOLUBLES</span>
+                          <span>📋</span>
+                          <span>CUADRO DE FERTILIZACIÓN (${escapeHtml(ev.nombreEvento || ev.nombre || 'Fórmula Nutricional')})</span>
                         </div>
                         <div class="cuadro-fert-volumen">
                           🛢️ Cantidad de Agua: <strong>${volTanque.toLocaleString()} Litros</strong>
@@ -248,14 +255,13 @@ export function generarHtmlReporte(datos = {}) {
                         <table class="cuadro-fert-tabla">
                           <thead>
                             <tr>
-                              <th style="min-width: 170px;">Sal / Fertilizante</th>
-                              <th style="min-width: 130px; text-align: center;">Gramos a Pesar (para ${volTanque.toLocaleString()} L)</th>
-                              <th style="min-width: 90px; text-align: center;">Concentración</th>
-                              <th style="min-width: 170px;">Aporte Principal / Función</th>
+                              <th>Sal / Fertilizante</th>
+                              <th style="width: 120px; text-align: center;">Dosis</th>
+                              <th style="width: 150px; text-align: center;">Unidades</th>
                             </tr>
                           </thead>
                           <tbody>
-                            ${detalleGeneral.items.map(it => `
+                            ${prodsDirectos.map(it => `
                               <tr>
                                 <td>
                                   <div class="fert-name-cell">
@@ -264,13 +270,10 @@ export function generarHtmlReporte(datos = {}) {
                                   </div>
                                 </td>
                                 <td style="text-align: center;">
-                                  <span class="dose-number-cell">${it.gramos.toLocaleString()} g</span>
+                                  <span class="dose-number-cell">${escapeHtml(it.dosis)}</span>
                                 </td>
                                 <td style="text-align: center;">
-                                  <span class="dose-conc-cell">${it.concentracionGL} g/L</span>
-                                </td>
-                                <td>
-                                  <span class="fert-role-cell">${escapeHtml(it.aporte)}</span>
+                                  <span class="dose-unit-cell">${escapeHtml(it.unidad)}</span>
                                 </td>
                               </tr>
                             `).join('')}
@@ -279,25 +282,20 @@ export function generarHtmlReporte(datos = {}) {
                             <tr class="cuadro-fert-total-row">
                               <td><strong>TOTAL DE SALES A DISOLVER</strong></td>
                               <td style="text-align: center;">
-                                <strong class="total-grams-badge">${detalleGeneral.totalGramos.toLocaleString()} g</strong>
-                                <span class="total-kg-sub">(${detalleGeneral.totalKg} kg)</span>
+                                <strong class="total-grams-badge">${totalDosisDirecto.toLocaleString()}</strong>
                               </td>
                               <td style="text-align: center;">
-                                <strong>${detalleGeneral.concentracionTotalGL} g/L</strong>
-                              </td>
-                              <td>
-                                ${ev.conductividadObjetivo ? `<span>⚡ CE: <strong>${escapeHtml(ev.conductividadObjetivo)}</strong></span> ` : ''}
-                                ${ev.phObjetivo ? `<span>🧪 pH: <strong>${escapeHtml(ev.phObjetivo)}</strong></span>` : ''}
+                                <strong class="total-kg-sub">g / ${volTanque} L</strong>
                               </td>
                             </tr>
                           </tfoot>
                         </table>
                       </div>
 
-                      <!-- ABAJO DEL CUADRO LAS OBSERVACIONES -->
+                      <!-- AL PIE DEL CUADRO SE DEJAN LAS INSTRUCCIONES -->
                       <div class="cuadro-observaciones">
                         <div class="cuadro-obs-header">
-                          <span>📝</span> <strong>Observaciones Técnicas e Instrucciones de Preparación del Tanque para el Productor</strong>
+                          <span>📝</span> <strong>Instrucciones al Pie del Cuadro:</strong>
                         </div>
 
                         <div class="orden-mezcla-card">
@@ -328,9 +326,9 @@ export function generarHtmlReporte(datos = {}) {
                   ` : ''}
 
                   <!-- CASO DOSATRON (TANQUE A Y TANQUE B) -->
-                  ${(detalleA || detalleB) ? `
+                  ${(esDual || prodsA.length > 0 || prodsB.length > 0) ? `
                     <div class="grid-tanques-dual">
-                      ${detalleA ? `
+                      ${prodsA.length > 0 ? `
                         <div class="cuadro-fert-wrapper tank-a-wrapper">
                           <div class="cuadro-fert-header tank-a-header">
                             <div class="cuadro-fert-title">
@@ -345,25 +343,30 @@ export function generarHtmlReporte(datos = {}) {
                             <table class="cuadro-fert-tabla">
                               <thead>
                                 <tr>
-                                  <th>Fertilizante</th>
-                                  <th style="text-align: center;">Cantidad a Pesar</th>
-                                  <th>Aporte Principal</th>
+                                  <th>Sal / Fertilizante</th>
+                                  <th style="width: 120px; text-align: center;">Dosis</th>
+                                  <th style="width: 150px; text-align: center;">Unidades</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                ${detalleA.items.map(it => `
+                                ${prodsA.map(it => `
                                   <tr>
-                                    <td><strong>${escapeHtml(it.producto)}</strong></td>
-                                    <td style="text-align: center;"><span class="dose-number-cell blue-dose">${it.gramos.toLocaleString()} g</span></td>
-                                    <td><span class="fert-role-cell">${escapeHtml(it.aporte)}</span></td>
+                                    <td>
+                                      <div class="fert-name-cell">
+                                        <strong>${escapeHtml(it.producto)}</strong>
+                                        ${it.esSuplemento ? `<span class="badge-suplemento">🌿 Suplemento</span>` : ''}
+                                      </div>
+                                    </td>
+                                    <td style="text-align: center;"><span class="dose-number-cell blue-dose">${escapeHtml(it.dosis)}</span></td>
+                                    <td style="text-align: center;"><span class="dose-unit-cell">${escapeHtml(it.unidad)}</span></td>
                                   </tr>
                                 `).join('')}
                               </tbody>
                               <tfoot>
                                 <tr class="cuadro-fert-total-row blue-total">
                                   <td><strong>TOTAL TANQUE A</strong></td>
-                                  <td style="text-align: center;"><strong>${detalleA.totalGramos.toLocaleString()} g</strong> (${detalleA.totalKg} kg)</td>
-                                  <td>Concentración: ${detalleA.concentracionTotalGL} g/L</td>
+                                  <td style="text-align: center;"><strong>${totalDosisA.toLocaleString()}</strong></td>
+                                  <td style="text-align: center;"><strong>g / ${volMadre} L</strong></td>
                                 </tr>
                               </tfoot>
                             </table>
@@ -371,7 +374,7 @@ export function generarHtmlReporte(datos = {}) {
                         </div>
                       ` : ''}
 
-                      ${detalleB ? `
+                      ${prodsB.length > 0 ? `
                         <div class="cuadro-fert-wrapper tank-b-wrapper">
                           <div class="cuadro-fert-header tank-b-header">
                             <div class="cuadro-fert-title">
@@ -386,25 +389,30 @@ export function generarHtmlReporte(datos = {}) {
                             <table class="cuadro-fert-tabla">
                               <thead>
                                 <tr>
-                                  <th>Fertilizante</th>
-                                  <th style="text-align: center;">Cantidad a Pesar</th>
-                                  <th>Aporte Principal</th>
+                                  <th>Sal / Fertilizante</th>
+                                  <th style="width: 120px; text-align: center;">Dosis</th>
+                                  <th style="width: 150px; text-align: center;">Unidades</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                ${detalleB.items.map(it => `
+                                ${prodsB.map(it => `
                                   <tr>
-                                    <td><strong>${escapeHtml(it.producto)}</strong></td>
-                                    <td style="text-align: center;"><span class="dose-number-cell amber-dose">${it.gramos.toLocaleString()} g</span></td>
-                                    <td><span class="fert-role-cell">${escapeHtml(it.aporte)}</span></td>
+                                    <td>
+                                      <div class="fert-name-cell">
+                                        <strong>${escapeHtml(it.producto)}</strong>
+                                        ${it.esSuplemento ? `<span class="badge-suplemento">🌿 Suplemento</span>` : ''}
+                                      </div>
+                                    </td>
+                                    <td style="text-align: center;"><span class="dose-number-cell amber-dose">${escapeHtml(it.dosis)}</span></td>
+                                    <td style="text-align: center;"><span class="dose-unit-cell">${escapeHtml(it.unidad)}</span></td>
                                   </tr>
                                 `).join('')}
                               </tbody>
                               <tfoot>
                                 <tr class="cuadro-fert-total-row amber-total">
                                   <td><strong>TOTAL TANQUE B</strong></td>
-                                  <td style="text-align: center;"><strong>${detalleB.totalGramos.toLocaleString()} g</strong> (${detalleB.totalKg} kg)</td>
-                                  <td>Concentración: ${detalleB.concentracionTotalGL} g/L</td>
+                                  <td style="text-align: center;"><strong>${totalDosisB.toLocaleString()}</strong></td>
+                                  <td style="text-align: center;"><strong>g / ${volMadre} L</strong></td>
                                 </tr>
                               </tfoot>
                             </table>

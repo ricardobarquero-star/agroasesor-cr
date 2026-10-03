@@ -11,7 +11,8 @@ import {
   proponerFormulaDosatron,
   escalarFormulaPorVolumen,
   reescalarLineasPorVolumen,
-  calcularDetalleCuadroFertilizacion
+  calcularDetalleCuadroFertilizacion,
+  normalizarSalDosisUnidad
 } from '../services/nutritionCalculatorService';
 
 // Modalidades oficiales solicitadas por el Ing. Agr. Ricardo Barquero
@@ -1151,25 +1152,32 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                 </div>
               </div>
 
-              {/* Cuadro de Fertilización y Pesaje para el Productor */}
+              {/* Cuadro de Fertilización y Pesaje para el Productor (Formato clásico: Sal, Dosis, Unidades) */}
               {(() => {
                 const volTanque = Number(ev.volumenTanqueDirectoLitros) || 1000;
-                const detalleGeneral = (ev.productos && ev.productos.length > 0) ? calcularDetalleCuadroFertilizacion(ev.productos, volTanque) : null;
+                const prodsDirectos = (ev.productos || []).map(p => normalizarSalDosisUnidad(p, volTanque));
+                const totalDosisDirecto = prodsDirectos.reduce((acc, p) => acc + p.dosisNum, 0);
+
                 const volMadre = Number(ev.volumenTanqueMadreLitros) || 1000;
-                const detalleA = (ev.lineasTanqueA && ev.lineasTanqueA.length > 0) ? calcularDetalleCuadroFertilizacion(ev.lineasTanqueA, volMadre) : null;
-                const detalleB = (ev.lineasTanqueB && ev.lineasTanqueB.length > 0) ? calcularDetalleCuadroFertilizacion(ev.lineasTanqueB, volMadre) : null;
-                const tieneSuplementos = detalleGeneral?.items.some(it => it.esSuplemento) || false;
+                const prodsA = (ev.lineasTanqueA || []).map(p => normalizarSalDosisUnidad(p, volMadre));
+                const totalDosisA = prodsA.reduce((acc, p) => acc + p.dosisNum, 0);
+
+                const prodsB = (ev.lineasTanqueB || []).map(p => normalizarSalDosisUnidad(p, volMadre));
+                const totalDosisB = prodsB.reduce((acc, p) => acc + p.dosisNum, 0);
+
+                const esDual = ev.lineasTanqueA && ev.lineasTanqueB && (ev.lineasTanqueA.length > 0 || ev.lineasTanqueB.length > 0);
+                const tieneSuplementos = prodsDirectos.some(it => it.esSuplemento);
 
                 return (
                   <div className="space-y-3">
-                    {/* CUADRO / TABLA ESTRUCTURADA DE FERTILIZACIÓN */}
-                    {detalleGeneral && (
+                    {/* CUADRO / TABLA ESTRUCTURADA DE FERTILIZACIÓN (3 COLUMNAS: SAL, DOSIS, UNIDADES) */}
+                    {!esDual && prodsDirectos.length > 0 && (
                       <div className="border-2 border-emerald-300 rounded-2xl overflow-hidden bg-white shadow-sm">
                         <div className="bg-gradient-to-r from-emerald-800 to-teal-800 text-white px-3.5 py-2 flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
-                            <span className="text-base">⚖️</span>
+                            <span className="text-base">📋</span>
                             <span className="font-extrabold text-xs sm:text-sm">
-                              CUADRO DE PESAJE DE FERTILIZANTES Y SALES SOLUBLES
+                              CUADRO DE FERTILIZACIÓN ({ev.nombreEvento || 'Fórmula Nutricional'})
                             </span>
                           </div>
                           <span className="bg-white/20 border border-white/40 text-white px-2.5 py-0.5 rounded-full font-mono font-bold text-xs">
@@ -1182,15 +1190,14 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                             <thead>
                               <tr className="bg-slate-100 text-slate-700 font-extrabold text-[11px] uppercase border-b-2 border-slate-200">
                                 <th className="p-2.5">Sal / Fertilizante</th>
-                                <th className="p-2.5 text-center">Gramos a Pesar (para {volTanque.toLocaleString()} L)</th>
-                                <th className="p-2.5 text-center">Concentración</th>
-                                <th className="p-2.5">Aporte Principal / Función</th>
+                                <th className="p-2.5 text-center w-28">Dosis</th>
+                                <th className="p-2.5 text-center w-36">Unidades</th>
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {detalleGeneral.items.map((it, idx) => (
+                            <tbody className="divide-y divide-slate-100 font-mono">
+                              {prodsDirectos.map((it, idx) => (
                                 <tr key={idx} className="hover:bg-emerald-50/50 transition">
-                                  <td className="p-2.5 font-bold text-slate-900">
+                                  <td className="p-2.5 font-bold font-sans text-slate-900">
                                     <div className="flex flex-wrap items-center gap-1.5">
                                       <span>{it.producto}</span>
                                       {it.esSuplemento && (
@@ -1202,38 +1209,33 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                                   </td>
                                   <td className="p-2.5 text-center">
                                     <span className="font-mono font-black text-emerald-900 bg-emerald-100/90 px-3 py-1 rounded-xl border border-emerald-300 inline-block text-sm">
-                                      {it.gramos.toLocaleString()} g
+                                      {it.dosis}
                                     </span>
                                   </td>
                                   <td className="p-2.5 text-center font-mono text-slate-600 font-bold">
-                                    {it.concentracionGL} g/L
-                                  </td>
-                                  <td className="p-2.5 text-slate-600 text-[11.5px] leading-tight">
-                                    {it.aporte}
+                                    {it.unidad}
                                   </td>
                                 </tr>
                               ))}
                             </tbody>
                             <tfoot>
                               <tr className="bg-emerald-50 font-bold text-emerald-950 border-t-2 border-emerald-500 text-xs">
-                                <td className="p-3 font-extrabold">TOTAL DE SALES A DISOLVER</td>
+                                <td className="p-3 font-extrabold font-sans">TOTAL DE SALES A DISOLVER</td>
                                 <td className="p-3 text-center font-mono font-black text-emerald-900 text-sm">
-                                  {detalleGeneral.totalGramos.toLocaleString()} g <span className="text-[11px] font-medium font-sans">({detalleGeneral.totalKg} kg)</span>
+                                  {totalDosisDirecto.toLocaleString()}
                                 </td>
-                                <td className="p-3 text-center font-mono font-bold">{detalleGeneral.concentracionTotalGL} g/L</td>
-                                <td className="p-3 text-[11px] font-medium">
-                                  {ev.conductividadObjetivo && <span className="font-bold mr-2">⚡ CE: {ev.conductividadObjetivo}</span>}
-                                  {ev.phObjetivo && <span className="font-bold">🧪 pH: {ev.phObjetivo}</span>}
+                                <td className="p-3 text-center font-mono font-bold text-emerald-800">
+                                  g / {volTanque} L
                                 </td>
                               </tr>
                             </tfoot>
                           </table>
                         </div>
 
-                        {/* ABAJO DEL CUADRO LAS OBSERVACIONES */}
+                        {/* AL PIE DEL CUADRO SE DEJAN LAS INSTRUCCIONES */}
                         <div className="bg-slate-50 p-3.5 border-t border-slate-200 space-y-2.5 text-xs">
                           <div className="font-extrabold text-slate-800 flex items-center gap-1.5 uppercase tracking-wide text-[11px]">
-                            <span>📝</span> Observaciones Técnicas e Instrucciones de Preparación del Tanque para el Productor
+                            <span>📝</span> Instrucciones al Pie del Cuadro:
                           </div>
 
                           <div className="bg-blue-50/90 border-l-4 border-blue-600 p-2.5 rounded-r-xl text-blue-950 space-y-1">
@@ -1264,10 +1266,10 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                     )}
 
                     {/* CASO DOSATRON (TANQUE A Y TANQUE B) */}
-                    {(detalleA || detalleB) && (
+                    {(esDual || prodsA.length > 0 || prodsB.length > 0) && (
                       <div className="space-y-2">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {detalleA && (
+                          {prodsA.length > 0 && (
                             <div className="border border-blue-200 rounded-2xl overflow-hidden bg-white shadow-xs">
                               <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white px-3 py-1.5 flex items-center justify-between text-xs">
                                 <strong className="font-extrabold">🔵 TANQUE A (Calcio, Nitratos y Quelatos Fe)</strong>
@@ -1275,22 +1277,35 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                                   {volMadre} L
                                 </span>
                               </div>
-                              <div className="p-2 space-y-1 text-xs">
-                                {detalleA.items.map((it, lIdx) => (
-                                  <div key={lIdx} className="flex justify-between items-center bg-blue-50/50 p-2 rounded-lg border border-blue-100">
-                                    <span className="font-bold text-slate-800">{it.producto}</span>
-                                    <strong className="text-blue-900 bg-blue-100 px-2 py-0.5 rounded-lg font-mono">{it.gramos.toLocaleString()} g</strong>
-                                  </div>
-                                ))}
-                                <div className="pt-1 border-t border-blue-200 flex justify-between font-bold text-xs text-blue-900">
-                                  <span>Total Sales Tanque A:</span>
-                                  <span>{detalleA.totalGramos.toLocaleString()} g ({detalleA.totalKg} kg)</span>
-                                </div>
-                              </div>
+                              <table className="w-full text-xs text-left border-collapse font-mono">
+                                <thead>
+                                  <tr className="bg-blue-50/80 text-blue-900 font-extrabold text-[10.5px] uppercase border-b border-blue-100">
+                                    <th className="p-2 font-sans">Sal / Fertilizante</th>
+                                    <th className="p-2 text-center w-24">Dosis</th>
+                                    <th className="p-2 text-center w-28">Unidades</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-blue-50">
+                                  {prodsA.map((it, idx) => (
+                                    <tr key={idx} className="hover:bg-blue-50/40">
+                                      <td className="p-2 font-sans font-bold text-slate-800">{it.producto}</td>
+                                      <td className="p-2 text-center font-bold text-blue-900">{it.dosis}</td>
+                                      <td className="p-2 text-center text-slate-600 text-[11px]">{it.unidad}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                                <tfoot>
+                                  <tr className="bg-blue-100/60 font-bold text-blue-950 border-t border-blue-200 text-xs">
+                                    <td className="p-2 font-sans">TOTAL TANQUE A</td>
+                                    <td className="p-2 text-center font-mono">{totalDosisA.toLocaleString()}</td>
+                                    <td className="p-2 text-center font-mono">g / {volMadre} L</td>
+                                  </tr>
+                                </tfoot>
+                              </table>
                             </div>
                           )}
 
-                          {detalleB && (
+                          {prodsB.length > 0 && (
                             <div className="border border-amber-200 rounded-2xl overflow-hidden bg-white shadow-xs">
                               <div className="bg-gradient-to-r from-amber-900 to-amber-800 text-white px-3 py-1.5 flex items-center justify-between text-xs">
                                 <strong className="font-extrabold">🟡 TANQUE B (Fósforo, Sulfatos y Magnesio)</strong>
@@ -1298,18 +1313,31 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                                   {volMadre} L
                                 </span>
                               </div>
-                              <div className="p-2 space-y-1 text-xs">
-                                {detalleB.items.map((it, lIdx) => (
-                                  <div key={lIdx} className="flex justify-between items-center bg-amber-50/50 p-2 rounded-lg border border-amber-100">
-                                    <span className="font-bold text-slate-800">{it.producto}</span>
-                                    <strong className="text-amber-950 bg-amber-100 px-2 py-0.5 rounded-lg font-mono">{it.gramos.toLocaleString()} g</strong>
-                                  </div>
-                                ))}
-                                <div className="pt-1 border-t border-amber-200 flex justify-between font-bold text-xs text-amber-950">
-                                  <span>Total Sales Tanque B:</span>
-                                  <span>{detalleB.totalGramos.toLocaleString()} g ({detalleB.totalKg} kg)</span>
-                                </div>
-                              </div>
+                              <table className="w-full text-xs text-left border-collapse font-mono">
+                                <thead>
+                                  <tr className="bg-amber-50/80 text-amber-950 font-extrabold text-[10.5px] uppercase border-b border-amber-100">
+                                    <th className="p-2 font-sans">Sal / Fertilizante</th>
+                                    <th className="p-2 text-center w-24">Dosis</th>
+                                    <th className="p-2 text-center w-28">Unidades</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-amber-50">
+                                  {prodsB.map((it, idx) => (
+                                    <tr key={idx} className="hover:bg-amber-50/40">
+                                      <td className="p-2 font-sans font-bold text-slate-800">{it.producto}</td>
+                                      <td className="p-2 text-center font-bold text-amber-950">{it.dosis}</td>
+                                      <td className="p-2 text-center text-slate-600 text-[11px]">{it.unidad}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                                <tfoot>
+                                  <tr className="bg-amber-100/60 font-bold text-amber-950 border-t border-amber-200 text-xs">
+                                    <td className="p-2 font-sans">TOTAL TANQUE B</td>
+                                    <td className="p-2 text-center font-mono">{totalDosisB.toLocaleString()}</td>
+                                    <td className="p-2 text-center font-mono">g / {volMadre} L</td>
+                                  </tr>
+                                </tfoot>
+                              </table>
                             </div>
                           )}
                         </div>
