@@ -3,7 +3,7 @@ import {
   ShieldCheck, Plus, Trash2, AlertTriangle, Sparkles, Check, 
   Layers, FlaskConical, Calendar, AlertOctagon, HelpCircle,
   X, CheckCircle2, Sliders, Shield, Sprout, ArrowRight, MapPin,
-  List, Edit3
+  List, Edit3, Search, ChevronDown, Filter
 } from 'lucide-react';
 import { crAgroDatabase } from '../data/crAgroDatabase';
 import { storageService } from '../services/storageService';
@@ -27,6 +27,10 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
   // Filas dinámicas limpias
   const [lineasMezcla, setLineasMezcla] = useState([]);
   const [filtroCategoriaInsumo, setFiltroCategoriaInsumo] = useState('todos');
+  const [filtroBlancoBiologico, setFiltroBlancoBiologico] = useState('');
+  const [textoBusquedaBlanco, setTextoBusquedaBlanco] = useState('');
+  const [filaDropdownAbierto, setFilaDropdownAbierto] = useState(null);
+  const [busquedasFila, setBusquedasFila] = useState({});
   const [investigandoIdx, setInvestigandoIdx] = useState(null);
   const [auditandoMezcla, setAuditandoMezcla] = useState(false);
   const [resultadoAuditoria, setResultadoAuditoria] = useState(null);
@@ -45,8 +49,19 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
 
   const todosPlaguicidas = storageService.getTodosLosPlaguicidas();
 
-  // Filtrar productos según tipo de mezcla y filtros por categoría (Fungicidas, Insecticidas, Foliares, Coadyuvantes, Todos)
+  // Filtrar productos según blanco biológico (enfermedad/ácaro/insecto), categoría y tipo de mezcla
   const productosFiltradosMezcla = todosPlaguicidas.filter(p => {
+    // 1. Filtro inteligente por Blanco Biológico / Plaga / Enfermedad
+    if (filtroBlancoBiologico && filtroBlancoBiologico.trim()) {
+      const bq = filtroBlancoBiologico.toLowerCase().trim();
+      const coincideBlanco = (p.blancoBiologico || '').toLowerCase().includes(bq) ||
+                             (p.subcategoria || '').toLowerCase().includes(bq) ||
+                             (p.modoAccion || '').toLowerCase().includes(bq) ||
+                             (p.nombreComercial || '').toLowerCase().includes(bq) ||
+                             (p.ingredienteActivo || '').toLowerCase().includes(bq);
+      if (!coincideBlanco) return false;
+    }
+
     const cat = (p.categoria || '').toLowerCase();
     const nombre = (p.nombreComercial || '').toLowerCase();
 
@@ -227,6 +242,29 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
       ]);
       setMostrarModalApp(true);
     }
+  };
+
+  const handleSeleccionarPlaguicidaObj = (p, idx) => {
+    if (!p) return;
+    const dual = calcularDosisDual(p.dosisEstandar || '');
+    const nuevas = [...lineasMezcla];
+    nuevas[idx].esManual = false;
+    nuevas[idx].producto = p.nombreComercial;
+    nuevas[idx].tipo = p.categoria || nuevas[idx].tipo;
+    nuevas[idx].fracIrac = p.codigoFracIrac || '';
+    nuevas[idx].dosisLitro = p.dosisLitro || dual.dosisLitro;
+    nuevas[idx].dosisEstanon = p.dosisEstanon || dual.dosisEstanon;
+    nuevas[idx].dosis = p.dosisEstandar || (dual.dosisEstanon ? `${dual.dosisLitro} (${dual.dosisEstanon})` : dual.dosisLitro);
+    nuevas[idx].funcion = p.blancoBiologico || p.ingredienteActivo || '';
+    nuevas[idx].registroSfe = p.registroSfe || p.registroSFE || '';
+    nuevas[idx].ingredienteActivo = p.ingredienteActivo || '';
+    setLineasMezcla(nuevas);
+    setBusquedasFila(prev => {
+      const copy = { ...prev };
+      delete copy[idx];
+      return copy;
+    });
+    setFilaDropdownAbierto(null);
   };
 
   const handleSeleccionarPlaguicida = (valor, idx) => {
@@ -892,6 +930,79 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
 
               {/* TABLA DE PRODUCTOS CON LISTAS DESPLEGABLES NATIVAS */}
               <div className="border border-slate-200 rounded-2xl p-3.5 bg-slate-50/50 space-y-2.5">
+                {/* 1. FILTRO INTELIGENTE POR BLANCO BIOLÓGICO (PLAGA, ENFERMEDAD O ÁCARO A CONTROLAR) */}
+                <div className="bg-gradient-to-r from-purple-50 via-indigo-50/40 to-slate-50 p-3 rounded-2xl border border-purple-200 shadow-xs space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                    <div className="flex items-center gap-1.5 text-xs font-black text-purple-950 uppercase tracking-wide">
+                      <Target className="w-4 h-4 text-purple-700" />
+                      <span>Filtrar por Problema Fitosanitario / Blanco a Controlar:</span>
+                    </div>
+                    {filtroBlancoBiologico && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFiltroBlancoBiologico('');
+                          setTextoBusquedaBlanco('');
+                        }}
+                        className="text-[11px] font-bold text-purple-700 hover:text-purple-900 bg-white px-2 py-0.5 rounded-lg border border-purple-200 hover:bg-purple-50 transition"
+                      >
+                        ✕ Limpiar Filtro de Plaga
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Chips Rápidos de Problemas Comunes en Costa Rica */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {[
+                      { id: '', label: '🌐 Todos' },
+                      { id: 'botrytis', label: '🍓 Botrytis / Moho gris' },
+                      { id: 'oidio', label: '⚪ Oídio / Cenicilla' },
+                      { id: 'roya', label: '🍂 Roya blanca / Roya' },
+                      { id: 'acaro', label: '🕷️ Ácaros / Arañita' },
+                      { id: 'trips', label: '🪲 Trips' },
+                      { id: 'gusano', label: '🪱 Gusanos / Spodoptera' },
+                      { id: 'mosca blanca', label: '🪰 Mosca blanca' },
+                      { id: 'nematodo', label: '🐛 Nematodos' },
+                      { id: 'antracnosis', label: '🌑 Antracnosis' },
+                      { id: 'mildeo', label: '🌧️ Mildeo / Tizón' },
+                      { id: 'bacteri', label: '🧫 Bacteriosis' },
+                      { id: 'alternaria', label: '🌿 Alternaria' },
+                      { id: 'pythium', label: '🔬 Pythium / Raíz' }
+                    ].map(t => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => {
+                          setFiltroBlancoBiologico(t.id);
+                          setTextoBusquedaBlanco('');
+                        }}
+                        className={`px-2.5 py-1 rounded-xl text-[10.5px] font-extrabold transition active:scale-95 ${
+                          filtroBlancoBiologico === t.id
+                            ? 'bg-purple-800 text-white shadow-xs'
+                            : 'bg-white border border-purple-200 text-purple-900 hover:bg-purple-100/70'
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Buscador reactivo por texto libre de plaga */}
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-purple-500 absolute left-2.5 top-2.5" />
+                    <input
+                      type="text"
+                      value={textoBusquedaBlanco}
+                      onChange={(e) => {
+                        setTextoBusquedaBlanco(e.target.value);
+                        setFiltroBlancoBiologico(e.target.value);
+                      }}
+                      placeholder="O escriba cualquier plaga, patógeno o enfermedad (ej: minador, fusarium, pulgón, cochinilla, phytophthora)..."
+                      className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-purple-300 rounded-xl outline-none focus:ring-2 focus:ring-purple-500 text-slate-800 font-medium placeholder:text-slate-400"
+                    />
+                  </div>
+                </div>
+
                 {/* FILTROS POR TIPO DE INSUMO */}
                 <div className="bg-white p-2 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-1.5">
                   <div className="flex flex-wrap items-center gap-1">
@@ -921,15 +1032,15 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                       </button>
                     ))}
                   </div>
-                  <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded">
-                    {productosFiltradosMezcla.length} insumos listados
+                  <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                    {productosFiltradosMezcla.length} insumos encontrados
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div>
                     <span className="font-extrabold text-xs text-slate-900 block">
-                      Orden de Mezcla en Estañón (Toque para seleccionar producto)
+                      Orden de Mezcla en Estañón (Búsqueda reactiva por Nombre o Ingrediente Activo)
                     </span>
                     <span className="text-[10px] text-slate-500">
                       1. Acondicionador ➔ 2. Polvos/Gránulos ➔ 3. Líquidos ➔ 4. Foliares ➔ 5. Coadyuvante
@@ -948,29 +1059,171 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                 </div>
 
                 <div className="space-y-2">
-                  {lineasMezcla.map((l, idx) => (
-                    <div key={idx} className="bg-white p-2.5 rounded-xl border border-slate-200 flex flex-wrap sm:flex-nowrap items-center gap-2">
-                      <span className="w-6 h-6 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs shrink-0">
-                        {idx + 1}
-                      </span>
-                      
-                      {/* CELDA DE PRODUCTO: LISTA DESPLEGABLE CON DIGITAR DE PRIMERO */}
-                      {!l.esManual ? (
-                        <div className="flex-1 min-w-[200px] flex items-center gap-1">
-                          <select
-                            value={l.producto}
-                            onChange={(e) => handleSeleccionarPlaguicida(e.target.value, idx)}
-                            className="w-full text-xs font-bold text-slate-900 border border-slate-300 rounded-lg p-2 bg-purple-50/40 outline-none focus:ring-2 focus:ring-purple-500"
-                          >
-                            {/* REQUISITO: La opción de digitar producto debe estar DE PRIMERO en la lista */}
-                            <option value="__manual__">✏️ [+ DIGITAR PRODUCTO MANUAL / NO ESTÁ EN LISTA...]</option>
-                            <option value="">-- Toque para desplegar catálogo ({productosFiltradosMezcla.length} insumos) --</option>
-                            {productosFiltradosMezcla.map((p, i) => (
-                              <option key={i} value={p.nombreComercial}>
-                                {p.registroSfe ? `[${p.registroSfe.replace(' - MAG', '')}] ` : ''}{p.nombreComercial} ({p.categoria || ''} {p.codigoFracIrac ? `• ${p.codigoFracIrac}` : ''})
-                              </option>
-                            ))}
-                          </select>
+                  {lineasMezcla.map((l, idx) => {
+                    const textoFila = busquedasFila[idx] !== undefined ? busquedasFila[idx] : (l.producto || '');
+                    const estaAbierto = filaDropdownAbierto === idx;
+
+                    // Opciones filtradas en tiempo real para el autocompletado inteligente
+                    const queryLimpia = textoFila.toLowerCase().trim();
+                    const opcionesSugeridas = todosPlaguicidas.filter(p => {
+                      if (!queryLimpia) {
+                        return productosFiltradosMezcla.some(pf => pf.nombreComercial === p.nombreComercial);
+                      }
+                      const matchNom = (p.nombreComercial || '').toLowerCase().includes(queryLimpia);
+                      const matchIa = (p.ingredienteActivo || '').toLowerCase().includes(queryLimpia);
+                      const matchFrac = (p.codigoFracIrac || '').toLowerCase().includes(queryLimpia);
+                      const matchBlanco = (p.blancoBiologico || '').toLowerCase().includes(queryLimpia);
+                      const matchCat = (p.categoria || '').toLowerCase().includes(queryLimpia);
+                      return matchNom || matchIa || matchFrac || matchBlanco || matchCat;
+                    }).slice(0, 30); // Top 30 sugerencias inmediatas
+
+                    return (
+                      <div key={idx} className="bg-white p-2.5 rounded-xl border border-slate-200 flex flex-wrap sm:flex-nowrap items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs shrink-0">
+                          {idx + 1}
+                        </span>
+                        
+                        {/* CELDA DE PRODUCTO: COMBOBOX INTELIGENTE CON FILTRADO EN TIEMPO REAL */}
+                        <div className="relative flex-1 min-w-[220px]">
+                          <div className="relative flex items-center">
+                            <Search className="w-3.5 h-3.5 text-purple-600 absolute left-2 pointer-events-none" />
+                            <input
+                              type="text"
+                              value={textoFila}
+                              onFocus={() => setFilaDropdownAbierto(idx)}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setBusquedasFila(prev => ({ ...prev, [idx]: val }));
+                                setFilaDropdownAbierto(idx);
+                                const nuevo = [...lineasMezcla];
+                                nuevo[idx].producto = val;
+                                setLineasMezcla(nuevo);
+                              }}
+                              placeholder="Digite sulfato, azoxystrobin, mancozeb o nombre..."
+                              className="w-full text-xs font-bold text-slate-900 border border-purple-200 rounded-lg pl-7 pr-7 py-2 bg-purple-50/30 outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white transition"
+                            />
+                            {textoFila && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setBusquedasFila(prev => ({ ...prev, [idx]: '' }));
+                                  const nuevo = [...lineasMezcla];
+                                  nuevo[idx].producto = '';
+                                  nuevo[idx].fracIrac = '';
+                                  nuevo[idx].dosis = '';
+                                  nuevo[idx].dosisLitro = '';
+                                  nuevo[idx].dosisEstanon = '';
+                                  setLineasMezcla(nuevo);
+                                }}
+                                className="absolute right-2 p-0.5 text-slate-400 hover:text-slate-600"
+                                title="Limpiar texto"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+
+                          {/* DROPDOWN FLOTANTE INTELIGENTE CON OPCIONES */}
+                          {estaAbierto && (
+                            <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl border border-purple-200 shadow-2xl z-50 max-h-64 overflow-y-auto divide-y divide-slate-100 animate-in fade-in duration-100">
+                              <div className="p-1.5 bg-purple-50 flex items-center justify-between text-[10px] font-bold text-purple-900 sticky top-0 border-b border-purple-100">
+                                <span>{opcionesSugeridas.length} coincidencias (Nombre o Ingrediente Activo):</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setFilaDropdownAbierto(null)}
+                                  className="text-purple-600 hover:text-purple-900 font-extrabold"
+                                >
+                                  Cerrar ✕
+                                </button>
+                              </div>
+
+                              {/* Opción de usar el texto libre digitado */}
+                              {textoFila && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const nuevo = [...lineasMezcla];
+                                    nuevo[idx].producto = textoFila;
+                                    nuevo[idx].esManual = true;
+                                    setLineasMezcla(nuevo);
+                                    setFilaDropdownAbierto(null);
+                                    if (!nuevo[idx].fracIrac) {
+                                      handleAutoInvestigarConIA(idx, textoFila);
+                                    }
+                                  }}
+                                  className="w-full text-left p-2 hover:bg-amber-50 flex items-center gap-2 text-xs bg-amber-50/50 text-amber-900 font-bold"
+                                >
+                                  <span>✏️</span>
+                                  <span>Usar <strong>"{textoFila}"</strong> como insumo manual / personalizado</span>
+                                </button>
+                              )}
+
+                              {opcionesSugeridas.length > 0 ? (
+                                opcionesSugeridas.map((p, pIdx) => (
+                                  <div
+                                    key={pIdx}
+                                    onClick={() => handleSeleccionarPlaguicidaObj(p, idx)}
+                                    className="p-2 hover:bg-purple-50 cursor-pointer transition text-left space-y-0.5 group"
+                                  >
+                                    <div className="flex items-center justify-between gap-1">
+                                      <strong className="text-xs font-bold text-slate-900 group-hover:text-purple-900">
+                                        {p.nombreComercial}
+                                      </strong>
+                                      <div className="flex items-center gap-1">
+                                        {p.codigoFracIrac && (
+                                          <span className="text-[9px] font-mono font-bold bg-indigo-100 text-indigo-900 px-1.5 py-0.2 rounded border border-indigo-200">
+                                            {p.codigoFracIrac}
+                                          </span>
+                                        )}
+                                        {p.registroSfe && (
+                                          <span className="text-[8.5px] font-mono font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded">
+                                            SFE
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    {p.ingredienteActivo && (
+                                      <p className="text-[10px] text-slate-600 line-clamp-1 italic">
+                                        🧪 I.A: {p.ingredienteActivo}
+                                      </p>
+                                    )}
+                                    <div className="flex items-center justify-between text-[9.5px] text-slate-500 pt-0.5">
+                                      <span className="line-clamp-1 text-purple-700 font-medium">
+                                        🎯 {p.blancoBiologico || p.subcategoria || p.categoria}
+                                      </span>
+                                      {p.dosisEstandar && (
+                                        <span className="font-mono font-bold text-slate-700 shrink-0 ml-1">
+                                          {p.dosisEstandar}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="p-3 text-center text-xs text-slate-500 italic">
+                                  No se encontraron insumos que contengan "{textoFila}".
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const nuevo = [...lineasMezcla];
+                                      nuevo[idx].producto = textoFila;
+                                      nuevo[idx].esManual = true;
+                                      setLineasMezcla(nuevo);
+                                      setFilaDropdownAbierto(null);
+                                      handleAutoInvestigarConIA(idx, textoFila);
+                                    }}
+                                    className="block mx-auto mt-1 text-purple-700 font-bold underline"
+                                  >
+                                    Investigar riqueza técnica con IA
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Botones de apoyo: SFE e IA */}
+                        <div className="flex items-center gap-1 shrink-0">
                           <button
                             type="button"
                             onClick={() => {
@@ -978,69 +1231,22 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                               setMostrarCatalogoSfe(true);
                             }}
                             className="p-2 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-300 transition shrink-0"
-                            title="Explorar en Catálogo SFE"
+                            title="Explorar en Catálogo Oficial SFE"
                           >
                             <span className="text-[11px] font-black">🏛️ SFE</span>
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const nuevo = [...lineasMezcla];
-                              nuevo[idx].esManual = true;
-                              nuevo[idx].producto = '';
-                              nuevo[idx].fracIrac = '';
-                              nuevo[idx].dosis = '';
-                              nuevo[idx].funcion = '';
-                              setLineasMezcla(nuevo);
-                            }}
-                            className="p-2 text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg border border-purple-200"
-                            title="Escribir producto manual"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
+                          {l.producto && (
+                            <button
+                              type="button"
+                              onClick={() => handleAutoInvestigarConIA(idx, l.producto)}
+                              disabled={investigandoIdx === idx}
+                              className="p-2 text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg border border-purple-200 transition shrink-0"
+                              title="Investigar ficha y dosis con IA"
+                            >
+                              <Sparkles className={`w-3.5 h-3.5 ${investigandoIdx === idx ? 'animate-spin text-purple-700' : 'text-purple-600'}`} />
+                            </button>
+                          )}
                         </div>
-                      ) : (
-                        <div className="flex-1 min-w-[200px] flex items-center gap-1">
-                          <input
-                            type="text"
-                            value={l.producto}
-                            onChange={(e) => {
-                              const nuevo = [...lineasMezcla];
-                              nuevo[idx].producto = e.target.value;
-                              setLineasMezcla(nuevo);
-                            }}
-                            onBlur={() => {
-                              if (l.producto && !l.fracIrac) {
-                                handleAutoInvestigarConIA(idx, l.producto);
-                              }
-                            }}
-                            placeholder="Escriba nombre comercial del producto..."
-                            className="w-full text-xs font-semibold border border-purple-400 rounded-lg p-2 outline-none focus:ring-2 focus:ring-purple-500 bg-white"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleAutoInvestigarConIA(idx, l.producto)}
-                            disabled={!l.producto || investigandoIdx === idx}
-                            className="px-2 py-1.5 text-[11px] font-bold text-purple-700 bg-purple-100 hover:bg-purple-200 rounded-lg border border-purple-300 flex items-center gap-1 shrink-0 disabled:opacity-50"
-                            title="Investigar grupo FRAC/IRAC y dosis con IA"
-                          >
-                            <Sparkles className={`w-3.5 h-3.5 ${investigandoIdx === idx ? 'animate-spin text-purple-700' : 'text-purple-600'}`} />
-                            <span className="hidden sm:inline">{investigandoIdx === idx ? 'Buscando...' : 'IA Ficha'}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const nuevo = [...lineasMezcla];
-                              nuevo[idx].esManual = false;
-                              setLineasMezcla(nuevo);
-                            }}
-                            className="p-1.5 text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg border border-purple-200"
-                            title="Volver a lista desplegable"
-                          >
-                            <List className="w-4 h-4" />
-                          </button>
-                        </div>
-                      )}
 
                       <select
                         value={l.tipo}
@@ -1137,7 +1343,8 @@ export default function PesticideModule({ visita, onUpdateVisita, onOpenAi }) {
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
-                  ))}
+                  );
+                })}
                 </div>
               </div>
 

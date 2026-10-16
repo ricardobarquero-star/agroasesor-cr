@@ -278,7 +278,7 @@ export function generarHtmlReporte(datos = {}) {
                                 <td>
                                   <div class="fert-name-cell">
                                     <strong>${escapeHtml(it.producto)}</strong>
-                                    ${it.esSuplemento ? `<span class="badge-suplemento">🌿 Suplemento</span>` : ''}
+                                    ${it.esPlaguicida ? `<span class="badge-plaguicida" style="background:#f3e8ff;color:#581c87;border:1px solid #d8b4fe;padding:2px 6px;border-radius:6px;font-size:10px;font-weight:900;">🛡️ Plaguicida Radicular</span>` : (it.esSuplemento ? `<span class="badge-suplemento">🌿 Suplemento</span>` : '')}
                                   </div>
                                 </td>
                                 <td style="text-align: center;">
@@ -374,7 +374,7 @@ export function generarHtmlReporte(datos = {}) {
                                     <td>
                                       <div class="fert-name-cell">
                                         <strong>${escapeHtml(it.producto)}</strong>
-                                        ${it.esSuplemento ? `<span class="badge-suplemento">🌿 Suplemento</span>` : ''}
+                                        ${it.esPlaguicida ? `<span class="badge-plaguicida" style="background:#f3e8ff;color:#581c87;border:1px solid #d8b4fe;padding:2px 6px;border-radius:6px;font-size:10px;font-weight:900;">🛡️ Plaguicida Radicular</span>` : (it.esSuplemento ? `<span class="badge-suplemento">🌿 Suplemento</span>` : '')}
                                       </div>
                                     </td>
                                     <td style="text-align: center;"><span class="dose-number-cell blue-dose">${escapeHtml(it.dosis)}</span></td>
@@ -420,7 +420,7 @@ export function generarHtmlReporte(datos = {}) {
                                     <td>
                                       <div class="fert-name-cell">
                                         <strong>${escapeHtml(it.producto)}</strong>
-                                        ${it.esSuplemento ? `<span class="badge-suplemento">🌿 Suplemento</span>` : ''}
+                                        ${it.esPlaguicida ? `<span class="badge-plaguicida" style="background:#f3e8ff;color:#581c87;border:1px solid #d8b4fe;padding:2px 6px;border-radius:6px;font-size:10px;font-weight:900;">🛡️ Plaguicida Radicular</span>` : (it.esSuplemento ? `<span class="badge-suplemento">🌿 Suplemento</span>` : '')}
                                       </div>
                                     </td>
                                     <td style="text-align: center;"><span class="dose-number-cell amber-dose">${escapeHtml(it.dosis)}</span></td>
@@ -590,8 +590,15 @@ export function generarHtmlReporte(datos = {}) {
                     }).join('')}
                   </div>
 
-                  ${app.observaciones ? `
-                    <p class="event-note"><em>Observaciones de aplicación:</em> ${escapeHtml(app.observaciones)}</p>
+                  ${(app.observaciones || app.observacionesPie) ? `
+                    <div class="pest-obs-box" style="margin-top: 12px; background: #fef3c7; border: 2px solid #f59e0b; border-radius: 12px; padding: 12px 14px; color: #0f172a;">
+                      <div style="font-weight: 900; font-size: 13px; text-transform: uppercase; color: #78350f; display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                        <span>⚠️</span> <span>INSTRUCCIONES DE APLICACIÓN Y MEZCLA:</span>
+                      </div>
+                      <p style="margin: 0; font-size: 13.5px; font-weight: 900; color: #020617; line-height: 1.4;">
+                        ${escapeHtml(app.observaciones || app.observacionesPie)}
+                      </p>
+                    </div>
                   ` : ''}
                 </div>
               `).join('')}
@@ -1498,7 +1505,10 @@ export function generarHtmlReporte(datos = {}) {
       line-height: 1.5;
     }
     .orden-lista li {
-      margin-bottom: 4px;
+      font-size: 13.5px;
+      line-height: 1.45;
+      color: #020617;
+      font-weight: 800;
     }
     .instruccion-productor-card {
       background: #fefce8;

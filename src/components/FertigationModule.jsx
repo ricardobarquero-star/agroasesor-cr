@@ -2,10 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { 
   Plus, Trash2, AlertTriangle, Sparkles, Check, 
   Calendar, Sliders, X, MapPin, Edit3, List, Save,
-  Droplets, Zap, CheckCircle2, ChevronDown, ChevronUp, RefreshCw, ArrowRight
+  Droplets, Zap, CheckCircle2, ChevronDown, ChevronUp, RefreshCw, ArrowRight,
+  Search, Shield, Target, Filter
 } from 'lucide-react';
+import { crAgroDatabase } from '../data/crAgroDatabase';
 import { storageService } from '../services/storageService';
 import { geminiService } from '../services/geminiService';
+import { calcularDosisDual } from '../utils/doseCalculator';
 import { 
   ETAPAS_FENOLOGICAS, 
   OBJETIVOS_FERTILIZACION,
@@ -168,6 +171,11 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
   const [dosisNuevaPanel, setDosisNuevaPanel] = useState('');
   const [unidadNuevaPanel, setUnidadNuevaPanel] = useState('g / tanque 1000 L');
   const [eventoSuplementoActivoId, setEventoSuplementoActivoId] = useState(null);
+  const [panelMostrarPlaguicidas, setPanelMostrarPlaguicidas] = useState(false);
+  const [busquedaPlagFert, setBusquedaPlagFert] = useState('');
+  const [filtroCatPlagFert, setFiltroCatPlagFert] = useState('todos');
+  const [dropdownSalAbiertoId, setDropdownSalAbiertoId] = useState(null);
+  const [busquedasSalFila, setBusquedasSalFila] = useState({});
 
   // Filas del formulario (Inician limpias, cada fila contiene modo 'dropdown' o 'manual')
   const [lineasProductos, setLineasProductos] = useState([]);
@@ -458,6 +466,44 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
       tipo: 'suplemento',
       mensaje: `🌿 Se incorporó "${suplemento.nombre}" (${dosisEscalada} ${unidadLimpia}) al cuadro de fertilización.`
     });
+  };
+
+  const handleAgregarPlaguicidaPanel = (plag) => {
+    const vol = Number(panelVolumenTanque) || 1000;
+    const dual = calcularDosisDual(plag.dosisEstandar || '200 cc / 200 L');
+    const num = parseFloat((dual.dosisEstanon || '200').replace(/[^0-9.]/g, '')) || 200;
+    const dosisEscalada = Math.round((num / 200.0) * vol);
+    const esSolido = (plag.dosisEstandar || '').toLowerCase().includes('g') || 
+                     (plag.dosisEstandar || '').toLowerCase().includes('kg') || 
+                     (plag.dosisEstandar || '').toLowerCase().includes('wg') || 
+                     (plag.dosisEstandar || '').toLowerCase().includes('wp');
+    const unidadMedida = esSolido ? 'g' : 'cc';
+    const unidadTanque = `${unidadMedida} / tanque ${vol} L`;
+
+    const nuevaLinea = {
+      producto: plag.nombreComercial,
+      dosis: dosisEscalada.toString(),
+      unidad: unidadTanque,
+      aporte: `🛡️ ${plag.categoria || 'Plaguicida Radicular'} • ${plag.codigoFracIrac || 'Drench'}`,
+      esManual: true,
+      esSuplemento: true,
+      esPlaguicida: true,
+      tipo: 'plaguicida_radicular',
+      registroSfe: plag.registroSfe || plag.registroSFE || '',
+      ingredienteActivo: plag.ingredienteActivo || ''
+    };
+
+    setPanelLineas(prev => [...prev, nuevaLinea]);
+    setPanelMostrarPlaguicidas(false);
+    setPanelAlertaFeedback({
+      tipo: 'exito',
+      mensaje: `🛡️ Se incorporó "${plag.nombreComercial}" (${dosisEscalada} ${unidadTanque}) para aplicación en fertirriego / drench.`
+    });
+
+    if (!panelObservaciones.toLowerCase().includes(plag.nombreComercial.toLowerCase())) {
+      const notaPlag = ` Inyectar el plaguicida radicular (${plag.nombreComercial} - ${dosisEscalada} ${unidadTanque}) al final del ciclo de fertirriego para máxima retención en la rizosfera.`;
+      setPanelObservaciones(prev => prev ? prev + notaPlag : notaPlag);
+    }
   };
 
   const handleAgregarSalManualPanel = () => {
@@ -1605,13 +1651,31 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                 {/* 4. ESPACIO PARA AGREGARLE ALGUNA OTRA COSA AL CUADRO */}
                 <div className="bg-slate-50 p-3 border-t border-slate-200 space-y-2.5">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-slate-700">
+                    <span className="text-xs font-black text-slate-800">
                       ➕ Espacio para agregar insumos adicionales al cuadro:
                     </span>
                     <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => setPanelMostrarSuplementos(!panelMostrarSuplementos)}
+                        onClick={() => {
+                          setPanelMostrarPlaguicidas(!panelMostrarPlaguicidas);
+                          setPanelMostrarSuplementos(false);
+                          setMostrarSelectorNuevaSalPanel(false);
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-purple-100 hover:bg-purple-200 text-purple-950 font-bold text-xs flex items-center gap-1.5 transition active:scale-95 border border-purple-300 shadow-xs"
+                      >
+                        <Shield className="w-3.5 h-3.5 text-purple-700" />
+                        <span>🛡️ + Agregar Plaguicida (Drench / Fertirriego)</span>
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${panelMostrarPlaguicidas ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPanelMostrarSuplementos(!panelMostrarSuplementos);
+                          setPanelMostrarPlaguicidas(false);
+                          setMostrarSelectorNuevaSalPanel(false);
+                        }}
                         className="px-3 py-1.5 rounded-xl bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold text-xs flex items-center gap-1 transition active:scale-95 border border-emerald-300"
                       >
                         <span>🌿 + Agregar Suplemento / Nematicida</span>
@@ -1620,7 +1684,11 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
 
                       <button
                         type="button"
-                        onClick={() => setMostrarSelectorNuevaSalPanel(!mostrarSelectorNuevaSalPanel)}
+                        onClick={() => {
+                          setMostrarSelectorNuevaSalPanel(!mostrarSelectorNuevaSalPanel);
+                          setPanelMostrarSuplementos(false);
+                          setPanelMostrarPlaguicidas(false);
+                        }}
                         className="px-3 py-1.5 rounded-xl bg-blue-100 hover:bg-blue-200 text-blue-900 font-bold text-xs flex items-center gap-1 transition active:scale-95 border border-blue-300"
                       >
                         <Plus className="w-3.5 h-3.5" />
@@ -1628,6 +1696,138 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                       </button>
                     </div>
                   </div>
+
+                  {/* Drawer de Plaguicidas para Fertirriego / Drench */}
+                  {panelMostrarPlaguicidas && (
+                    <div className="bg-white p-3.5 rounded-2xl border-2 border-purple-300 shadow-md space-y-2.5 animate-in fade-in duration-150">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-purple-100 pb-2">
+                        <div>
+                          <span className="text-xs font-black text-purple-950 flex items-center gap-1.5">
+                            <Shield className="w-4 h-4 text-purple-700" />
+                            Catálogo de Plaguicidas para Aplicación en Fertirriego (Drench Radicular)
+                          </span>
+                          <span className="text-[10.5px] text-slate-500">
+                            Dosis calculada automáticamente para {panelVolumenTanque.toLocaleString()} Litros de agua:
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPanelMostrarPlaguicidas(false)}
+                          className="text-xs font-bold text-purple-700 hover:text-purple-900 bg-purple-50 px-2 py-0.5 rounded-lg border border-purple-200"
+                        >
+                          Cerrar ✕
+                        </button>
+                      </div>
+
+                      {/* Filtros rápidos y buscador reactivo */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-1">
+                          {[
+                            { id: 'todos', label: 'Todos' },
+                            { id: 'nematicida', label: '🪱 Nematicidas' },
+                            { id: 'fungicida', label: '🍄 Fungicidas Suelo' },
+                            { id: 'insecticida', label: '🐛 Sistémicos / Insectic.' }
+                          ].map(f => (
+                            <button
+                              key={f.id}
+                              type="button"
+                              onClick={() => setFiltroCatPlagFert(f.id)}
+                              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition ${
+                                filtroCatPlagFert === f.id
+                                  ? 'bg-purple-800 text-white'
+                                  : 'bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200'
+                              }`}
+                            >
+                              {f.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="relative flex-1 min-w-[200px]">
+                          <Search className="w-3.5 h-3.5 text-purple-500 absolute left-2.5 top-2.5 pointer-events-none" />
+                          <input
+                            type="text"
+                            value={busquedaPlagFert}
+                            onChange={(e) => setBusquedaPlagFert(e.target.value)}
+                            placeholder="Buscar plaguicida radicular (ej: previcur, mata 4, ridomil, vydate, trichoderma)..."
+                            className="w-full pl-8 pr-3 py-1.5 text-xs border border-purple-300 rounded-xl outline-none focus:ring-2 focus:ring-purple-500 font-medium"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Grilla de Plaguicidas Aptos para Fertirriego */}
+                      {(() => {
+                        const todosPlags = storageService.getTodosLosPlaguicidas();
+                        const q = busquedaPlagFert.toLowerCase().trim();
+                        const plagsFiltrados = todosPlags.filter(p => {
+                          const cat = (p.categoria || '').toLowerCase();
+                          const subcat = (p.subcategoria || '').toLowerCase();
+                          const nom = (p.nombreComercial || '').toLowerCase();
+                          const ia = (p.ingredienteActivo || '').toLowerCase();
+                          const blanco = (p.blancoBiologico || '').toLowerCase();
+
+                          if (filtroCatPlagFert === 'nematicida' && !cat.includes('nematicida') && !subcat.includes('nematicida') && !blanco.includes('nematod')) return false;
+                          if (filtroCatPlagFert === 'fungicida' && !cat.includes('fungicida')) return false;
+                          if (filtroCatPlagFert === 'insecticida' && !cat.includes('insecticida') && !cat.includes('acaricida')) return false;
+
+                          if (q) {
+                            return nom.includes(q) || ia.includes(q) || blanco.includes(q) || cat.includes(q);
+                          }
+                          // Si no hay búsqueda, priorizar productos de suelo / radiculares / nematicidas / biológicos
+                          return cat.includes('nematicida') || subcat.includes('nematicida') || 
+                                 nom.includes('previcur') || nom.includes('ridomil') || nom.includes('aliette') ||
+                                 nom.includes('mata 4') || nom.includes('kill 4') || nom.includes('vydate') ||
+                                 nom.includes('serenade') || nom.includes('trichoderma') || nom.includes('bioact') ||
+                                 nom.includes('proplant') || nom.includes('bellis') || nom.includes('mertect') ||
+                                 nom.includes('actara') || nom.includes('confidor') || nom.includes('verimark');
+                        }).slice(0, 16);
+
+                        return (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 max-h-64 overflow-y-auto pt-1">
+                            {plagsFiltrados.map(p => {
+                              const dual = calcularDosisDual(p.dosisEstandar || '200 cc / 200 L');
+                              const num = parseFloat((dual.dosisEstanon || '200').replace(/[^0-9.]/g, '')) || 200;
+                              const dosisCalc = Math.round((num / 200.0) * panelVolumenTanque);
+                              const esSolido = (p.dosisEstandar || '').toLowerCase().includes('g') || (p.dosisEstandar || '').toLowerCase().includes('kg');
+                              const uMedida = esSolido ? 'g' : 'cc';
+
+                              return (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  onClick={() => handleAgregarPlaguicidaPanel(p)}
+                                  className="p-2.5 rounded-xl border border-purple-200 hover:border-purple-600 hover:bg-purple-50 text-left transition group active:scale-95 flex flex-col justify-between bg-white shadow-xs"
+                                >
+                                  <div>
+                                    <div className="flex items-center justify-between gap-1">
+                                      <strong className="text-xs font-bold text-slate-900 group-hover:text-purple-900 line-clamp-1">
+                                        🛡️ {p.nombreComercial}
+                                      </strong>
+                                      {p.codigoFracIrac && (
+                                        <span className="text-[8.5px] font-mono font-bold bg-purple-100 text-purple-900 px-1.5 py-0.2 rounded shrink-0">
+                                          {p.codigoFracIrac}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-[9.5px] text-slate-500 line-clamp-1 mt-0.5 italic">
+                                      {p.ingredienteActivo}
+                                    </p>
+                                    <p className="text-[9px] text-purple-700 line-clamp-1 mt-0.5">
+                                      🎯 {p.blancoBiologico || p.subcategoria || p.categoria}
+                                    </p>
+                                  </div>
+                                  <div className="mt-2 pt-1.5 border-t border-purple-100 flex items-center justify-between text-[10.5px]">
+                                    <span className="font-mono font-bold text-purple-900">+{dosisCalc} {uMedida}</span>
+                                    <span className="text-purple-700 font-extrabold group-hover:underline">+ Agregar</span>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
 
                   {/* Drawer de Suplementos Biológicos y Nematicidas */}
                   {panelMostrarSuplementos && (
@@ -1663,42 +1863,103 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                     </div>
                   )}
 
-                  {/* Formulario Inline para Agregar Otra Sal Manual */}
+                  {/* Formulario Inline para Agregar Otra Sal con Búsqueda Reactiva Inteligente */}
                   {mostrarSelectorNuevaSalPanel && (
-                    <div className="bg-white p-3 rounded-xl border border-blue-300 shadow-sm space-y-2 animate-in fade-in duration-150">
-                      <span className="text-[11px] font-bold text-blue-900 block">
-                        Seleccione o escriba el nombre del fertilizante e indique los gramos:
-                      </span>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <input
-                          type="text"
-                          list="lista-fert-panel"
-                          placeholder="Nombre del fertilizante o sal..."
-                          value={salNuevaPanel}
-                          onChange={(e) => setSalNuevaPanel(e.target.value)}
-                          className="flex-1 min-w-[200px] text-xs border border-slate-300 rounded-xl p-2 outline-none"
-                        />
-                        <datalist id="lista-fert-panel">
-                          {todosFertilizantes.map((f, i) => (
-                            <option key={i} value={f.nombreComercial} />
-                          ))}
-                        </datalist>
+                    <div className="bg-white p-3.5 rounded-2xl border-2 border-blue-300 shadow-md space-y-2.5 animate-in fade-in duration-150">
+                      <div className="flex items-center justify-between border-b border-blue-100 pb-1.5">
+                        <span className="text-xs font-black text-blue-950 flex items-center gap-1.5">
+                          <Search className="w-3.5 h-3.5 text-blue-700" />
+                          Búsqueda Inteligente de Fertilizante o Sal:
+                        </span>
+                        <span className="text-[10px] text-slate-500">
+                          Digite sulfato, nitrato, calcinit o fosfato para autocompletar:
+                        </span>
+                      </div>
 
-                        <input
-                          type="number"
-                          placeholder="Dosis en gramos..."
-                          value={dosisNuevaPanel}
-                          onChange={(e) => setDosisNuevaPanel(e.target.value)}
-                          className="w-32 text-xs font-mono border border-slate-300 rounded-xl p-2 outline-none text-center"
-                        />
+                      <div className="relative">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="relative flex-1 min-w-[240px]">
+                            <Search className="w-3.5 h-3.5 text-blue-500 absolute left-2.5 top-2.5 pointer-events-none" />
+                            <input
+                              type="text"
+                              placeholder="Escriba sulfato, nitrato, potasio, magnesio..."
+                              value={salNuevaPanel}
+                              onChange={(e) => {
+                                setSalNuevaPanel(e.target.value);
+                                setDropdownSalAbiertoId('panel-sal');
+                              }}
+                              onFocus={() => setDropdownSalAbiertoId('panel-sal')}
+                              className="w-full pl-8 pr-3 py-2 text-xs border border-blue-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-bold text-slate-900 bg-blue-50/20"
+                            />
+                          </div>
 
-                        <button
-                          type="button"
-                          onClick={handleAgregarSalManualPanel}
-                          className="px-3 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs transition active:scale-95 shadow-sm"
-                        >
-                          + Insertar al Cuadro
-                        </button>
+                          <input
+                            type="number"
+                            placeholder="Dosis en gramos..."
+                            value={dosisNuevaPanel}
+                            onChange={(e) => setDosisNuevaPanel(e.target.value)}
+                            className="w-36 text-xs font-mono font-bold border border-blue-300 rounded-xl p-2 outline-none text-center bg-white"
+                          />
+
+                          <button
+                            type="button"
+                            onClick={handleAgregarSalManualPanel}
+                            disabled={!salNuevaPanel.trim() || !dosisNuevaPanel.trim()}
+                            className="px-4 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 disabled:opacity-50 text-white font-bold text-xs transition active:scale-95 shadow-sm"
+                          >
+                            + Insertar al Cuadro
+                          </button>
+                        </div>
+
+                        {/* Dropdown de Sugerencias en Tiempo Real al Digitar Fertilizante */}
+                        {dropdownSalAbiertoId === 'panel-sal' && (
+                          <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl border border-blue-300 shadow-2xl z-50 max-h-56 overflow-y-auto divide-y divide-slate-100">
+                            <div className="p-1.5 bg-blue-50 flex items-center justify-between text-[10px] font-bold text-blue-900 sticky top-0">
+                              <span>Coincidencias en Catálogo de Fertirriego:</span>
+                              <button
+                                type="button"
+                                onClick={() => setDropdownSalAbiertoId(null)}
+                                className="text-blue-700 hover:text-blue-900"
+                              >
+                                Cerrar ✕
+                              </button>
+                            </div>
+                            {todosFertilizantes
+                              .filter(f => {
+                                if (!salNuevaPanel.trim()) return true;
+                                const q = salNuevaPanel.toLowerCase().trim();
+                                return f.nombreComercial.toLowerCase().includes(q) || (f.composicion || '').toLowerCase().includes(q) || (f.categoria || '').toLowerCase().includes(q);
+                              })
+                              .slice(0, 15)
+                              .map((f, fi) => (
+                                <div
+                                  key={fi}
+                                  onClick={() => {
+                                    setSalNuevaPanel(f.nombreComercial);
+                                    if (!dosisNuevaPanel) {
+                                      setDosisNuevaPanel('500'); // Dosis base sugerida
+                                    }
+                                    setDropdownSalAbiertoId(null);
+                                  }}
+                                  className="p-2 hover:bg-blue-50 cursor-pointer text-left transition flex items-center justify-between group"
+                                >
+                                  <div>
+                                    <strong className="text-xs font-bold text-slate-900 group-hover:text-blue-900 block">
+                                      {f.nombreComercial}
+                                    </strong>
+                                    {f.composicion && (
+                                      <span className="text-[10px] text-slate-500 block font-mono">
+                                        ⚖️ {f.composicion}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[10px] text-blue-700 font-bold bg-blue-50 group-hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200 shrink-0">
+                                    Seleccionar
+                                  </span>
+                                </div>
+                              ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -2534,76 +2795,78 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                     <div className="space-y-2">
                       {lineasTanqueA.map((l, idx) => (
                         <div key={idx} className="bg-white p-2.5 rounded-xl border border-blue-100 flex flex-wrap sm:flex-nowrap items-center gap-2">
-                          {/* CELDA DE PRODUCTO: LISTA DESPLEGABLE NATIVA */}
-                          {!l.esManual ? (
-                            <div className="flex-1 min-w-[180px] flex items-center gap-1">
-                              <select
-                                value={l.producto}
-                                onChange={(e) => handleSeleccionarProductoEnLinea(e.target.value, lineasTanqueA, setLineasTanqueA, idx, productosTanqueA)}
-                                className="w-full text-xs font-bold text-slate-900 border border-blue-200 rounded-lg p-2 bg-blue-50/50 outline-none focus:ring-2 focus:ring-blue-500"
-                              >
-                                <option value="__manual__">✏️ [+ DIGITAR PRODUCTO MANUAL / NO ESTÁ EN LISTA...]</option>
-                                <option value="">-- Toque para desplegar catálogo Tanque A ({productosTanqueA.length}) --</option>
-                                {productosTanqueA.map((p, i) => (
-                                  <option key={i} value={p.nombreComercial}>
-                                    {p.nombreComercial} ({p.categoria || 'Soluble'})
-                                  </option>
-                                ))}
-                              </select>
-                              <button
-                                type="button"
-                                onClick={() => {
+                          {/* CELDA DE PRODUCTO: COMBOBOX INTELIGENTE CON FILTRADO EN TIEMPO REAL */}
+                          <div className="relative flex-1 min-w-[200px]">
+                            <div className="relative flex items-center">
+                              <Search className="w-3.5 h-3.5 text-blue-500 absolute left-2 pointer-events-none" />
+                              <input
+                                type="text"
+                                value={busquedasSalFila[`A-${idx}`] !== undefined ? busquedasSalFila[`A-${idx}`] : (l.producto || '')}
+                                onFocus={() => setDropdownSalAbiertoId(`A-${idx}`)}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setBusquedasSalFila(prev => ({ ...prev, [`A-${idx}`]: val }));
+                                  setDropdownSalAbiertoId(`A-${idx}`);
                                   const nuevo = [...lineasTanqueA];
-                                  nuevo[idx].esManual = true;
-                                  nuevo[idx].producto = '';
-                                  nuevo[idx].dosis = '';
+                                  nuevo[idx].producto = val;
                                   setLineasTanqueA(nuevo);
                                 }}
-                                className="p-2 text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200"
-                                title="Digitar producto manualmente"
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex-1 min-w-[180px] flex items-center gap-1">
-                              <div className="relative flex-1 flex items-center">
-                                <input
-                                  type="text"
-                                  value={l.producto}
-                                  onChange={(e) => {
+                                placeholder="Digite sulfato, calcinit, nitrato o sal..."
+                                className="w-full text-xs font-bold text-slate-900 border border-blue-200 rounded-lg pl-7 pr-7 py-2 bg-blue-50/40 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition"
+                              />
+                              {l.producto && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setBusquedasSalFila(prev => ({ ...prev, [`A-${idx}`]: '' }));
                                     const nuevo = [...lineasTanqueA];
-                                    nuevo[idx].producto = e.target.value;
+                                    nuevo[idx].producto = '';
+                                    nuevo[idx].dosis = '';
                                     setLineasTanqueA(nuevo);
                                   }}
-                                  placeholder="Escriba nombre del insumo o fórmula manual..."
-                                  className="w-full text-xs font-semibold border border-blue-300 rounded-lg p-2 pr-8 outline-none"
-                                />
-                                {l.producto && l.producto.length > 2 && (
+                                  className="absolute right-2 p-0.5 text-slate-400 hover:text-slate-600"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+
+                            {dropdownSalAbiertoId === `A-${idx}` && (
+                              <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl border border-blue-200 shadow-2xl z-50 max-h-56 overflow-y-auto divide-y divide-slate-100">
+                                <div className="p-1.5 bg-blue-50 flex items-center justify-between text-[10px] font-bold text-blue-900 sticky top-0">
+                                  <span>Catálogo Tanque A (Calcio / Nitratos):</span>
                                   <button
                                     type="button"
-                                    onClick={() => handleInvestigarProductoNuevo(l.producto)}
-                                    className="absolute right-1.5 p-1 text-blue-600 hover:text-blue-800"
-                                    title="Auto-buscar riqueza técnica con IA"
+                                    onClick={() => setDropdownSalAbiertoId(null)}
+                                    className="text-blue-700 hover:text-blue-900"
                                   >
-                                    <Sparkles className="w-3.5 h-3.5" />
+                                    Cerrar ✕
                                   </button>
-                                )}
+                                </div>
+                                {productosTanqueA
+                                  .filter(p => {
+                                    const q = (busquedasSalFila[`A-${idx}`] || '').toLowerCase().trim();
+                                    if (!q) return true;
+                                    return p.nombreComercial.toLowerCase().includes(q) || (p.composicion || '').toLowerCase().includes(q);
+                                  })
+                                  .slice(0, 15)
+                                  .map((p, i) => (
+                                    <div
+                                      key={i}
+                                      onClick={() => {
+                                        handleSeleccionarProductoEnLinea(p.nombreComercial, lineasTanqueA, setLineasTanqueA, idx, productosTanqueA);
+                                        setBusquedasSalFila(prev => { const c = { ...prev }; delete c[`A-${idx}`]; return c; });
+                                        setDropdownSalAbiertoId(null);
+                                      }}
+                                      className="p-2 hover:bg-blue-50 cursor-pointer text-left transition space-y-0.5"
+                                    >
+                                      <strong className="text-xs font-bold text-slate-900 block">{p.nombreComercial}</strong>
+                                      {p.composicion && <span className="text-[10px] text-slate-500 block font-mono">⚖️ {p.composicion}</span>}
+                                    </div>
+                                  ))}
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const nuevo = [...lineasTanqueA];
-                                  nuevo[idx].esManual = false;
-                                  setLineasTanqueA(nuevo);
-                                }}
-                                className="p-1 text-blue-600 hover:bg-blue-50 rounded"
-                                title="Volver a lista desplegable"
-                              >
-                                <List className="w-4 h-4" />
-                              </button>
-                            </div>
-                          )}
+                            )}
+                          </div>
 
                           <input
                             type="text"
@@ -2649,88 +2912,105 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                       <span className="font-extrabold text-xs text-amber-900">
                         🟡 TANQUE B: Fósforo, Sulfatos, Magnesio, Micro y Ácido
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => setLineasTanqueB([...lineasTanqueB, { producto: '', dosis: '', unidad: 'kg / tanque 1000 L', aporte: '', esManual: false }])}
-                        className="px-2 py-1 bg-amber-600 text-white rounded-lg text-[11px] font-bold hover:bg-amber-700 flex items-center gap-1"
-                      >
-                        <Plus className="w-3 h-3" /> Agregar Insumo
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLineasTanqueB([
+                              ...lineasTanqueB,
+                              { producto: 'Previcur Energy (Fungicida Radicular)', dosis: '1500', unidad: 'cc / tanque 1000 L', aporte: '🛡️ Plaguicida Radicular', esManual: true, esSuplemento: true, esPlaguicida: true }
+                            ]);
+                          }}
+                          className="px-2 py-1 bg-purple-700 text-white rounded-lg text-[11px] font-bold hover:bg-purple-800 flex items-center gap-1 shadow-xs"
+                          title="Inyectar plaguicida radicular (drench) en el fertirriego"
+                        >
+                          <Shield className="w-3 h-3" /> + Plaguicida Drench
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setLineasTanqueB([...lineasTanqueB, { producto: '', dosis: '', unidad: 'kg / tanque 1000 L', aporte: '', esManual: false }])}
+                          className="px-2 py-1 bg-amber-600 text-white rounded-lg text-[11px] font-bold hover:bg-amber-700 flex items-center gap-1"
+                        >
+                          <Plus className="w-3 h-3" /> Agregar Insumo
+                        </button>
+                      </div>
                     </div>
 
                     <div className="space-y-2">
                       {lineasTanqueB.map((l, idx) => (
                         <div key={idx} className="bg-white p-2.5 rounded-xl border border-amber-100 flex flex-wrap sm:flex-nowrap items-center gap-2">
-                          {/* CELDA DE PRODUCTO: LISTA DESPLEGABLE NATIVA */}
-                          {!l.esManual ? (
-                            <div className="flex-1 min-w-[180px] flex items-center gap-1">
-                              <select
-                                value={l.producto}
-                                onChange={(e) => handleSeleccionarProductoEnLinea(e.target.value, lineasTanqueB, setLineasTanqueB, idx, productosTanqueB)}
-                                className="w-full text-xs font-bold text-slate-900 border border-amber-200 rounded-lg p-2 bg-amber-50/50 outline-none focus:ring-2 focus:ring-amber-500"
-                              >
-                                <option value="__manual__">✏️ [+ DIGITAR PRODUCTO MANUAL / NO ESTÁ EN LISTA...]</option>
-                                <option value="">-- Toque para desplegar catálogo Tanque B ({productosTanqueB.length}) --</option>
-                                {productosTanqueB.map((p, i) => (
-                                  <option key={i} value={p.nombreComercial}>
-                                    {p.nombreComercial} ({p.categoria || 'Soluble'})
-                                  </option>
-                                ))}
-                              </select>
-                              <button
-                                type="button"
-                                onClick={() => {
+                          {/* CELDA DE PRODUCTO: COMBOBOX INTELIGENTE CON FILTRADO EN TIEMPO REAL */}
+                          <div className="relative flex-1 min-w-[200px]">
+                            <div className="relative flex items-center">
+                              <Search className="w-3.5 h-3.5 text-amber-600 absolute left-2 pointer-events-none" />
+                              <input
+                                type="text"
+                                value={busquedasSalFila[`B-${idx}`] !== undefined ? busquedasSalFila[`B-${idx}`] : (l.producto || '')}
+                                onFocus={() => setDropdownSalAbiertoId(`B-${idx}`)}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setBusquedasSalFila(prev => ({ ...prev, [`B-${idx}`]: val }));
+                                  setDropdownSalAbiertoId(`B-${idx}`);
                                   const nuevo = [...lineasTanqueB];
-                                  nuevo[idx].esManual = true;
-                                  nuevo[idx].producto = '';
-                                  nuevo[idx].dosis = '';
+                                  nuevo[idx].producto = val;
                                   setLineasTanqueB(nuevo);
                                 }}
-                                className="p-2 text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200"
-                                title="Digitar producto manualmente"
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex-1 min-w-[180px] flex items-center gap-1">
-                              <div className="relative flex-1 flex items-center">
-                                <input
-                                  type="text"
-                                  value={l.producto}
-                                  onChange={(e) => {
+                                placeholder="Digite sulfato, magnesio, mkp, potasio o sal..."
+                                className="w-full text-xs font-bold text-slate-900 border border-amber-200 rounded-lg pl-7 pr-7 py-2 bg-amber-50/40 outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white transition"
+                              />
+                              {l.producto && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setBusquedasSalFila(prev => ({ ...prev, [`B-${idx}`]: '' }));
                                     const nuevo = [...lineasTanqueB];
-                                    nuevo[idx].producto = e.target.value;
+                                    nuevo[idx].producto = '';
+                                    nuevo[idx].dosis = '';
                                     setLineasTanqueB(nuevo);
                                   }}
-                                  placeholder="Escriba nombre del insumo o fórmula manual..."
-                                  className="w-full text-xs font-semibold border border-amber-300 rounded-lg p-2 pr-8 outline-none"
-                                />
-                                {l.producto && l.producto.length > 2 && (
+                                  className="absolute right-2 p-0.5 text-slate-400 hover:text-slate-600"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+
+                            {dropdownSalAbiertoId === `B-${idx}` && (
+                              <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl border border-amber-200 shadow-2xl z-50 max-h-56 overflow-y-auto divide-y divide-slate-100">
+                                <div className="p-1.5 bg-amber-50 flex items-center justify-between text-[10px] font-bold text-amber-900 sticky top-0">
+                                  <span>Catálogo Tanque B (Fósforo, Sulfatos, Micros):</span>
                                   <button
                                     type="button"
-                                    onClick={() => handleInvestigarProductoNuevo(l.producto)}
-                                    className="absolute right-1.5 p-1 text-amber-600 hover:text-amber-800"
-                                    title="Auto-buscar riqueza técnica con IA"
+                                    onClick={() => setDropdownSalAbiertoId(null)}
+                                    className="text-amber-800 hover:text-amber-950 font-bold"
                                   >
-                                    <Sparkles className="w-3.5 h-3.5" />
+                                    Cerrar ✕
                                   </button>
-                                )}
+                                </div>
+                                {productosTanqueB
+                                  .filter(p => {
+                                    const q = (busquedasSalFila[`B-${idx}`] || '').toLowerCase().trim();
+                                    if (!q) return true;
+                                    return p.nombreComercial.toLowerCase().includes(q) || (p.composicion || '').toLowerCase().includes(q);
+                                  })
+                                  .slice(0, 15)
+                                  .map((p, i) => (
+                                    <div
+                                      key={i}
+                                      onClick={() => {
+                                        handleSeleccionarProductoEnLinea(p.nombreComercial, lineasTanqueB, setLineasTanqueB, idx, productosTanqueB);
+                                        setBusquedasSalFila(prev => { const c = { ...prev }; delete c[`B-${idx}`]; return c; });
+                                        setDropdownSalAbiertoId(null);
+                                      }}
+                                      className="p-2 hover:bg-amber-50 cursor-pointer text-left transition space-y-0.5"
+                                    >
+                                      <strong className="text-xs font-bold text-slate-900 block">{p.nombreComercial}</strong>
+                                      {p.composicion && <span className="text-[10px] text-slate-500 block font-mono">⚖️ {p.composicion}</span>}
+                                    </div>
+                                  ))}
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const nuevo = [...lineasTanqueB];
-                                  nuevo[idx].esManual = false;
-                                  setLineasTanqueB(nuevo);
-                                }}
-                                className="p-1 text-amber-600 hover:bg-amber-50 rounded"
-                                title="Volver a lista desplegable"
-                              >
-                                <List className="w-4 h-4" />
-                              </button>
-                            </div>
-                          )}
+                            )}
+                          </div>
 
                           <input
                             type="text"
@@ -2808,6 +3088,22 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
 
                       <button
                         type="button"
+                        onClick={() => {
+                          const unidadDirecto = modalidadSeleccionada === 'tanque_directo' ? `cc / tanque ${volumenTanqueDirecto} L` : modalidadActualConfig.unidades[0];
+                          setLineasProductos([
+                            ...lineasProductos,
+                            { producto: 'Previcur Energy (Fungicida Radicular)', dosis: '500', unidad: unidadDirecto, aporte: '🛡️ Plaguicida Radicular', esManual: true, esSuplemento: true, esPlaguicida: true }
+                          ]);
+                        }}
+                        className="px-2.5 py-1.5 bg-purple-700 text-white rounded-xl text-[11px] font-bold hover:bg-purple-800 flex items-center gap-1 transition active:scale-95 shadow-xs"
+                        title="Inyectar plaguicida o nematicida radicular (drench) en el fertirriego"
+                      >
+                        <Shield className="w-3.5 h-3.5" />
+                        <span>🛡️ + Plaguicida Drench</span>
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={handleAbrirModalGuardarFormula}
                         disabled={lineasProductos.length === 0}
                         className="px-2.5 py-1.5 bg-slate-800 text-white rounded-xl text-[11px] font-bold hover:bg-slate-900 flex items-center gap-1 transition active:scale-95 disabled:opacity-40 shadow-xs"
@@ -2862,62 +3158,82 @@ export default function FertigationModule({ visita, onUpdateVisita, onOpenAi }) 
                   <div className="space-y-2">
                     {lineasProductos.map((l, idx) => (
                       <div key={idx} className="bg-white p-2.5 rounded-xl border border-slate-200 flex flex-wrap sm:flex-nowrap items-center gap-2">
-                        {/* CELDA DE PRODUCTO: LISTA DESPLEGABLE NATIVA */}
-                        {!l.esManual ? (
-                          <div className="flex-1 min-w-[200px] flex items-center gap-1">
-                            <select
-                              value={l.producto}
-                              onChange={(e) => handleSeleccionarProductoEnLinea(e.target.value, lineasProductos, setLineasProductos, idx)}
-                              className="w-full text-xs font-bold text-slate-900 border border-slate-300 rounded-lg p-2 bg-slate-50 outline-none focus:ring-2 focus:ring-emerald-500"
-                            >
-                              <option value="__manual__">✏️ [+ Escribir otro producto manual...]</option>
-                              <option value="">-- Toque para desplegar catálogo ({todosFertilizantes.length} insumos) --</option>
-                              {todosFertilizantes.map((p, i) => (
-                                <option key={i} value={p.nombreComercial}>
-                                  {p.nombreComercial} ({p.categoria || ''})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        ) : (
-                          <div className="flex-1 min-w-[200px] flex items-center gap-1">
-                            <div className="relative flex-1 flex items-center">
-                              <input
-                                type="text"
-                                value={l.producto}
-                                onChange={(e) => {
+                        {/* CELDA DE PRODUCTO: COMBOBOX INTELIGENTE CON FILTRADO EN TIEMPO REAL */}
+                        <div className="relative flex-1 min-w-[200px]">
+                          <div className="relative flex items-center">
+                            <Search className="w-3.5 h-3.5 text-emerald-600 absolute left-2 pointer-events-none" />
+                            <input
+                              type="text"
+                              value={busquedasSalFila[`DIR-${idx}`] !== undefined ? busquedasSalFila[`DIR-${idx}`] : (l.producto || '')}
+                              onFocus={() => setDropdownSalAbiertoId(`DIR-${idx}`)}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setBusquedasSalFila(prev => ({ ...prev, [`DIR-${idx}`]: val }));
+                                const nuevo = [...lineasProductos];
+                                nuevo[idx].producto = val;
+                                setLineasProductos(nuevo);
+                                setDropdownSalAbiertoId(`DIR-${idx}`);
+                              }}
+                              placeholder="Escriba sal o fertilizante (ej: sulfato, nitrato)..."
+                              className="w-full text-xs font-bold text-slate-900 border border-slate-300 rounded-lg py-1.5 pl-7 pr-7 bg-white outline-none focus:ring-2 focus:ring-emerald-500 shadow-inner"
+                            />
+                            {l.producto && (
+                              <button
+                                type="button"
+                                onClick={() => {
                                   const nuevo = [...lineasProductos];
-                                  nuevo[idx].producto = e.target.value;
+                                  nuevo[idx].producto = '';
+                                  nuevo[idx].aporte = '';
                                   setLineasProductos(nuevo);
+                                  setBusquedasSalFila(prev => { const c = { ...prev }; delete c[`DIR-${idx}`]; return c; });
                                 }}
-                                placeholder="Escriba nombre del producto o fórmula manual..."
-                                className="w-full text-xs font-semibold border border-emerald-400 rounded-lg p-2 pr-8 outline-none"
-                              />
-                              {l.producto && l.producto.length > 2 && (
+                                className="absolute right-2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Dropdown flotante reactivo */}
+                          {dropdownSalAbiertoId === `DIR-${idx}` && (
+                            <div className="absolute left-0 right-0 top-full mt-1 bg-white border-2 border-emerald-400 rounded-xl shadow-xl z-50 max-h-56 overflow-y-auto divide-y divide-slate-100">
+                              <div className="p-1.5 bg-emerald-50 flex items-center justify-between text-[10px] font-bold text-emerald-900 sticky top-0">
+                                <span>Catálogo de Fertilizantes y Sales:</span>
                                 <button
                                   type="button"
-                                  onClick={() => handleInvestigarProductoNuevo(l.producto)}
-                                  className="absolute right-1.5 p-1 text-emerald-700 hover:text-emerald-900"
-                                  title="Auto-buscar riqueza técnica con IA"
+                                  onClick={() => setDropdownSalAbiertoId(null)}
+                                  className="text-emerald-800 hover:text-emerald-950 font-bold"
                                 >
-                                  <Sparkles className="w-3.5 h-3.5" />
+                                  Cerrar ✕
                                 </button>
-                              )}
+                              </div>
+                              {todosFertilizantes
+                                .filter(p => {
+                                  const q = (busquedasSalFila[`DIR-${idx}`] || '').toLowerCase().trim();
+                                  if (!q) return true;
+                                  return p.nombreComercial.toLowerCase().includes(q) || (p.categoria || '').toLowerCase().includes(q) || (p.composicion || '').toLowerCase().includes(q);
+                                })
+                                .slice(0, 15)
+                                .map((p, i) => (
+                                  <div
+                                    key={i}
+                                    onClick={() => {
+                                      handleSeleccionarProductoEnLinea(p.nombreComercial, lineasProductos, setLineasProductos, idx, todosFertilizantes);
+                                      setBusquedasSalFila(prev => { const c = { ...prev }; delete c[`DIR-${idx}`]; return c; });
+                                      setDropdownSalAbiertoId(null);
+                                    }}
+                                    className="p-2 hover:bg-emerald-50 cursor-pointer text-left transition space-y-0.5"
+                                  >
+                                    <strong className="text-xs font-bold text-slate-900 block">{p.nombreComercial}</strong>
+                                    <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                                      {p.categoria && <span className="bg-slate-100 text-slate-700 px-1 rounded">{p.categoria}</span>}
+                                      {p.composicion && <span className="font-mono">⚖️ {p.composicion}</span>}
+                                    </div>
+                                  </div>
+                                ))}
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const nuevo = [...lineasProductos];
-                                nuevo[idx].esManual = false;
-                                setLineasProductos(nuevo);
-                              }}
-                              className="p-1 text-emerald-700 hover:bg-emerald-50 rounded"
-                              title="Volver a lista desplegable"
-                            >
-                              <List className="w-4 h-4" />
-                            </button>
-                          </div>
-                        )}
+                          )}
+                        </div>
 
                         <input
                           type="text"

@@ -1366,6 +1366,27 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
             </div>
           </div>
 
+          {/* ========================================================= */}
+          {/* SECCIÓN PRINCIPAL: RECOMENDACIONES TÉCNICAS Y PROGRAMAS */}
+          {/* ========================================================= */}
+          {(recFertirriegoFiltradas.length > 0 || recPlaguicidasFiltradas.length > 0) && (
+            <div className="bg-gradient-to-r from-[#005323] via-[#00652c] to-[#004b73] text-white p-4 rounded-2xl shadow-md border-2 border-emerald-400 space-y-1">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#acf847] text-[#005323] flex items-center justify-center font-black text-xl shrink-0 shadow-sm">
+                  📢
+                </div>
+                <div>
+                  <h3 className="font-headline font-black text-lg sm:text-xl text-white tracking-wider uppercase">
+                    RECOMENDACIONES AGRONÓMICAS
+                  </h3>
+                  <p className="text-xs sm:text-sm text-[#d3ffd5] font-bold">
+                    De aquí en adelante se detallan las prescripciones oficiales de nutrición y sanidad para el productor.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* PRESCRIPCIÓN SEMANAL DE FERTIRRIEGO Y NUTRICIÓN (FORMATO MÓVIL) */}
           {recFertirriegoFiltradas.length > 0 && (
             <div className="space-y-3">
@@ -1483,9 +1504,14 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                                       prodsDirectos.map((l, li) => (
                                         <tr key={li} className="hover:bg-slate-50">
                                           <td className="p-2 font-body font-semibold text-slate-900 border-r border-slate-100">
-                                            <div className="flex items-center gap-1.5">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
                                               <span>{l.producto}</span>
-                                              {l.esSuplemento && (
+                                              {l.esPlaguicida && (
+                                                <span className="text-[8.5px] font-sans font-black bg-purple-100 text-purple-950 px-1.5 py-0.2 rounded border border-purple-300">
+                                                  🛡️ Plaguicida Radicular
+                                                </span>
+                                              )}
+                                              {l.esSuplemento && !l.esPlaguicida && (
                                                 <span className="text-[8.5px] font-sans font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded border border-emerald-200">
                                                   🌿 Suplemento
                                                 </span>
@@ -1523,33 +1549,37 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                                   )}
                                 </table>
 
-                                {/* AL PIE DEL CUADRO SE DEJAN LAS INSTRUCCIONES */}
-                                <div className="bg-slate-50 p-2.5 border-t border-slate-200 space-y-1.5 text-xs text-slate-700">
-                                  <div className="font-headline font-bold text-slate-800 flex items-center gap-1 text-[11px] uppercase tracking-wide">
+                                {/* AL PIE DEL CUADRO SE DEJAN LAS INSTRUCCIONES EN NEGRITA DE ALTO CONTRASTE */}
+                                <div className="bg-slate-50 p-2.5 border-t border-slate-200 space-y-2 text-xs text-slate-950">
+                                  <div className="font-headline font-black text-slate-950 flex items-center gap-1 text-[11px] uppercase tracking-wide">
                                     <span>📝</span> Instrucciones de Preparación al Pie del Cuadro:
                                   </div>
 
-                                  <div className="bg-blue-50/70 border-l-4 border-blue-600 p-2 rounded-r text-[11px] text-blue-950 space-y-0.5">
-                                    <strong className="block text-blue-900">🔄 Orden Estricto de Disolución en Tanque ({volTanque.toLocaleString()} L de agua):</strong>
-                                    <ol className="list-decimal list-inside space-y-0.5 text-blue-900">
+                                  <div className="bg-blue-100/90 border-l-4 border-blue-700 p-2.5 rounded-r text-slate-950 space-y-1">
+                                    <strong className="block text-blue-950 font-black text-xs">
+                                      🔄 Orden Estricto de Disolución en Tanque ({volTanque.toLocaleString()} L de agua):
+                                    </strong>
+                                    <ol className="list-decimal list-inside space-y-1 text-slate-950 font-black text-[11.5px] pl-1">
                                       <li>Llenar el tanque con el 60% – 70% de agua limpia antes de verter las sales.</li>
                                       <li>Disolver primero las fuentes de fósforo (MAP/MKP) y luego los sulfatos (SoluSOP y Epsom) agitando hasta disolución total.</li>
                                       <li>Agregar el Nitrato de Calcio (Calcinit) de último con agitación continua y completar el agua hasta los {volTanque.toLocaleString()} Litros.</li>
-                                      {prodsDirectos.some(p => p.esSuplemento) && (
-                                        <li>Incorporar los suplementos biológicos o nematicidas al final con el tanque completamente lleno.</li>
+                                      {prodsDirectos.some(p => p.esSuplemento || p.esPlaguicida) && (
+                                        <li className="text-purple-950">Incorporar los suplementos biológicos o plaguicidas radiculares al final con el tanque completamente lleno.</li>
                                       )}
                                     </ol>
                                   </div>
 
                                   {obsTexto && (
-                                    <div className="bg-amber-50 border-l-4 border-amber-500 p-2 rounded-r text-[11px] text-amber-950">
-                                      <strong>👨‍🌾 Indicación Agronómica para el Productor:</strong> {obsTexto}
+                                    <div className="bg-amber-100 border-l-4 border-amber-500 p-2.5 rounded-r text-slate-950 text-xs">
+                                      <strong className="font-black text-slate-950 block text-[11px] mb-0.5">👨‍🌾 Indicación Agronómica para el Productor:</strong>
+                                      <p className="font-black text-slate-950 leading-snug">{obsTexto}</p>
                                     </div>
                                   )}
 
                                   {ev.analisisIa && (
-                                    <div className="bg-emerald-50 border-l-4 border-emerald-600 p-2 rounded-r text-[11px] text-emerald-950">
-                                      <strong>✨ Dictamen Técnico IA:</strong> {ev.analisisIa}
+                                    <div className="bg-emerald-100/90 border-l-4 border-emerald-700 p-2.5 rounded-r text-slate-950 text-xs">
+                                      <strong className="font-black text-emerald-950 block text-[11px] mb-0.5">✨ Dictamen Técnico IA:</strong>
+                                      <p className="font-black text-slate-950 leading-snug">{ev.analisisIa}</p>
                                     </div>
                                   )}
                                 </div>
@@ -1611,7 +1641,16 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                                         <tbody className="divide-y divide-amber-50 font-mono text-xs">
                                           {prodsB.map((l, li) => (
                                             <tr key={li}>
-                                              <td className="p-1.5 font-body text-slate-800 border-r border-amber-50">{l.producto}</td>
+                                              <td className="p-1.5 font-body text-slate-800 border-r border-amber-50">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                  <span>{l.producto}</span>
+                                                  {l.esPlaguicida && (
+                                                    <span className="text-[8px] font-sans font-black bg-purple-100 text-purple-950 px-1 py-0.2 rounded border border-purple-300">
+                                                      🛡️ Plaguicida Radicular
+                                                    </span>
+                                                  )}
+                                                </div>
+                                              </td>
                                               <td className="p-1.5 text-center font-bold text-amber-950 border-r border-amber-50">{l.dosis}</td>
                                               <td className="p-1.5 text-center text-slate-600">{l.unidad}</td>
                                             </tr>
@@ -1629,23 +1668,25 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                                   )}
                                 </div>
 
-                                {/* AL PIE DEL CUADRO EN DOSATRON */}
-                                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 space-y-1.5 text-xs text-slate-700">
-                                  <div className="font-headline font-bold text-slate-800 flex items-center gap-1 text-[11px] uppercase tracking-wide">
+                                {/* AL PIE DEL CUADRO EN DOSATRON EN NEGRITA DE ALTO CONTRASTE */}
+                                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 space-y-2 text-xs text-slate-950">
+                                  <div className="font-headline font-black text-slate-950 flex items-center gap-1 text-[11px] uppercase tracking-wide">
                                     <span>📝</span> Instrucciones al Pie del Cuadro (Inyección Dual):
                                   </div>
-                                  <div className="bg-blue-50/70 border-l-4 border-blue-600 p-2 rounded-r text-[11px] text-blue-950">
-                                    <strong>💉 Inyección Dosatron ({ev.relacionInyeccion || '1:100'}):</strong>
-                                    <p>Calibrar inyectores al {ev.relacionInyeccion === '1:100' ? '1.0%' : ev.relacionInyeccion}. Mantener estricta segregación química: nunca juntar concentrados A y B antes de inyectar al flujo de agua.</p>
+                                  <div className="bg-blue-100/90 border-l-4 border-blue-700 p-2.5 rounded-r text-slate-950 space-y-1">
+                                    <strong className="font-black text-blue-950 text-xs block">💉 Inyección Dosatron ({ev.relacionInyeccion || '1:100'}):</strong>
+                                    <p className="font-black text-slate-950 leading-snug">Calibrar inyectores al {ev.relacionInyeccion === '1:100' ? '1.0%' : ev.relacionInyeccion}. Mantener estricta segregación química: nunca juntar concentrados A y B antes de inyectar al flujo de agua.</p>
                                   </div>
                                   {obsTexto && (
-                                    <div className="bg-amber-50 border-l-4 border-amber-500 p-2 rounded-r text-[11px] text-amber-950">
-                                      <strong>👨‍🌾 Indicación del Agrónomo:</strong> {obsTexto}
+                                    <div className="bg-amber-100 border-l-4 border-amber-500 p-2.5 rounded-r text-slate-950 text-xs">
+                                      <strong className="font-black text-slate-950 block text-[11px] mb-0.5">👨‍🌾 Indicación del Agrónomo:</strong>
+                                      <p className="font-black text-slate-950 leading-snug">{obsTexto}</p>
                                     </div>
                                   )}
                                   {ev.analisisIa && (
-                                    <div className="bg-emerald-50 border-l-4 border-emerald-600 p-2 rounded-r text-[11px] text-emerald-950">
-                                      <strong>✨ Dictamen Técnico IA:</strong> {ev.analisisIa}
+                                    <div className="bg-emerald-100/90 border-l-4 border-emerald-700 p-2.5 rounded-r text-slate-950 text-xs">
+                                      <strong className="font-black text-emerald-950 block text-[11px] mb-0.5">✨ Dictamen Técnico IA:</strong>
+                                      <p className="font-black text-slate-950 leading-snug">{ev.analisisIa}</p>
                                     </div>
                                   )}
                                 </div>
@@ -1790,9 +1831,14 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                         </div>
 
                         {app.observacionesPie && (
-                          <p className="text-xs text-slate-500 italic pt-1 border-t border-slate-100">
-                            Instrucción: {app.observacionesPie}
-                          </p>
+                          <div className="bg-amber-100/95 border-2 border-amber-400 p-3 rounded-xl text-slate-950 space-y-1 mt-2">
+                            <strong className="font-black text-slate-950 flex items-center gap-1.5 text-xs uppercase tracking-wide">
+                              <span>⚠️</span> INSTRUCCIONES DE APLICACIÓN Y MEZCLA:
+                            </strong>
+                            <p className="font-black text-slate-950 text-xs sm:text-sm leading-snug">
+                              {app.observacionesPie}
+                            </p>
+                          </div>
                         )}
                       </div>
                     ))
@@ -2126,8 +2172,8 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                   <div className="flex items-center gap-2">
                     <span className="text-[#00652c] font-headline font-bold text-sm">🌱 AgroAsesor Pro CR</span>
                     <span className="text-slate-300">|</span>
-                    <span className="font-headline font-bold text-[#131b2e] uppercase tracking-wide text-[11px]">
-                      Dossier Científico de Hallazgos en Campo y Análisis Edáfico {pIdx > 0 ? `(Parte ${pIdx + 1})` : ''}
+                    <span className="font-headline font-black text-[#131b2e] uppercase tracking-wide text-xs">
+                      📸 Hallazgos de Campo {paginasHallazgos.length > 1 ? `(Página ${pIdx + 1} de ${paginasHallazgos.length})` : ''}
                     </span>
                   </div>
                   <div className="text-[10px] text-slate-600 font-mono">
@@ -2143,68 +2189,79 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                       Mediciones de Suelo y Sustrato en Campo
                     </h3>
 
-                    {medicionesSuelo.map((m, mIdx) => (
-                      <div key={m.id || mIdx} className="bg-[#faf8ff] border border-[#dae2fd] rounded-xl p-2 space-y-1 text-xs">
-                        <div className="flex items-center justify-between border-b border-slate-200 pb-0.5">
-                          <span className="font-headline font-bold text-[#131b2e] text-[11px]">
-                            📍 {m.loteNombre || 'Lote Evaluado'} — {m.metodo || 'Sonda directa en campo'}
-                          </span>
-                          <span className="font-mono text-[9px] font-bold text-[#00652c] bg-[#d3ffd5] px-2 py-0.2 rounded">
-                            Validado por Ing. Ricardo Barquero (Col. 5896)
-                          </span>
-                        </div>
+                    <div className="grid grid-cols-2 print:grid-cols-2 gap-2.5">
+                      {medicionesSuelo.map((m, mIdx) => (
+                        <div key={m.id || mIdx} className="bg-[#faf8ff] border border-[#dae2fd] rounded-xl p-2 space-y-1.5 text-xs flex flex-col justify-between">
+                          <div>
+                            <div className="flex items-center justify-between border-b border-slate-200 pb-1 mb-1">
+                              <span className="font-headline font-bold text-[#131b2e] text-[10.5px]">
+                                📊 Cuadro de Medición #{mIdx + 1}
+                              </span>
+                              <span className="font-mono text-[8.5px] font-bold text-[#00652c] bg-[#d3ffd5] px-1.5 py-0.2 rounded">
+                                {m.metodo || 'Sonda directa'}
+                              </span>
+                            </div>
 
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-xs text-left bg-white rounded-lg border border-[#eaedff] overflow-hidden">
-                            <thead>
-                              <tr className="bg-[#eaedff] text-[#131b2e] font-headline text-[9.5px]">
-                                <th className="py-1 px-2 font-bold">Parámetro</th>
-                                <th className="py-1 px-2 font-bold text-center">Valor Medido</th>
-                                <th className="py-1 px-2 font-bold text-center">Rango Óptimo ({cultivoDef.nombre})</th>
-                                <th className="py-1 px-2 font-bold">Evaluación Agronómica</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-[#eaedff] text-[9.5px]">
-                              <tr>
-                                <td className="py-1 px-2 font-medium text-slate-800">pH del Suelo / Sustrato</td>
-                                <td className="py-1 px-2 text-center font-mono font-black text-[#131b2e]">{m.phSuelo}</td>
-                                <td className="py-1 px-2 text-center text-slate-500 font-mono">{cultivoDef.rangoPh || '5.5 - 6.5'}</td>
-                                <td className="py-1 px-2 font-semibold text-[#00652c]">
-                                  {parseFloat(m.phSuelo) >= 5.5 && parseFloat(m.phSuelo) <= 6.5 ? 'Dentro de rango óptimo' : 'Requiere ajuste en solución'}
-                                </td>
-                              </tr>
-                              <tr>
-                                <td className="py-1 px-2 font-medium text-slate-800">Conductividad Eléctrica (CE)</td>
-                                <td className="py-1 px-2 text-center font-mono font-black text-[#131b2e]">{m.ceSuelo} mS/cm</td>
-                                <td className="py-1 px-2 text-center text-slate-500 font-mono">{cultivoDef.rangoCe || '1.2 - 1.8 mS/cm'}</td>
-                                <td className="py-1 px-2 font-semibold text-[#00652c]">
-                                  {parseFloat(m.ceSuelo) >= 1.0 && parseFloat(m.ceSuelo) <= 2.0 ? 'Salinidad controlada' : 'Ajustar conductividad'}
-                                </td>
-                              </tr>
-                              <tr>
-                                <td className="py-1 px-2 font-medium text-slate-800">Temperatura del Suelo</td>
-                                <td className="py-1 px-2 text-center font-mono font-black text-[#131b2e]">{m.tempSuelo}°C</td>
-                                <td className="py-1 px-2 text-center text-slate-500 font-mono">{cultivoDef.rangoTempSuelo || '16 - 22 °C'}</td>
-                                <td className="py-1 px-2 font-semibold text-[#00652c]">Actividad radicular favorable</td>
-                              </tr>
-                              <tr>
-                                <td className="py-1 px-2 font-medium text-slate-800">Humedad en Rizósfera</td>
-                                <td className="py-1 px-2 text-center font-mono font-black text-[#131b2e]">{m.humedadSuelo}</td>
-                                <td className="py-1 px-2 text-center text-slate-500 font-mono">{cultivoDef.rangoHumedadSuelo || '60 - 80%'}</td>
-                                <td className="py-1 px-2 font-semibold text-[#00652c]">Adecuada capacidad de campo</td>
-                              </tr>
-                            </tbody>
-                          </table>
-                        </div>
-
-                        {m.ajusteRecomendado && (
-                          <div className="bg-[#d3ffd5]/40 p-1.5 rounded-lg border border-[#79db8d] text-slate-800 text-[9.5px]">
-                            <strong className="text-[#005323] font-bold block">Ajuste y Recomendación Agronómica:</strong>
-                            <span>{m.ajusteRecomendado}</span>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs text-left bg-white rounded-lg border border-[#eaedff] overflow-hidden">
+                                <thead>
+                                  <tr className="bg-[#eaedff] text-[#131b2e] font-headline text-[9px]">
+                                    <th className="py-0.5 px-1.5 font-bold">Parámetro</th>
+                                    <th className="py-0.5 px-1.5 font-bold text-center">Valor</th>
+                                    <th className="py-0.5 px-1.5 font-bold text-center">Óptimo</th>
+                                    <th className="py-0.5 px-1.5 font-bold">Diagnóstico</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-[#eaedff] text-[8.5px]">
+                                  <tr>
+                                    <td className="py-0.5 px-1.5 font-medium text-slate-800">pH Suelo / Sustrato</td>
+                                    <td className="py-0.5 px-1.5 text-center font-mono font-black text-[#131b2e]">{m.phSuelo}</td>
+                                    <td className="py-0.5 px-1.5 text-center text-slate-500 font-mono">{cultivoDef.rangoPh || '5.5 - 6.5'}</td>
+                                    <td className="py-0.5 px-1.5 font-semibold text-[#00652c]">
+                                      {parseFloat(m.phSuelo) >= 5.5 && parseFloat(m.phSuelo) <= 6.5 ? 'Óptimo' : 'Corregir'}
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <td className="py-0.5 px-1.5 font-medium text-slate-800">Conductividad (CE)</td>
+                                    <td className="py-0.5 px-1.5 text-center font-mono font-black text-[#131b2e]">{m.ceSuelo} mS</td>
+                                    <td className="py-0.5 px-1.5 text-center text-slate-500 font-mono">{cultivoDef.rangoCe || '1.2 - 1.8'}</td>
+                                    <td className="py-0.5 px-1.5 font-semibold text-[#00652c]">
+                                      {parseFloat(m.ceSuelo) >= 1.0 && parseFloat(m.ceSuelo) <= 2.0 ? 'Controlada' : 'Ajustar'}
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <td className="py-0.5 px-1.5 font-medium text-slate-800">Temp. Suelo</td>
+                                    <td className="py-0.5 px-1.5 text-center font-mono font-black text-[#131b2e]">{m.tempSuelo}°C</td>
+                                    <td className="py-0.5 px-1.5 text-center text-slate-500 font-mono">{cultivoDef.rangoTempSuelo || '16 - 22°C'}</td>
+                                    <td className="py-0.5 px-1.5 font-semibold text-[#00652c]">Adecuada</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="py-0.5 px-1.5 font-medium text-slate-800">Humedad Rizósfera</td>
+                                    <td className="py-0.5 px-1.5 text-center font-mono font-black text-[#131b2e]">{m.humedadSuelo}</td>
+                                    <td className="py-0.5 px-1.5 text-center text-slate-500 font-mono">{cultivoDef.rangoHumedadSuelo || '60-80%'}</td>
+                                    <td className="py-0.5 px-1.5 font-semibold text-[#00652c]">Favorable</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    ))}
+
+                          {/* NOTA AL PIE DE CADA CUADRO INDICANDO LOTE/INVERNADERO Y COMENTARIOS */}
+                          <div className="bg-amber-50/90 border-t-2 border-amber-400 p-1.5 rounded-b text-[8.5px] space-y-0.5 mt-1">
+                            <div className="font-bold text-slate-900 flex items-center gap-1">
+                              <span>📍</span>
+                              <span className="font-headline font-black text-slate-950">
+                                Ubicación: Lote / Invernadero / Área: {m.loteNombre || m.invernadero || m.area || lote.nombre || 'Lote Evaluado'}
+                              </span>
+                            </div>
+                            <div className="text-slate-950 font-bold leading-tight">
+                              <span className="text-amber-900 font-black">👨‍🌾 Comentarios y Criterio Agronómico: </span>
+                              {m.comentarios || m.ajusteRecomendado || 'Condiciones estables dentro de los rangos de manejo de la finca.'}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -2215,7 +2272,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                       <span className="w-4 h-4 rounded-md bg-[#acf847]/40 text-[#416900] flex items-center justify-center font-mono text-[10px] font-bold">
                         {pIdx === 0 ? '4' : '4b'}
                       </span>
-                      Diagnóstico Visual de Hallazgos Fitosanitarios en Campo
+                      Hallazgos de campo — Diagnóstico Visual y Monitoreo en Lote {paginasHallazgos.length > 1 ? `(Página ${pIdx + 1})` : ''}
                     </h3>
                     <span className="font-mono text-[9px] font-bold text-[#005b8c]">
                       Stitch AI Specimen Cards • Proporción 4:3 Real
@@ -2223,7 +2280,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                   </div>
 
                   {grupoHallazgos.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 print-grid-2 gap-2.5">
+                    <div className="grid grid-cols-2 print:grid-cols-2 gap-2.5">
                       {grupoHallazgos.map((h, hIdx) => {
                         const figureIndex = figureOffset + hIdx + 1;
                         const esCritico = h.severidad?.toLowerCase().includes('alta') || h.severidad?.toLowerCase().includes('crítica');
@@ -2374,6 +2431,19 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
           return (
             <div key={`semana-page-${semNum}-${sIdx}`} className={`report-editorial-page page-${numPaginaActual} bg-[#ffffff]`}>
               <div className="space-y-2.5">
+                {/* BANNER OFICIAL DE ALTO IMPACTO: RECOMENDACIONES */}
+                <div className="bg-gradient-to-r from-[#005323] via-[#00652c] to-[#004b73] text-white px-3 py-1.5 rounded-xl flex items-center justify-between shadow-xs border border-emerald-400/30">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1 rounded bg-[#acf847] text-[#005323] font-black text-xs leading-none">📢</span>
+                    <span className="font-headline font-black text-xs sm:text-sm tracking-wider uppercase text-white">
+                      RECOMENDACIONES — PROGRAMAS DE APLICACIÓN TÉCNICA
+                    </span>
+                  </div>
+                  <span className="font-mono text-[9px] font-black bg-white/20 text-white px-2 py-0.5 rounded border border-white/30 uppercase">
+                    Semana {semNum}
+                  </span>
+                </div>
+
                 {/* Header Semanal de Alta Gama Stitch */}
                 <div className="border-b-2 border-[#00652c] pb-2 flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -2561,33 +2631,35 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                                         )}
                                       </table>
 
-                                      {/* AL PIE DEL CUADRO SE DEJAN LAS INSTRUCCIONES */}
+                                      {/* AL PIE DEL CUADRO SE DEJAN LAS INSTRUCCIONES EN NEGRITA DE ALTO CONTRASTE */}
                                       <div className="bg-slate-50 p-2 border-t border-slate-200 space-y-1.5 text-[9.5px]">
-                                        <div className="font-headline font-bold text-slate-800 flex items-center gap-1 uppercase tracking-wide text-[9px]">
+                                        <div className="font-headline font-black text-slate-950 flex items-center gap-1 uppercase tracking-wide text-[9px]">
                                           <span>📝</span> Instrucciones al Pie del Cuadro:
                                         </div>
 
-                                        <div className="bg-blue-50/80 border-l-4 border-blue-600 p-1.5 rounded-r text-blue-900 space-y-0.5">
-                                          <strong className="block text-[9.5px]">🔄 Orden Estricto de Disolución en Tanque ({volTanque.toLocaleString()} L de agua):</strong>
-                                          <ol className="list-decimal list-inside space-y-0.5 text-[9px] text-blue-950 pl-1">
+                                        <div className="bg-blue-100/90 border-l-4 border-blue-700 p-2 rounded-r text-slate-950 space-y-1">
+                                          <strong className="block text-blue-950 font-black text-[10px]">🔄 Orden Estricto de Disolución en Tanque ({volTanque.toLocaleString()} L de agua):</strong>
+                                          <ol className="list-decimal list-inside space-y-0.5 text-[9.5px] text-slate-950 font-black pl-1">
                                             <li>Llenar el tanque con el 60% – 70% de agua limpia antes de incorporar las sales.</li>
                                             <li>Disolver primero las fuentes de fósforo (MAP/MKP) y luego los sulfatos (SoluSOP y Epsom) agitando hasta disolución total.</li>
                                             <li>Agregar el Nitrato de Calcio (Calcinit) de último con agitación continua y completar el agua hasta los {volTanque.toLocaleString()} Litros.</li>
-                                            {prodsDirectos.some(p => p.esSuplemento) && (
-                                              <li>Incorporar los suplementos biológicos o nematicidas al final con el tanque a volumen completo.</li>
+                                            {prodsDirectos.some(p => p.esSuplemento || p.esPlaguicida) && (
+                                              <li className="text-purple-950">Incorporar los suplementos biológicos o plaguicidas radiculares al final con el tanque a volumen completo.</li>
                                             )}
                                           </ol>
                                         </div>
 
                                         {obsTexto && (
-                                          <div className="bg-amber-50 border-l-4 border-amber-500 p-1.5 rounded-r text-amber-950 text-[9px]">
-                                            <strong>👨‍🌾 Indicación Agronómica para el Productor:</strong> {obsTexto}
+                                          <div className="bg-amber-100 border-l-4 border-amber-500 p-2 rounded-r text-slate-950 text-[9.5px]">
+                                            <strong className="font-black text-slate-950 block text-[10px]">👨‍🌾 Indicación Agronómica para el Productor:</strong>
+                                            <p className="font-black text-slate-950 leading-snug">{obsTexto}</p>
                                           </div>
                                         )}
 
                                         {ev.analisisIa && (
-                                          <div className="bg-emerald-50 border-l-4 border-emerald-600 p-1.5 rounded-r text-emerald-950 text-[9px]">
-                                            <strong>✨ Dictamen Técnico y Compatibilidad:</strong> {ev.analisisIa}
+                                          <div className="bg-emerald-100/90 border-l-4 border-emerald-700 p-2 rounded-r text-slate-950 text-[9.5px]">
+                                            <strong className="font-black text-emerald-950 block text-[10px]">✨ Dictamen Técnico y Compatibilidad:</strong>
+                                            <p className="font-black text-slate-950 leading-snug">{ev.analisisIa}</p>
                                           </div>
                                         )}
                                       </div>
@@ -2649,7 +2721,16 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                                               <tbody className="divide-y divide-amber-50 font-mono">
                                                 {prodsB.map((l, li) => (
                                                   <tr key={li}>
-                                                    <td className="p-1 font-body text-slate-800 border-r border-amber-50">{l.producto}</td>
+                                                    <td className="p-1 font-body text-slate-800 border-r border-amber-50">
+                                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                                        <span>{l.producto}</span>
+                                                        {l.esPlaguicida && (
+                                                          <span className="text-[7.5px] font-sans font-black bg-purple-100 text-purple-950 px-1 py-0.2 rounded border border-purple-300">
+                                                            🛡️ Plaguicida Radicular
+                                                          </span>
+                                                        )}
+                                                      </div>
+                                                    </td>
                                                     <td className="p-1 text-center font-bold text-amber-950 border-r border-amber-50">{l.dosis}</td>
                                                     <td className="p-1 text-center text-slate-600">{l.unidad}</td>
                                                   </tr>
@@ -2824,9 +2905,14 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
                             </div>
 
                             {app.observacionesPie && (
-                              <p className="font-body text-[9.5px] text-slate-500 italic pt-0.5 border-t border-slate-100">
-                                Instrucción: {app.observacionesPie}
-                              </p>
+                              <div className="bg-amber-100/95 border-2 border-amber-400 p-2 rounded-lg text-slate-950 space-y-0.5 mt-1">
+                                <strong className="font-black text-slate-950 block text-[9.5px] flex items-center gap-1 uppercase tracking-wide">
+                                  <span>⚠️</span> INSTRUCCIONES DE APLICACIÓN Y MEZCLA:
+                                </strong>
+                                <p className="font-black text-slate-950 text-[9.5px] leading-snug">
+                                  {app.observacionesPie}
+                                </p>
+                              </div>
                             )}
                           </div>
                         ))}
