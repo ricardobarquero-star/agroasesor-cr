@@ -253,9 +253,6 @@ export default function SettingsView({ onDataReload }) {
                 onChange={(e) => {
                   const val = e.target.value;
                   setApiKey(val);
-                  if (val.trim().startsWith('AQ.') && modeloGemini !== 'gemini-3.8-flash') {
-                    setModeloGemini('gemini-3.8-flash');
-                  }
                 }}
                 placeholder="Pegue aquí su clave (ej: AQ.Ab... o AIzaSy...)"
                 className="w-full bg-slate-50 border border-slate-300 rounded-xl pl-3 pr-10 py-2.5 text-xs font-mono text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
@@ -274,7 +271,7 @@ export default function SettingsView({ onDataReload }) {
           {/* Selector de Modelo Gemini */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
-              Modelo Gemini Asignado (Predeterminado para claves AQ.Ab...)
+              Modelo Gemini Asignado (Predeterminado: Gemini 4.0 Aragon)
             </label>
             {!modoModeloCustom ? (
               <div className="flex gap-2">
@@ -290,7 +287,9 @@ export default function SettingsView({ onDataReload }) {
                   }}
                   className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
                 >
-                  <option value="gemini-3.8-flash">⚡ Gemini 3.8 Flash (Específico para claves AQ.Ab...)</option>
+                  <option value="gemini-4.0-aragon">🌟 Gemini 4.0 Aragon (Última Generación / Máxima Precisión)</option>
+                  <option value="gemini-4.0-flash">⚡ Gemini 4.0 Flash</option>
+                  <option value="gemini-3.8-flash">⚡ Gemini 3.8 Flash (Claves AQ.Ab...)</option>
                   <option value="gemini-3.6-flash">⚡ Gemini 3.6 Flash</option>
                   <option value="gemini-3.5-flash">⚡ Gemini 3.5 Flash</option>
                   <option value="gemini-2.5-flash">⚡ Gemini 2.5 Flash</option>

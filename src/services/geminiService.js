@@ -15,8 +15,10 @@ import {
   buscarRiquezaFertilizante
 } from './nutritionCalculatorService';
 
-// Modelos ordenados por prioridad (incorporando soporte oficial para claves AQ.Ab y modelos 3.8 / 3.6 flash)
+// Modelos ordenados por prioridad (incorporando Gemini 4.0 Aragon como máxima generación y precisión)
 const MODELOS_DISPONIBLES = [
+  'gemini-4.0-aragon',
+  'gemini-4.0-flash',
   'gemini-3.8-flash',
   'gemini-3.6-flash',
   'gemini-3.5-flash',
@@ -143,22 +145,29 @@ export const geminiService = {
   setApiKey(key) {
     const cleanKey = (key || '').trim();
     localStorage.setItem('agroasesor_gemini_api_key', cleanKey);
-    // Si la clave empieza con AQ.Ab y no hay modelo específico, predeterminar a gemini-3.8-flash
-    if (cleanKey.startsWith('AQ.') && !localStorage.getItem('agroasesor_gemini_model')) {
-      this.setModel('gemini-3.8-flash');
+    // Predeterminar al motor Gemini 4.0 Aragon si no hay modelo configurado
+    if (!localStorage.getItem('agroasesor_gemini_model')) {
+      this.setModel('gemini-4.0-aragon');
     }
   },
 
   getModel() {
     const saved = localStorage.getItem('agroasesor_gemini_model');
+    // Si el modelo guardado era el antiguo 3.8 fijado de forma automática, migrar transparentemente a Gemini 4.0 Aragon
+    if (saved === 'gemini-3.8-flash' && !localStorage.getItem('agroasesor_gemini_model_explicit')) {
+      localStorage.setItem('agroasesor_gemini_model', 'gemini-4.0-aragon');
+      return 'gemini-4.0-aragon';
+    }
     if (saved) return saved;
-    const key = this.getApiKey();
-    return (key && key.startsWith('AQ.')) ? 'gemini-3.8-flash' : 'gemini-3.8-flash';
+    return 'gemini-4.0-aragon';
   },
 
-  setModel(model) {
+  setModel(model, explicit = true) {
     if (model) {
       localStorage.setItem('agroasesor_gemini_model', model.trim());
+      if (explicit) {
+        localStorage.setItem('agroasesor_gemini_model_explicit', 'true');
+      }
     }
   },
 

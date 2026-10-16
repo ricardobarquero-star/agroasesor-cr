@@ -86,9 +86,6 @@ export default function SettingsModal({ isOpen, onClose, onDataReload }) {
                 onChange={(e) => {
                   const val = e.target.value;
                   setApiKey(val);
-                  if (val.trim().startsWith('AQ.') && modeloGemini !== 'gemini-3.8-flash') {
-                    setModeloGemini('gemini-3.8-flash');
-                  }
                 }}
                 placeholder="Pegue su clave (AQ.Ab... o AIzaSy...)"
                 className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
