@@ -98,6 +98,8 @@ export default function SettingsModal({ isOpen, onClose, onDataReload }) {
                 onChange={(e) => setModeloGemini(e.target.value)}
                 className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
               >
+                <option value="gemini-4.0-aragon">🚀 Gemini 4.0 Aragon (Última Generación / Máxima Precisión)</option>
+                <option value="gemini-4.0-flash">⚡ Gemini 4.0 Flash</option>
                 <option value="gemini-3.8-flash">⚡ Gemini 3.8 Flash (Claves AQ.Ab...)</option>
                 <option value="gemini-3.6-flash">⚡ Gemini 3.6 Flash</option>
                 <option value="gemini-3.5-flash">⚡ Gemini 3.5 Flash</option>

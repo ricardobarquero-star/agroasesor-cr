@@ -179,7 +179,7 @@ export const geminiService = {
       return { exito: false, error: 'Por favor ingrese una clave de API antes de probar.' };
     }
 
-    const modeloTarget = modeloPersonalizado || this.getModel() || 'gemini-3.8-flash';
+    const modeloTarget = modeloPersonalizado || this.getModel() || 'gemini-4.0-aragon';
 
     const testBody = {
       contents: [{ parts: [{ text: 'Responde únicamente con la palabra "CONECTADO" si recibes este mensaje de prueba.' }] }]
@@ -197,7 +197,7 @@ export const geminiService = {
       }
       return {
         exito: true,
-        mensaje: `¡Conexión exitosa con Google Gemini (${res.modeloUsado})! Clave ${key.startsWith('AQ.') ? 'nueva AQ.Ab (3.8 Flash)' : 'estándar'} verificada y activa.`,
+        mensaje: `¡Conexión exitosa con Google Gemini (${res.modeloUsado === 'gemini-4.0-aragon' ? 'Gemini 4.0 Aragon' : res.modeloUsado})! Motor IA de alta precisión agronómica verificado y activo.`,
         respuesta: res.texto.trim(),
         modelo: res.modeloUsado
       };

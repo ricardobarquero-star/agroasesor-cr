@@ -317,7 +317,7 @@ export default function SettingsView({ onDataReload }) {
                   type="text"
                   value={modeloCustomTexto}
                   onChange={(e) => setModeloCustomTexto(e.target.value)}
-                  placeholder="Ej: gemini-3.8-flash o gemini-3.6-flash"
+                  placeholder="Ej: gemini-4.0-aragon o gemini-3.8-flash"
                   className="w-full bg-white border border-emerald-400 rounded-xl px-3 py-2.5 text-xs font-mono text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
                 />
                 <button
@@ -335,7 +335,7 @@ export default function SettingsView({ onDataReload }) {
               </div>
             )}
             <p className="text-[11px] text-slate-500 mt-1">
-              Las claves que inician con <strong>AQ.Ab...</strong> operan con <strong>Gemini 3.8 Flash</strong> o <strong>3.6 Flash</strong>. El sistema utiliza cascada automática inteligente.
+              Motor predeterminado: <strong>Gemini 4.0 Aragon</strong> con cascada automática inteligente para máxima velocidad y compatibilidad de claves (AQ.Ab... o estándar).
             </p>
           </div>
 
