@@ -649,55 +649,190 @@ export const storageService = {
   // ==========================================
   // EXPEDIENTE DE REPORTES E INFORMES POR CLIENTE
   // ==========================================
-  getTodosLosReportesGuardados() {
-    const raw = localStorage.getItem(STORAGE_KEYS.REPORTES_EXPEDIENTE);
-    if (!raw) return [];
+
+  // Sanitizar reporte para evitar superar la cuota de localStorage (5MB)
+  // Las fotos de alta resolución quedan guardadas persistentemente en IndexedDB mediante photoStorageService
+  sanitizarReporteParaExpediente(reporte) {
+    if (!reporte) return null;
     try {
-      return JSON.parse(raw);
-    } catch {
+      const clon = JSON.parse(JSON.stringify(reporte));
+      if (clon.datosVisitaSnapshot) {
+        const snap = clon.datosVisitaSnapshot;
+        const limpiarFotos = (lista) => {
+          if (!Array.isArray(lista)) return;
+          lista.forEach(h => {
+            if (h) {
+              if (typeof h.fotoAnotada === 'string' && h.fotoAnotada.length > 300) h.fotoAnotada = '';
+              if (typeof h.fotoUrl === 'string' && h.fotoUrl.length > 300) h.fotoUrl = '';
+              if (typeof h.foto === 'string' && h.foto.length > 300) h.foto = '';
+            }
+          });
+        };
+        if (snap.hallazgosFiltrados) limpiarFotos(snap.hallazgosFiltrados);
+        if (snap.hallazgos) limpiarFotos(snap.hallazgos);
+        if (snap.visita?.hallazgos) limpiarFotos(snap.visita.hallazgos);
+      }
+      return clon;
+    } catch (e) {
+      console.warn('Error sanitizando reporte para expediente:', e);
+      return reporte;
+    }
+  },
+
+  getHistorialReportes(clienteId = null) {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.REPORTES_EXPEDIENTE);
+      const todos = raw ? JSON.parse(raw) : [];
+      if (clienteId) {
+        return this.getReportesDeCliente(clienteId);
+      }
+      return todos;
+    } catch (e) {
+      console.error('Error leyendo historial de reportes:', e);
       return [];
     }
   },
 
-  getReportesDeCliente(clienteId) {
-    if (!clienteId) return [];
-    const reportes = this.getTodosLosReportesGuardados();
-    return reportes.filter(r => r.clienteId === clienteId);
+  getTodosLosReportesGuardados() {
+    return this.getHistorialReportes();
   },
 
-  guardarReporteEnExpediente(clienteId, reporte) {
-    if (!clienteId || !reporte) return null;
-    const reportes = this.getTodosLosReportesGuardados();
-    const index = reportes.findIndex(r => r.id === reporte.id);
-    const nuevoReporte = {
-      ...reporte,
-      id: reporte.id || 'rep-' + Date.now(),
-      clienteId,
-      fechaGuardado: new Date().toISOString().split('T')[0],
-      horaGuardado: new Date().toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' })
-    };
+  getReportesDeCliente(clienteId) {
+    if (!clienteId) return [];
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.REPORTES_EXPEDIENTE);
+      const todos = raw ? JSON.parse(raw) : [];
+      const clientes = this.getClientes();
+      const cliActual = clientes.find(c => c.id === clienteId);
+      const nombreActual = (cliActual?.nombre || '').trim().toLowerCase();
+      const fincaIds = (cliActual?.fincas || []).map(f => f.id);
 
-    if (index >= 0) {
-      reportes[index] = nuevoReporte;
-    } else {
-      reportes.unshift(nuevoReporte);
+      return todos.filter(r => {
+        if (!r) return false;
+        // 1. Coincidencia directa de ID de cliente
+        if (r.clienteId === clienteId) return true;
+        // 2. Coincidencia por Finca registrada bajo este cliente
+        if (r.fincaId && fincaIds.includes(r.fincaId)) return true;
+        // 3. Coincidencia por Nombre de Productor (insensible a mayúsculas/minúsculas)
+        if (nombreActual && r.productorNombre) {
+          const prodNom = r.productorNombre.trim().toLowerCase();
+          if (prodNom.includes(nombreActual) || nombreActual.includes(prodNom)) {
+            return true;
+          }
+        }
+        return false;
+      });
+    } catch (e) {
+      console.error('Error obteniendo reportes de cliente:', e);
+      return [];
+    }
+  },
+
+  guardarReporteEnExpediente(clienteId, nuevoReporte) {
+    if (!nuevoReporte) return null;
+
+    // Resolver clienteId si no viene explícito
+    let cId = clienteId || nuevoReporte.clienteId;
+    const clientes = this.getClientes();
+
+    if (!cId) {
+      // Intentar resolver por finca
+      const targetFincaId = nuevoReporte.fincaId || nuevoReporte.finca?.id;
+      if (targetFincaId) {
+        const cliFinca = clientes.find(c => (c.fincas || []).some(f => f.id === targetFincaId));
+        if (cliFinca) cId = cliFinca.id;
+      }
+      // Intentar resolver por nombre de productor
+      if (!cId && nuevoReporte.productorNombre) {
+        const norm = nuevoReporte.productorNombre.trim().toLowerCase();
+        const cliNombre = clientes.find(c => c.nombre && c.nombre.trim().toLowerCase().includes(norm));
+        if (cliNombre) cId = cliNombre.id;
+      }
+      // Fallback al primer cliente registrado
+      if (!cId && clientes.length > 0) {
+        cId = clientes[0].id;
+      }
     }
 
     try {
-      localStorage.setItem(STORAGE_KEYS.REPORTES_EXPEDIENTE, JSON.stringify(reportes));
+      const reporteSanitizado = this.sanitizarReporteParaExpediente(nuevoReporte);
+      const id = reporteSanitizado.id || ('rep-' + Date.now());
+      const fechaActualIso = new Date().toISOString();
+      const fechaGuardado = reporteSanitizado.fecha || fechaActualIso.split('T')[0];
+      const horaGuardado = new Date().toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' });
+
+      const reporteCompleto = {
+        ...reporteSanitizado,
+        id,
+        clienteId: cId,
+        fechaGuardado,
+        horaGuardado,
+        timestampGuardado: Date.now()
+      };
+
+      const raw = localStorage.getItem(STORAGE_KEYS.REPORTES_EXPEDIENTE);
+      let reportes = raw ? JSON.parse(raw) : [];
+      const idx = reportes.findIndex(r => r.id === id);
+      if (idx >= 0) {
+        reportes[idx] = reporteCompleto;
+      } else {
+        reportes.unshift(reporteCompleto);
+      }
+
+      // Guardar con manejo de cuota progresiva
+      const guardarConLimite = (lista) => {
+        try {
+          localStorage.setItem(STORAGE_KEYS.REPORTES_EXPEDIENTE, JSON.stringify(lista));
+          return true;
+        } catch (err) {
+          console.warn('Quota warning en localStorage, optimizando reportes...', err);
+          return false;
+        }
+      };
+
+      // 1. Guardar hasta 60 reportes completos
+      let guardado = guardarConLimite(reportes.slice(0, 60));
+      // 2. Si falla cuota, guardar 30 reportes
+      if (!guardado) {
+        guardado = guardarConLimite(reportes.slice(0, 30));
+      }
+      // 3. Si aún falla, remover datosVisitaSnapshot de reportes históricos > 3
+      if (!guardado) {
+        const ultraCompactos = reportes.slice(0, 20).map((r, i) => {
+          if (i < 3) return r;
+          const { datosVisitaSnapshot, ...resto } = r;
+          return resto;
+        });
+        guardado = guardarConLimite(ultraCompactos);
+      }
+
+      return reporteCompleto;
     } catch (e) {
-      console.warn('Quota warning guardando reporte en expediente:', e);
+      console.error('Error guardando reporte en expediente:', e);
+      return null;
     }
-    return nuevoReporte;
+  },
+
+  eliminarReporteDeExpediente(reporteId) {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.REPORTES_EXPEDIENTE);
+      const reportes = raw ? JSON.parse(raw) : [];
+      const filtrados = reportes.filter(r => r.id !== reporteId);
+      localStorage.setItem(STORAGE_KEYS.REPORTES_EXPEDIENTE, JSON.stringify(filtrados));
+      return true;
+    } catch (e) {
+      console.error('Error eliminando reporte de expediente:', e);
+      return false;
+    }
   },
 
   eliminarReporteDeCliente(clienteId, reporteId) {
-    const reportes = this.getTodosLosReportesGuardados().filter(r => r.id !== reporteId);
-    try {
-      localStorage.setItem(STORAGE_KEYS.REPORTES_EXPEDIENTE, JSON.stringify(reportes));
-    } catch (e) {
-      console.warn('Error eliminando reporte:', e);
-    }
+    return this.eliminarReporteDeExpediente(reporteId);
+  },
+
+  obtenerReportePorId(reporteId) {
+    const reportes = this.getHistorialReportes();
+    return reportes.find(r => r.id === reporteId) || null;
   },
 
   // ==========================================
@@ -800,65 +935,6 @@ export const storageService = {
     return true;
   },
 
-  // ==========================================
-  // EXPEDIENTE E HISTORIAL DE INFORMES
-  // ==========================================
-  getHistorialReportes(clienteId = null) {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEYS.REPORTES_EXPEDIENTE);
-      const todos = raw ? JSON.parse(raw) : [];
-      if (clienteId) {
-        return todos.filter(r => r.clienteId === clienteId);
-      }
-      return todos;
-    } catch (e) {
-      console.error('Error leyendo historial de reportes:', e);
-      return [];
-    }
-  },
-
-  guardarReporteEnExpediente(clienteId, nuevoReporte) {
-    try {
-      const reportes = this.getHistorialReportes();
-      const id = nuevoReporte.id || ('rep-' + Date.now());
-      const reporteCompleto = {
-        ...nuevoReporte,
-        id,
-        clienteId: clienteId || nuevoReporte.clienteId,
-        fechaGuardado: new Date().toISOString()
-      };
-      const idx = reportes.findIndex(r => r.id === id);
-      if (idx >= 0) {
-        reportes[idx] = reporteCompleto;
-      } else {
-        reportes.unshift(reporteCompleto);
-      }
-      // Mantener los últimos 60 reportes para no saturar almacenamiento
-      const limitado = reportes.slice(0, 60);
-      localStorage.setItem(STORAGE_KEYS.REPORTES_EXPEDIENTE, JSON.stringify(limitado));
-      return reporteCompleto;
-    } catch (e) {
-      console.error('Error guardando reporte en expediente:', e);
-      return null;
-    }
-  },
-
-  eliminarReporteDeExpediente(reporteId) {
-    try {
-      const reportes = this.getHistorialReportes();
-      const filtrados = reportes.filter(r => r.id !== reporteId);
-      localStorage.setItem(STORAGE_KEYS.REPORTES_EXPEDIENTE, JSON.stringify(filtrados));
-      return true;
-    } catch (e) {
-      console.error('Error eliminando reporte:', e);
-      return false;
-    }
-  },
-
-  obtenerReportePorId(reporteId) {
-    const reportes = this.getHistorialReportes();
-    return reportes.find(r => r.id === reporteId) || null;
-  },
 
   importarRespaldoJSON(jsonString) {
     try {

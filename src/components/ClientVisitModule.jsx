@@ -3,11 +3,12 @@ import {
   Users, Share2, Plus, MapPin, Phone, Mail, Calendar, CheckCircle2, 
   Search, ArrowRight, Trash2, Edit2, Play, ChevronRight, 
   CloudSun, Sparkles, Building2, Layers, AlertCircle, FileText,
-  FolderOpen, X, Check, Sprout, CornerDownRight
+  FolderOpen, X, Check, Sprout, CornerDownRight, Download
 } from 'lucide-react';
 import { storageService } from '../services/storageService';
 import { weatherService } from '../services/weatherService';
 import { crAgroDatabase } from '../data/crAgroDatabase';
+import { digitalReportService } from '../services/digitalReportService';
 
 export default function ClientVisitModule({ 
   visitaActiva, 
@@ -938,15 +939,46 @@ export default function ClientVisitModule({
                                   if (visitaEncontrada) {
                                     onSelectVisita(visitaEncontrada);
                                     setClienteExpediente(null);
+                                  } else if (rep.datosVisitaSnapshot) {
+                                    const snap = rep.datosVisitaSnapshot;
+                                    const visitaRestaurada = snap.visita || {
+                                      id: rep.visitaId || ('v-' + Date.now()),
+                                      clienteId: clienteExpediente.id,
+                                      fecha: rep.fecha,
+                                      productor: { nombre: rep.productorNombre || clienteExpediente.nombre, telefono: clienteExpediente.telefono, email: clienteExpediente.email },
+                                      finca: { id: rep.fincaId, nombre: rep.fincaNombre },
+                                      lote: { cultivoNombre: rep.cultivoNombre, variedad: rep.variedad },
+                                      hallazgos: snap.hallazgosFiltrados || snap.hallazgos || [],
+                                      recomendacionesFertirriego: snap.recFertirriegoFiltradas || snap.recomendacionesFertirriego || [],
+                                      recomendacionesPlaguicidas: snap.recPlaguicidasFiltradas || snap.recomendacionesPlaguicidas || []
+                                    };
+                                    storageService.guardarVisitaActiva(visitaRestaurada);
+                                    onSelectVisita(visitaRestaurada);
+                                    setClienteExpediente(null);
                                   } else {
-                                    alert('La visita original se encuentra archivada en el historial.');
+                                    alert('No se pudo encontrar la visita original.');
                                   }
                                 }}
-                                className="px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 shadow-xs"
+                                className="px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 shadow-xs cursor-pointer"
                                 title="Abrir visita / informe técnico"
                               >
                                 <FolderOpen className="w-3.5 h-3.5" />
                                 <span>Abrir</span>
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  if (rep.datosVisitaSnapshot) {
+                                    digitalReportService.descargarReporteHtml(rep.datosVisitaSnapshot);
+                                  } else {
+                                    alert('Este informe contiene resumen de metadatos.');
+                                  }
+                                }}
+                                className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl border border-indigo-200 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                                title="Descargar informe web interactivo (.html)"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">.html</span>
                               </button>
 
                               <button
@@ -958,7 +990,7 @@ export default function ClientVisitModule({
                                     : `https://api.whatsapp.com/send?text=${texto}`;
                                   window.open(url, '_blank');
                                 }}
-                                className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl border border-emerald-300 transition"
+                                className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl border border-emerald-300 transition cursor-pointer"
                                 title="Compartir por WhatsApp al productor"
                               >
                                 <Share2 className="w-3.5 h-3.5" />
@@ -971,7 +1003,7 @@ export default function ClientVisitModule({
                                     refrescarDatos();
                                   }
                                 }}
-                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition"
+                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition cursor-pointer"
                                 title="Eliminar informe"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />

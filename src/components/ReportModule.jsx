@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { 
   FileText, Download, Share2, Mail, CheckCircle2, 
   Printer, Filter, FolderOpen, Paperclip, X,
@@ -38,6 +38,16 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
       console.warn('Error refrescando historial:', e);
     }
   };
+
+  // Auto-archivar en el expediente del cliente al cargar el reporte
+  useEffect(() => {
+    if (visita?.id) {
+      const timer = setTimeout(() => {
+        handleGuardarEnExpediente(true).catch(() => {});
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [visita?.id, visita?.fecha]);
   
   // Filtro de alcance para el reporte (Toda la Finca o Lote Específico)
   const [filtroLote, setFiltroLote] = useState('todos');
@@ -469,14 +479,32 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
   };
 
   // Guardar reporte en el expediente del cliente con persistencia garantizada
-  const handleGuardarEnExpediente = async () => {
+  const handleGuardarEnExpediente = async (silencioso = false) => {
+    // 1. Resolver clienteId de manera infalible
+    let targetClienteId = visita?.clienteId;
+    if (!targetClienteId) {
+      const todosClientes = storageService.getClientes();
+      const matchFinca = todosClientes.find(c => (c.fincas || []).some(f => f.id === finca.id));
+      if (matchFinca) {
+        targetClienteId = matchFinca.id;
+      } else {
+        const prodNombre = (productor.nombre || '').trim().toLowerCase();
+        const matchNombre = todosClientes.find(c => c.nombre && c.nombre.trim().toLowerCase().includes(prodNombre));
+        targetClienteId = matchNombre ? matchNombre.id : (todosClientes[0]?.id || 'cli-001');
+      }
+      if (visita) {
+        visita.clienteId = targetClienteId;
+        storageService.guardarVisitaActiva(visita);
+      }
+    }
+
     const datosDigital = await obtenerDatosReporteDigitalAsync();
     const { fileName } = digitalReportService.generarReporteHtmlBlob(datosDigital);
 
     const nuevoReporte = {
-      id: 'rep-' + Date.now(),
+      id: 'rep-' + (visita?.id ? `${visita.id}` : Date.now()),
       visitaId: visita?.id,
-      clienteId: visita?.clienteId,
+      clienteId: targetClienteId,
       fincaId: finca.id,
       fincaNombre: finca.nombre || 'Finca Principal',
       productorNombre: productor.nombre || 'Cliente',
@@ -492,14 +520,18 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
       datosVisitaSnapshot: datosDigital,
       resumenWhatsApp: generarTextoCompletoWhatsApp()
     };
-    storageService.guardarReporteEnExpediente(visita?.clienteId, nuevoReporte);
+    storageService.guardarReporteEnExpediente(targetClienteId, nuevoReporte);
     refrescarExpediente();
-    setGuardadoEnExpediente(true);
-    setTimeout(() => setGuardadoEnExpediente(false), 3500);
+    if (!silencioso) {
+      setGuardadoEnExpediente(true);
+      setTimeout(() => setGuardadoEnExpediente(false), 3500);
+    }
+    return nuevoReporte;
   };
 
   // Imprimir nativo con alta calidad (Vectorial y sin cortes)
   const handleImprimirNativo = () => {
+    handleGuardarEnExpediente(true).catch(() => {});
     window.print();
   };
 
@@ -508,6 +540,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
     setGenerandoPdf(true);
     setMensajeEstado('Generando y descargando archivo PDF...');
     try {
+      handleGuardarEnExpediente(true).catch(() => {});
       const res = await generarPdfBlobYArchivo();
       if (res) {
         res.pdf.save(res.fileName);
@@ -524,6 +557,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
   // COMPARTIR INFORME WEB DIGITAL (.HTML) POR WHATSAPP (OPCIÓN 2 - FOTOS HD INTEGRADAS)
   const handleCompartirReporteHtmlWhatsApp = async () => {
     try {
+      handleGuardarEnExpediente(true).catch(() => {});
       setGenerandoPdf(true);
       setMensajeEstado('Generando Informe Web Digital con fotos HD...');
       const datosDigital = await obtenerDatosReporteDigitalAsync();
@@ -573,6 +607,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
   // DESCARGAR INFORME WEB DIGITAL (.HTML - FOTOS HD INTEGRADAS)
   const handleDescargarReporteHtml = async () => {
     try {
+      handleGuardarEnExpediente(true).catch(() => {});
       setGenerandoPdf(true);
       setMensajeEstado('Procesando fotos HD para reporte digital...');
       const datosDigital = await obtenerDatosReporteDigitalAsync();
@@ -592,6 +627,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
 
   // COMPARTIR NATIVO: Abre el selector del sistema (iOS / Android) con el PDF ADJUNTO
   const handleCompartirPDFNativo = async () => {
+    handleGuardarEnExpediente(true).catch(() => {});
     setGenerandoPdf(true);
     setMensajeEstado('Preparando archivo PDF para adjuntar...');
     try {
@@ -629,6 +665,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
 
   // WHATSAPP CON PDF: Comparte el archivo PDF directamente por WhatsApp o abre chat oficial
   const handleCompartirWhatsAppConPDF = async () => {
+    handleGuardarEnExpediente(true).catch(() => {});
     setGenerandoPdf(true);
     setMensajeEstado('Preparando informe para WhatsApp...');
     let res = null;
@@ -686,6 +723,7 @@ export default function ReportModule({ visita, onOpenAi: _onOpenAi, onNavegarTab
 
   // CORREO CON PDF: Comparte el archivo PDF directamente por Correo o abre cliente oficial
   const handleEnviarCorreoConPDF = async () => {
+    handleGuardarEnExpediente(true).catch(() => {});
     setGenerandoPdf(true);
     setMensajeEstado('Preparando informe para Correo...');
     let res = null;
