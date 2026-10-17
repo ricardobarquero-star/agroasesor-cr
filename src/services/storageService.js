@@ -1,5 +1,6 @@
 import { crAgroDatabase } from '../data/crAgroDatabase';
 import { FORMULAS_FERTIRRIEGO_BASE, SUPLEMENTOS_FERTIRRIEGO_CR } from '../data/fertigationPrograms';
+import { photoStorageService } from './photoStorageService';
 
 const STORAGE_KEYS = {
   CLIENTES: 'agroasesor_clientes_db_v2',

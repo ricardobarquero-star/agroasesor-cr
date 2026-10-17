@@ -9,6 +9,7 @@ import { crAgroDatabase } from '../data/crAgroDatabase';
 import { storageService } from '../services/storageService';
 import { geminiService } from '../services/geminiService';
 import { calcularDosisDual } from '../utils/doseCalculator';
+import { FORMULAS_FERTIRRIEGO_BASE } from '../data/fertigationPrograms';
 import { 
   ETAPAS_FENOLOGICAS, 
   OBJETIVOS_FERTILIZACION,
